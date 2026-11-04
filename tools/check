@@ -76,7 +76,10 @@ if not test -x $bin
     __bad "no binary at $bin — build it first"
     set ready 0
 else
-    set -l newer (find $code $qml $spike -type f -newer $bin -not -path '*/.git/*' 2>/dev/null)
+    # QML is loaded from disk at runtime, so it is never stale with respect to the
+    # binary -- only what is compiled in can be. QML gets its own gates below
+    # (qmllint) and, with --ui, a real window.
+    set -l newer (find $code $spike -type f -newer $bin -not -path '*/.git/*' 2>/dev/null)
     if test (count $newer) -gt 0
         __bad "binary is stale: "(count $newer)" source file(s) newer than it, e.g. "(string join ' ' (path basename -- $newer[1..3]))
         set ready 0
@@ -191,6 +194,45 @@ else if test $slice_match[4] -lt 1
     __bad 'slice produced no moves'
 else
     __ok "slice: $slice_match[3] layers, $slice_match[4] moves in $slice_match[2] ms"
+end
+
+# The plate gate: two models on one bed, sliced as one job. Parity alone cannot
+# catch a scene regression -- every oracle case is a single object -- so this
+# checks that both objects reach the toolpath, side by side on the bed.
+set -l second_model $root/oracle/models/bridge_30.stl
+set -l scene_out ($bin $model $second_model --selftest-slice 2>&1)
+set -l scene_rc $status
+set -l scene_objects (string match -r '^mesh (\d+) objects' -- $scene_out)
+set -l scene_match (string match -r 'slice finished in \d+ ms: (\d+) layers, (\d+) moves -> (.+)$' -- $scene_out)
+if test $scene_rc -ne 0
+    __bad "plate slice exited $scene_rc, see: "(string join ' ' (string match -r 'slice failed.*|error.*' -- $scene_out | head -n 3))
+else if not set -q scene_match[4]
+    __bad 'plate slice printed no result line'
+else if test (count $scene_objects) -eq 2 -a "$scene_objects[2]" != 2
+    __bad "the plate reported $scene_objects[2] object(s) after adding two models"
+else
+    set -l scene_span (python3 -c '
+import sys
+xs = []
+for line in open(sys.argv[1]):
+    if not line.startswith("G1 "):
+        continue
+    words = line.split()
+    if not any(w[:1] == "E" and len(w) > 1 for w in words[1:]):
+        continue
+    for w in words:
+        if w[:1] == "X":
+            xs.append(float(w[1:]))
+print(f"{max(xs) - min(xs):.1f} {len(xs)}" if xs else "0 0")
+' $scene_match[4])
+    set -l span_parts (string split ' ' -- $scene_span)
+    if test (count $span_parts) -lt 2 -o $span_parts[2] -lt 1
+        __bad "the plate toolpath has no extruding moves with an X coordinate"
+    else if test $span_parts[1] -lt 40
+        __bad "the plate toolpath spans only $span_parts[1] mm: the second object is missing"
+    else
+        __ok "plate: 2 objects, $scene_match[2] layers, $scene_match[3] moves, X span $span_parts[1] mm"
+    end
 end
 set -l integrity_out (python3 $root/oracle/baseline_check.py 2>&1)
 set -l integrity_rc $status

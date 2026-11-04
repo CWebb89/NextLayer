@@ -111,15 +111,17 @@ Plates on the left, tools next, object actions on the right — one panel.
 | Action | Status |
 | --- | --- |
 | Add plate / switch plate / remove plate (middle-click a tab) | done — app-level plates: each holds its own model and G-code |
-| Open / import model | done |
-| Duplicate | done — engine `transform.duplicate` |
-| Centre on bed | done — engine `transform.center` |
-| Drop to bed | done — engine `transform.ensure_on_bed` |
-| Cut at Z | done — engine `transform.cut_z` |
+| Open / import model | done — dialog or drag-and-drop appends to the plate; multi-file drop adds every file |
+| Duplicate | done — the document copies the selected object beside it |
+| Centre on bed | done — the document moves the selected object's centre onto the bed centre |
+| Drop to bed | done — the document lifts/lowers the selected object until its minimum Z sits on the bed |
+| Cut at Z | staged — still runs the engine on the single selected file, so it replaces the plate; the document needs a mesh split |
 | Export G-code | done — writes the sliced file to a chosen path |
-| Arrange | needs-engine — `arrange_and_wait` is internal to the CLI app, not a flag |
+| Object list (name, visibility, X/Y, centre/drop/duplicate/delete) | done — `Ctrl+L` or the list button; acts on the document, so a plate edit is undoable |
+| Undo / redo (`Ctrl+Z`, `Ctrl+Shift+Z`) | done — snapshot stack over the document's objects, transforms and visibility |
+| Arrange | needs-engine — `arrange_and_wait` is internal to the CLI app, not a flag; imports are shelf-packed instead |
 | Auto-orient | needs-engine — no CLI flag |
-| Multi-select / instance list | needs-engine — needs multi-object scenes |
+| Multi-select | staged — one selection at a time; the document holds N objects but the tools act on the selected one |
 | Engine-level plates (one project, many beds, one slice) | needs-engine — `Domain::Bed`/`BedContainer` exist, no plater command |
 
 ## Tool rail
@@ -156,9 +158,10 @@ Now part of the same strip.
 | Orthographic / perspective toggle (`O`, camera bar) | done — the ortho camera carries the perspective framing so the switch does not resize the plate |
 | Fit plate (`F`, camera bar) | done — frames the whole `bed_shape`, which is Orca's opening framing |
 | Layer step from the keyboard (Up / Down) | done |
-| Click to select the model (accent tint) | done |
-| Drag the model on the bed with the Move tool | done — commits through `transform.align_xy` |
-| Object list / multi-select / per-object context menu | needs-engine — single-object scene |
+| Click to select an object (accent tint) | done — picking walks every visible object's triangles, nearest hit wins, the document's selection follows |
+| Drag the selected object on the bed with the Move tool | done — commits `setPosition` on the document, so it is undoable and does not touch the file |
+| Object list / per-object context menu | done — object list docked bottom-right; a context menu is still Orca-only |
+| Multi-select | staged — one selection at a time |
 | Ray picking for selection and measure | done — Möller–Trumbore over the mesh in printer coordinates; View3D.pick() returns nothing in this app |
 | Snap to bed centre, rotation snapping | not started |
 | Gizmo handles (red/green/blue arrows) for axis drags | not started — drag moves freely on the grabbed plane |
@@ -200,9 +203,10 @@ Now part of the same strip.
 | Multiple plates (app-level, one document each) | done |
 | Object position survives slicing | done — an import is centred once, then slices run with dont_arrange; before this the engine's arrange re-centred every slice and moves were discarded |
 | Icon set | Material Symbols Outlined, matching Orca's outline style |
-| Several objects on one plate | needs-engine — one input file per slice today |
-| Save/load project (`.3mf` with settings and objects) | needs-engine — `load_3mf`/`store_3mf` exist on `Domain::Project`; no app layer yet |
-| Undo / redo | not started |
+| Several objects on one plate | done — the document holds N objects; a slice bakes them into one STL of separate shells and the engine prints every island |
+| Per-object settings | needs-engine — the merge is geometry only, so object-level configs are not applied yet |
+| Save/load project (`.3mf` with settings and objects) | needs-engine — `store_3mf(const std::string&, const Domain::Project&)` and `load_3mf` exist, but building a `Domain::Project` needs a live `ProjectInteractor`; doing that beside the worker-thread `CLI::run` slice would put two engine runtimes in one process |
+| Undo / redo | done — `Ctrl+Z` / `Ctrl+Shift+Z` over add, delete, duplicate, transform and visibility |
 | Sequential printing | staged — settings exist, no scene arrangement |
 
 ## Orca config converter
