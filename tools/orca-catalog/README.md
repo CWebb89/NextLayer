@@ -37,16 +37,28 @@ Every dropped key is counted in the run report. Three rules produce them:
   Bambu/AMS, belt-printer and chamber-specific settings.
 - **G-code templates the engine cannot parse.** Orca G-code uses `[...]` names
   that do not exist here (`initial_no_support_extruder`, `plate_name`,
-  `first_layer_print_min_0`), brace expressions (`{max_layer_z+0.5}`), or
-  placeholders that map cleanly and are renamed instead
-  (`bed_temperature_initial_layer_single` → `first_layer_bed_temperature`).
+  `first_layer_print_min_0`), or placeholders that map cleanly and are renamed
+  instead (`bed_temperature_initial_layer_single` → `first_layer_bed_temperature`).
   A template that still references an unknown name is dropped whole —
   354 of 450 machines — because half a start sequence is worse than none.
   Those presets print nothing sensible until the G-code is set in
   Printer → Custom G-code.
+- **Brace expressions** (`{max_layer_z+0.5}`) are also rejected, which is
+  conservative rather than correct: the engine's own default `before_layer_gcode`
+  is written in braces, so some of those templates would probably work. Rejected
+  until a sweep proves it.
 - **Forced values.** `use_relative_e_distances` is always true: absolute E makes
   this build export no G-code at all, and relative E is what Klipper and current
   Marlin expect.
 
 An empty `before_layer_gcode` also stops export, so it falls back to the engine's
 own template when a vendor supplies none.
+
+## Slicing state
+
+Every printer in the catalog was resolved and sliced against `cube_20.stl`:
+480 listed, 426 produced G-code, 54 did not. Most of the 54 are PrusaResearch
+presets that have no process named `Standard` (a harness artifact). The catalog
+machines among them — Anycubic Kobra Max / Kobra Plus / Vyper, Flashforge
+Artemis / Guider 2s — are unresolved. `tools/check` slices one catalog printer,
+not all of them.

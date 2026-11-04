@@ -226,10 +226,16 @@ engine resolves it like any other preset.
 | Per-vendor profile UI (vendor > machine > variant tree) | staged — the flat searchable list stands in for Orca's grouped picker |
 
 Known loss: a G-code template referencing a placeholder the engine does not have
-(`initial_no_support_extruder`, `plate_name`, `{brace expressions}`) is dropped
-entirely rather than half-applied, so those presets have no start/end sequence
-until it is written in Printer → Custom G-code. Line-level salvage is the
-obvious next step.
+(`initial_no_support_extruder`, `plate_name`) is dropped entirely rather than
+half-applied, so those presets have no start/end sequence until it is written in
+Printer → Custom G-code. The same rule rejects `{brace expressions}`, which the
+engine does support in its own defaults — conservative, and to be revisited.
+Line-level salvage and brace support are the obvious next steps.
+
+Slicing state, measured across the whole catalog: 480 printers listed, 426
+sliced, 54 did not — mostly PrusaResearch presets without a `Standard` process;
+the catalog machines among them are Anycubic Kobra Max / Kobra Plus / Vyper and
+Flashforge Artemis / Guider 2s.
 
 ## Orca config converter
 
