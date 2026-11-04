@@ -1,0 +1,188 @@
+#!/usr/bin/env fish
+# Keeps the preset state that the preset code is tested against under version
+# control, because it lives in the engine's data directory rather than the repo.
+#
+#   tools/fixtures list                what is saved
+#   tools/fixtures save NAME           snapshot the live presets as NAME
+#   tools/fixtures diff NAME           what differs between live and NAME
+#   tools/fixtures restore NAME --yes  put NAME back (backs up what is live first)
+#   tools/fixtures where               the live directory being read
+#
+# What counts as a fixture: the custom printer bundle and the user presets the
+# app itself wrote. The vendor presets are not copied: they are the engine's own
+# bundle, read out of upstream/resources at run time.
+#
+# Restore replaces the live files, so it takes an explicit --yes and copies the
+# current state to fixture-backups/ first.
+
+set -l root (realpath (dirname (status filename))/..)
+set -l store $root/oracle/fixtures
+set -l parts presets/local/next-layer-custom presets/user
+
+set -l data_root $HOME/.local/share
+if set -q XDG_DATA_HOME
+    set data_root $XDG_DATA_HOME
+end
+set -l live $data_root/next-layer
+set -l backups $live/fixture-backups
+
+function __usage
+    printf '%s\n' \
+        'usage: tools/fixtures <command> [name]' \
+        '' \
+        '  list                saved fixtures' \
+        '  where               the live preset directory' \
+        '  save NAME           snapshot the live presets as NAME' \
+        '  diff NAME           differences between live and NAME' \
+        '  restore NAME --yes  replace the live presets with NAME'
+end
+
+function __exists --argument-names store name
+    test -d $store/$name
+end
+
+function __count --argument-names dir
+    set -l n (find $dir -type f -not -name INFO 2>/dev/null | count)
+    echo $n
+end
+
+set -l command $argv[1]
+set -l name $argv[2]
+
+switch $command
+    case list
+        if not test -d $store
+            echo "no fixtures yet: $store does not exist"
+            exit 0
+        end
+        set -l found 0
+        for dir in $store/*
+            if not test -d $dir
+                continue
+            end
+            set found (math $found + 1)
+            set -l label (path basename $dir)
+            set -l info (grep -h '^saved\|^files' $dir/INFO 2>/dev/null | string join ', ')
+            printf '  %-24s %s file(s)  %s\n' $label (__count $dir) "$info"
+        end
+        if test $found -eq 0
+            echo 'no fixtures saved'
+        end
+
+    case where
+        echo "live presets: $live"
+        if test -d $live/presets
+            for part in $parts
+                printf '  %-40s %s file(s)\n' $part (__count $live/$part)
+            end
+        else
+            echo '  (nothing there yet: the app creates it on first run)'
+        end
+
+    case save
+        if test -z "$name"
+            echo 'save needs a name: tools/fixtures save NAME' >&2
+            exit 2
+        end
+        if __exists $store $name
+            echo "fixture $name already exists: rename it or delete $store/$name" >&2
+            exit 2
+        end
+        set -l copied 0
+        for part in $parts
+            if test -d $live/$part
+                mkdir -p (path dirname $store/$name/$part)
+                cp -a $live/$part $store/$name/(path dirname $part)
+                set copied (math $copied + (__count $live/$part))
+            end
+        end
+        if test $copied -eq 0
+            echo "nothing to save: no presets under $live" >&2
+            rm -rf $store/$name
+            exit 1
+        end
+        printf 'saved %s\nfiles %s\n' (date '+%Y-%m-%d %H:%M') $copied >$store/$name/INFO
+        echo "fixture $name saved: $copied file(s) in $store/$name"
+
+    case diff
+        if test -z "$name"; or not __exists $store $name
+            echo "no fixture named '$name': tools/fixtures list" >&2
+            exit 2
+        end
+        set -l differences 0
+        for part in $parts
+            if test -d $store/$name/$part; and not test -d $live/$part
+                echo "  live/$part is missing entirely"
+                set differences (math $differences + 1)
+                continue
+            end
+            set -l out (diff -rq $store/$name/$part $live/$part 2>&1)
+            if test (count $out) -gt 0
+                for line in $out
+                    echo "  $line"
+                end
+                set differences (math $differences + (count $out))
+            end
+        end
+        if test $differences -eq 0
+            echo "live presets match fixture $name"
+        else
+            echo "$differences difference(s) between fixture $name and the live presets"
+            exit 1
+        end
+
+    case restore
+        if test -z "$name"; or not __exists $store $name
+            echo "no fixture named '$name': tools/fixtures list" >&2
+            exit 2
+        end
+        set -l confirmed 0
+        for arg in $argv[3..]
+            if test "$arg" = --yes
+                set confirmed 1
+            end
+        end
+        if test $confirmed -eq 0
+            echo "restore replaces the live presets under $live" >&2
+            echo "re-run with --yes once that is what you want: tools/fixtures restore $name --yes" >&2
+            exit 2
+        end
+        set -l stamp (date +%Y%m%d-%H%M%S)
+        set -l saved (math 0 + (__count $live/presets/local/next-layer-custom) + (__count $live/presets/user))
+        if test $saved -gt 0
+            mkdir -p $backups
+            for part in $parts
+                if test -d $live/$part
+                    mkdir -p $backups/$stamp/(path dirname $part)
+                    cp -a $live/$part $backups/$stamp/(path dirname $part)
+                end
+            end
+            echo "current presets backed up to $backups/$stamp"
+        end
+        set -l restored 0
+        for part in $parts
+            if test -d $store/$name/$part
+                rm -rf $live/$part
+                mkdir -p (path dirname $live/$part)
+                cp -a $store/$name/$part $live/(path dirname $part)
+                set restored (math $restored + (__count $store/$name/$part))
+            else
+                rm -rf $live/$part
+            end
+        end
+        echo "fixture $name restored: $restored file(s) in $live/presets"
+        echo 'restart the app so it re-reads the presets'
+
+    case --help -h help
+        __usage
+        exit 0
+
+    case ''
+        __usage
+        exit 2
+
+    case '*'
+        echo "tools/fixtures: unknown command: $command" >&2
+        __usage
+        exit 2
+end

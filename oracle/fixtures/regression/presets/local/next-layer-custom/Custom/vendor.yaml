@@ -1,0 +1,46 @@
+kind: vendor
+id: Custom
+name: Custom
+version: 1.0.0
+features:
+  printer: {}
+  tool: {}
+  feeder: {}
+  sheet: {}
+printer_families:
+- label: 'Voron 2.4 350'
+  base_model: NL_voron-2-4-350
+---
+kind: tool
+technology: FFF
+id: '0.4'
+name: '0.4'
+features:
+  nozzle_diameter:
+    default: 0.4
+---
+kind: sheet
+id: pei_smooth
+name: PEI Smooth
+type: pei_smooth
+---
+kind: printer
+technology: FFF
+name: 'Voron 2.4 350'
+id: NL_voron-2-4-350
+model:
+  base_model: NL_voron-2-4-350
+  model: NL_voron-2-4-350_MODEL
+tool_count: 1
+features: {}
+---
+kind: printer_config
+id: nl-voron-2-4-350
+name: 'Voron 2.4 350'
+printer: NL_voron-2-4-350
+legacy_printer_model:
+- 'Voron 2.4 350'
+tool_count: 1
+tools:
+- tool: '0.4'
+sheet: pei_smooth

@@ -1,0 +1,8 @@
+kind: print
+id: 2bbfcb26-48ef-4bd1-915b-6739c0cfabf1
+name: '2'
+inherits:
+- 'ea576af8-1b32-49a3-b57e-cf40073a2ca9'
+values:
+  layer_height: 0.25
+  perimeters: 7

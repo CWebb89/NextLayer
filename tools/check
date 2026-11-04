@@ -1,0 +1,268 @@
+#!/usr/bin/env fish
+# One command that answers "is this still good?".
+#
+#   tools/check                 everything, ~1 minute
+#   tools/check --fast          skip the oracle (the slow, byte-exact half)
+#   tools/check --ui            also open a real window, click, and capture it
+#   tools/check --update-qmllint-baseline
+#                               accept the current qmllint warnings as known
+#
+# Every gate reads its verdict out of the tool's own output rather than its exit
+# code alone: a coverage figure, a setting count, a match count, a layer count.
+# A gate that cannot measure its subject fails.
+#
+# Nothing here builds. A binary older than its sources fails the first gate and
+# names the files, because a green run against a stale binary is a lie.
+
+set -l root (realpath (dirname (status filename))/..)
+set -l bin $root/upstream/build/src/slic3r-app-qt/next-layer-qt
+set -l model $root/oracle/models/cube_20.stl
+set -l qml $root/upstream/src/slic3r-app-qt/qml
+set -l code $root/upstream/src/slic3r-app-qt/src
+set -l spike $root/upstream/src/slic3r-app-spike
+set -l baseline $root/tools/qmllint-baseline
+
+set -g passed 0
+set -g failed 0
+set -g failures
+
+set -l fast 0
+set -l ui 0
+set -l update 0
+
+for arg in $argv
+    switch $arg
+        case --fast
+            set fast 1
+        case --ui
+            set ui 1
+        case --update-qmllint-baseline
+            set update 1
+        case -h --help
+            printf '%s\n' \
+                'usage: tools/check [--fast] [--ui] [--update-qmllint-baseline]' \
+                '' \
+                '  --fast                      skip oracle verify (the slow, byte-exact check)' \
+                '  --ui                        also drive a real window and capture it' \
+                '  --update-qmllint-baseline   accept the current qmllint warnings as known' \
+                '' \
+                'Run this after any change. It does not build: build first, then check.'
+            exit 0
+        case '*'
+            echo "tools/check: unknown argument: $arg" >&2
+            exit 2
+    end
+end
+
+function __ok --argument-names text
+    printf '  ok    %s\n' $text
+    set -g passed (math $passed + 1)
+end
+
+function __bad --argument-names text
+    printf '  FAIL  %s\n' $text
+    set -g failed (math $failed + 1)
+    set -g failures $failures $text
+end
+
+function __skip --argument-names text
+    printf '  skip  %s\n' $text
+end
+
+echo 'next-layer check'
+
+set -l ready 1
+if not test -x $bin
+    __bad "no binary at $bin — build it first"
+    set ready 0
+else
+    set -l newer (find $code $qml $spike -type f -newer $bin -not -path '*/.git/*' 2>/dev/null)
+    if test (count $newer) -gt 0
+        __bad "binary is stale: "(count $newer)" source file(s) newer than it, e.g. "(string join ' ' (path basename -- $newer[1..3]))
+        set ready 0
+    else
+        __ok 'binary is current'
+    end
+end
+
+if test $ready -eq 0
+    echo
+    echo 'not running the rest: the binary cannot be trusted'
+    exit 1
+end
+
+pushd $root/upstream/src/slic3r-app-qt >/dev/null
+set -l qmlfiles (find qml -name '*.qml')
+set -l lint (qmllint --unqualified disable $qmlfiles 2>&1)
+popd >/dev/null
+set -l warnings (string match --entire --regex '^Warning: ' -- $lint)
+
+set -l keys
+for line in $warnings
+    set -l code_match (string match -r '\[([A-Za-z0-9._-]+)\]\s*$' -- $line)
+    set -l file_match (string match -r '^Warning: ([^ :]+\.qml)' -- $line)
+    set -l key 'no-file'
+    if set -q file_match[2]
+        set key $file_match[2]
+    end
+    set -l category unknown
+    if set -q code_match[2]
+        set category $code_match[2]
+    end
+    set -a keys "$key::$category"
+end
+
+set -l actual
+if test (count $keys) -gt 0
+    set actual (printf '%s\n' $keys | sort -u)
+end
+
+if test $update -eq 1
+    printf '%s\n' '# qmllint warnings that are known and accepted, as <file>::<category>.' \
+        '# [unqualified] is disabled in tools/check: the QML reads C++ context' \
+        '# properties that qmllint cannot resolve. Regenerate with' \
+        '#   tools/check --update-qmllint-baseline' >$baseline
+    if test (count $actual) -gt 0
+        printf '%s\n' $actual >>$baseline
+    end
+    __ok "qmllint baseline rewritten: "(count $actual)" known warning kind(s)"
+else if not test -f $baseline
+    __bad "no qmllint baseline at $baseline — create it with tools/check --update-qmllint-baseline"
+else
+    set -l expected (grep -v -e '^#' -e '^$' $baseline | sort -u)
+    set -l new_kinds
+    for key in $actual
+        if not contains -- $key $expected
+            set -a new_kinds $key
+        end
+    end
+    set -l gone
+    for key in $expected
+        if not contains -- $key $actual
+            set -a gone $key
+        end
+    end
+    if test (count $new_kinds) -gt 0
+        __bad "qmllint: "(count $warnings)" warning(s), "(count $new_kinds)" new kind(s): "(string join ', ' $new_kinds)
+    else if test (count $gone) -gt 0
+        __ok "qmllint: "(count $warnings)" warning(s), no new kinds ("(count $gone)" listed kind(s) gone, prune the baseline)"
+    else
+        __ok "qmllint: "(count $warnings)" warning(s), all known"
+    end
+end
+
+set -l tabs_out ($bin $model --dump-tabs 2>&1)
+set -l tabs_rc $status
+set -l tally (printf '%s\n' $tabs_out | awk '
+    /^[a-z]+ ".*": [0-9]+ sub-tabs, [0-9]+ settings$/ {
+        tabs++
+        split($0, field, ", ")
+        sub(/ settings$/, "", field[2])
+        sum += field[2]
+    }
+    /^total: / { gsub(/[^0-9]/, ""); total = $0 }
+    END { print tabs + 0, sum + 0, total + 0 }')
+set -l tally_parts (string split ' ' -- $tally)
+set -l tab_count $tally_parts[1]
+set -l tab_sum $tally_parts[2]
+set -l tab_total $tally_parts[3]
+if test $tabs_rc -ne 0
+    __bad "--dump-tabs exited $tabs_rc"
+else if test $tab_count -ne 3
+    __bad "settings tabs: expected 3, saw $tab_count"
+else if test $tab_sum -ne $tab_total
+    __bad "settings count does not add up: sub-tabs sum to $tab_sum, total says $tab_total"
+else if test $tab_total -lt 300
+    __bad "settings model lost settings: $tab_total (expected at least 300)"
+else
+    __ok "settings: $tab_count tabs, $tab_total settings"
+end
+
+set -l slice_out ($bin $model --selftest-slice 2>&1)
+set -l slice_rc $status
+set -l slice_match (string match -r 'slice finished in (\d+) ms: (\d+) layers, (\d+) moves' -- $slice_out)
+if test $slice_rc -ne 0
+    __bad "--selftest-slice exited $slice_rc"", see: "(string join ' ' (string match -r '^slice .*|error.*' -- $slice_out | head -n 3))
+else if not set -q slice_match[3]
+    __bad '--selftest-slice printed no layer count'
+else if test $slice_match[3] -lt 100
+    __bad "slice produced only $slice_match[3] layers (expected at least 100)"
+else if test $slice_match[4] -lt 1
+    __bad 'slice produced no moves'
+else
+    __ok "slice: $slice_match[3] layers, $slice_match[4] moves in $slice_match[2] ms"
+end
+set -l integrity_out (python3 $root/oracle/baseline_check.py 2>&1)
+set -l integrity_rc $status
+set -l integrity_tally (string match -r '(\d+)/(\d+) baseline files match the manifest' -- $integrity_out)
+if test $integrity_rc -eq 0 -a (count $integrity_tally) -gt 0 -a "$integrity_tally[2]" = "$integrity_tally[3]"
+    __ok "oracle baselines: $integrity_tally[2]/$integrity_tally[3] G-code files match the manifest"
+else
+    __bad "oracle baselines drifted from the manifest (python3 oracle/baseline_check.py): "(string join ' ' (string match -r '^  .*' -- $integrity_out | head -n 2))
+end
+
+if test $fast -eq 1
+    __skip 'oracle verify (--fast)'
+else
+    set -l oracle_out (python3 $root/oracle/oracle.py verify --runner qt --bin $bin 2>&1)
+    set -l oracle_rc $status
+    set -l oracle_match (string match -r '(\d+)/(\d+) match baseline' -- $oracle_out)
+    if test $oracle_rc -eq 0 -a (count $oracle_match) -gt 0 -a "$oracle_match[2]" = "$oracle_match[3]"
+        __ok "oracle: $oracle_match[2]/$oracle_match[3] byte-identical to the baseline"
+    else if test (count $oracle_match) -gt 0
+        __bad "oracle: $oracle_match[2]/$oracle_match[3] match the baseline (see python3 oracle/oracle.py verify --runner qt)"
+    else
+        __bad "oracle: no verdict, exit $oracle_rc"", see: "(string join ' ' (string match -r '^.*[Tt]raceback.*|^[A-Za-z]*Error.*' -- $oracle_out | head -n 2))
+    end
+end
+
+set -l shot /tmp/nl-check-model.png
+set -l smoke_out (env QT_QPA_PLATFORM=eglfs QT_ASSUME_STDERR_HAS_CONSOLE=1 $bin $model --smoke --shot $shot 2>&1)
+set -l smoke_rc $status
+set -l smoke_match (string match -r 'frame (\d+)x(\d+), covered ([\d.]+)%' -- $smoke_out)
+if test $smoke_rc -ne 0
+    __bad "--smoke exited $smoke_rc"", see: "(string join ' ' (string match -r '^(smoke|error|qt\.).*' -- $smoke_out | head -n 3))
+else if not set -q smoke_match[4]
+    __bad '--smoke printed no coverage figure: the frame was never measured'
+else if test (math "$smoke_match[4] - 50") -lt 0
+    __bad "headless frame only $smoke_match[4]% covered: the scene did not render"
+else
+    __ok "headless frame: $smoke_match[4]% covered, $smoke_match[2]x$smoke_match[3] ($shot)"
+end
+
+if test $ui -eq 1
+    set -l cockpit $root/tools/cockpit/cockpit
+    set -l ui_shot /tmp/nl-check-ui.png
+    set -l start_out ($cockpit start next-layer --model $model 2>&1)
+    if test $status -ne 0
+        __bad "cockpit start: $start_out"
+    else
+        $cockpit shot $ui_shot >/dev/null 2>&1
+        set -l label_out ($cockpit find-text 'Slice' 2>&1)
+        set -l label_rc $status
+        set -l size 0
+        if test -f $ui_shot
+            set size (stat -c %s $ui_shot)
+        end
+        if test $label_rc -ne 0
+            __bad "window: no 'Slice' control on screen ($ui_shot)"
+        else if test $size -lt 20000
+            __bad "window: capture is blank ($size bytes, $ui_shot)"
+        else
+            __ok "window: Slice control found, frame captured ($ui_shot)"
+        end
+        $cockpit stop >/dev/null 2>&1
+    end
+end
+
+echo
+set -l total (math $passed + $failed)
+if test $failed -eq 0
+    echo "$passed/$total gates passed"
+    exit 0
+end
+echo "$passed/$total gates passed, $failed FAILED:"
+for failure in $failures
+    echo "  - $failure"
+end
+exit 1

@@ -1,0 +1,9 @@
+# qmllint warnings that are known and accepted, as <file>::<category>.
+# [unqualified] is disabled in tools/check: the QML reads C++ context
+# properties that qmllint cannot resolve. Regenerate with
+#   tools/check --update-qmllint-baseline
+no-file::import
+qml/theme/Metrics.qml::import
+qml/theme/Type.qml::import
+qml/views/FooterBar.qml::import
+qml/views/PreviewLegend.qml::Quick.layout-positioning
