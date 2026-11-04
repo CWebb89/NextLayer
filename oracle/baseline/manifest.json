@@ -1,0 +1,164 @@
+{
+  "label": "prusaslicer-3.0.0-alpha12",
+  "binary": "/home/cwebb/dev/next-layer/upstream/build/src/slic3r-app-qt/next-layer-qt",
+  "cases": {
+    "cube_default": {
+      "model": "cube_20.stl",
+      "settings": {},
+      "sha256": "b9daede2c6698d7110b2c5d287b46b3e54f2eb8125296c16fb4e9bc5808447b6",
+      "stats": {
+        "lines": 9682,
+        "extrusions": 4421,
+        "layers": 100,
+        "filament_mm": "1262.15"
+      }
+    },
+    "cube_fine_0p10": {
+      "model": "cube_20.stl",
+      "settings": {
+        "layer_height": 0.1
+      },
+      "sha256": "1c6212a986d38aaf6c3154b568defdab6a5c07169c68b8b55f70715f6aa2afcd",
+      "stats": {
+        "lines": 17557,
+        "extrusions": 8418,
+        "layers": 199,
+        "filament_mm": "1237.96"
+      }
+    },
+    "cube_coarse_0p30": {
+      "model": "cube_20.stl",
+      "settings": {
+        "layer_height": 0.3
+      },
+      "sha256": "d9f30d6facaa2c42db56e9b9ec58379317b0a9abe3c29b24f1b1d15cb713e406",
+      "stats": {
+        "lines": 6756,
+        "extrusions": 3069,
+        "layers": 67,
+        "filament_mm": "1316.48"
+      }
+    },
+    "cube_infill_40": {
+      "model": "cube_20.stl",
+      "settings": {
+        "fill_density": {
+          "value": 40.0,
+          "is_percent": true
+        }
+      },
+      "sha256": "8c5cc9c940c8b906ad2152e162b3badfda69bee5c9cfe11b5c286035a9369895",
+      "stats": {
+        "lines": 12597,
+        "extrusions": 7339,
+        "layers": 100,
+        "filament_mm": "1877.66"
+      }
+    },
+    "cube_single_perimeter": {
+      "model": "cube_20.stl",
+      "settings": {
+        "perimeters": 1,
+        "fill_density": {
+          "value": 0.0,
+          "is_percent": true
+        }
+      },
+      "sha256": "a98fb580089793cd3d3e95891bebb89583e1ff6f2657c962da2cd65b7b4fc2cc",
+      "stats": {
+        "lines": 5127,
+        "extrusions": 1663,
+        "layers": 100,
+        "filament_mm": "542.87"
+      }
+    },
+    "cylinder_default": {
+      "model": "cylinder_r10_h20.stl",
+      "settings": {},
+      "sha256": "e81bdfb2ebc3017dbc9d71a907d99dc5542fae4e9c66225ba6db5b33c1b9ebd0",
+      "stats": {
+        "lines": 8146,
+        "extrusions": 2053,
+        "layers": 100,
+        "filament_mm": "975.46"
+      }
+    },
+    "sphere_supports": {
+      "model": "sphere_r12.stl",
+      "settings": {
+        "support_material": "everywhere"
+      },
+      "sha256": "e6c6313a0eebd772dffd5590326eebf7fd0c6a30b573e412db512969c7f579c2",
+      "stats": {
+        "lines": 20873,
+        "extrusions": 8599,
+        "layers": 120,
+        "filament_mm": "1114.82"
+      }
+    },
+    "sphere_default": {
+      "model": "sphere_r12.stl",
+      "settings": {},
+      "sha256": "1fbf8c140e6afe699f71f867396f6f10ca43e5c0d2bdceea3452fa7dba27f5f5",
+      "stats": {
+        "lines": 19374,
+        "extrusions": 7617,
+        "layers": 120,
+        "filament_mm": "1061.44"
+      }
+    },
+    "sphere_seam_nearest": {
+      "model": "sphere_r12.stl",
+      "settings": {
+        "seam_position": "nearest"
+      },
+      "sha256": "09eb7028335762c8601f2eae911ea34e046840755de32097bc86b39c0b537eff",
+      "stats": {
+        "lines": 19607,
+        "extrusions": 7597,
+        "layers": 120,
+        "filament_mm": "1061.45"
+      }
+    },
+    "bridge_default": {
+      "model": "bridge_30.stl",
+      "settings": {},
+      "sha256": "97102f855f489bdba82dec0f51fd38538ce488ffa949f80f657d52a1800bc706",
+      "stats": {
+        "lines": 13952,
+        "extrusions": 6172,
+        "layers": 125,
+        "filament_mm": "905.41"
+      }
+    },
+    "bridge_supports": {
+      "model": "bridge_30.stl",
+      "settings": {
+        "support_material": "everywhere"
+      },
+      "sha256": "d85fcaaaae3543e3f6ed23ac64bc30b1e335f9b6a2499022e6378cf4efd56841",
+      "stats": {
+        "lines": 15829,
+        "extrusions": 7154,
+        "layers": 156,
+        "filament_mm": "1199.46"
+      }
+    },
+    "mk4_speed_pla": {
+      "model": "cube_20.stl",
+      "settings": {},
+      "sha256": "cd4f714fcba755172148d3f3aaa6b77b6cd068197b2ac3697e5d7b62f7ceabef",
+      "stats": {
+        "lines": 9179,
+        "extrusions": 4421,
+        "layers": 100,
+        "filament_mm": "1264.15"
+      },
+      "preset": {
+        "printer": "Prusa MK4 0.4",
+        "process": "0.20mm SPEED @MK4 0.4",
+        "filament": "Prusament PLA @MK4 0.4"
+      }
+    }
+  }
+}

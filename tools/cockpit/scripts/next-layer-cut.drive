@@ -1,0 +1,15 @@
+# Slice, switch to the preview, drag the layer slider down, and capture the cut.
+# Run with the app already started:
+#   cockpit start next-layer --model oracle/models/cube_20.stl
+#   cockpit run tools/cockpit/scripts/next-layer-cut.drive
+
+shot /tmp/cockpit-cut-0-model.png
+click-text "Slice plate"
+sleep 8
+shot /tmp/cockpit-cut-1-sliced.png
+drag 1905 267 1905 600
+sleep 1
+shot /tmp/cockpit-cut-2-layers.png
+click-text "RANGE"
+sleep 1
+shot /tmp/cockpit-cut-3-mode.png

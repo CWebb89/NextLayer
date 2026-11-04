@@ -1,0 +1,11 @@
+CompileFlags:
+  CompilationDatabase: upstream/build
+
+Index:
+  Background: Skip
+
+---
+If:
+  PathMatch: src/slic3r-app-qt/.*
+Index:
+  Background: Build

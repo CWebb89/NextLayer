@@ -1,0 +1,824 @@
+#!/usr/bin/env python3
+"""cockpit: drive a GUI app on its own Hyprland workspace.
+
+The point of this tool is to make a real window controllable from a shell, so
+that a change can be seen instead of guessed at. It puts the app alone on an
+unused workspace, keeps a session record, and then moves the pointer with
+Hyprland's own dispatcher, sends buttons and keys through a virtual input device
+on /dev/uinput, and captures the workspace through `shot`.
+
+    cockpit start next-layer --model oracle/models/cube_20.stl
+    cockpit shot /tmp/state.png
+    cockpit click 721 340
+    cockpit drag 700 600 700 300
+    cockpit key Escape
+    cockpit stop
+
+Coordinates on the command line are pixels inside the app window, measured from
+its top-left corner, so they do not move when the window is placed elsewhere.
+`cockpit windows` prints the window geometry that conversion uses.
+
+Everything that touches the compositor goes through hyprctl, whose Lua bridge
+takes a single Lua expression, and every capture goes through `shot` so the
+empty-workspace rule holds.
+"""
+
+from __future__ import annotations
+
+import argparse
+import difflib
+import fcntl
+import json
+import os
+import shlex
+import shutil
+import struct
+import subprocess
+import sys
+import time
+
+STATE_DIR = "/tmp/cockpit"
+INPUT_CODES = "/usr/include/linux/input-event-codes.h"
+
+# ---------------------------------------------------------------- hyprland ---
+
+
+def hypr(*args: str) -> str:
+    result = subprocess.run(["hyprctl", *args], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"hyprctl {' '.join(args)}: {result.stderr.strip()}")
+    return result.stdout
+
+
+def hypr_json(*args: str):
+    return json.loads(hypr(*args))
+
+
+def workspaces() -> list[dict]:
+    return json.loads(hypr("-j", "workspaces"))
+
+
+def clients() -> list[dict]:
+    # hyprctl pretty-prints its JSON; json.loads does not care.
+    return json.loads(hypr("-j", "clients"))
+
+
+def active_workspace() -> int:
+    return json.loads(hypr("-j", "activeworkspace"))["id"]
+
+
+def focus_workspace(workspace: int) -> None:
+    hypr("dispatch", f'hl.dsp.focus({{workspace="{workspace}"}})')
+
+
+def move_cursor(x: int, y: int) -> None:
+    hypr("dispatch", f"hl.dsp.cursor.move({{x={int(x)},y={int(y)}}})")
+
+
+def cursor_position() -> tuple[int, int]:
+    text = hypr("cursorpos")
+    x, y = text.strip().split(",")
+    return int(x), int(y)
+
+
+def free_workspace() -> int:
+    used = {workspace["id"] for workspace in workspaces() if workspace["id"] > 0}
+    candidate = max(used, default=1) + 1
+    while any(client["workspace"]["id"] == candidate for client in clients()):
+        candidate += 1
+    return candidate
+
+
+def spawn(command: str) -> None:
+    escaped = command.replace("\\", "\\\\").replace('"', '\\"')
+    hypr("dispatch", f'hl.dsp.exec_cmd("{escaped}")')
+
+
+# ------------------------------------------------------------------ uinput ---
+
+EV_SYN, EV_KEY, EV_REL = 0x00, 0x01, 0x02
+BUS_USB = 0x03
+UI_DEV_CREATE, UI_DEV_DESTROY = 0x5501, 0x5502
+UI_SET_EVBIT, UI_SET_KEYBIT, UI_SET_RELBIT = 0x40045564, 0x40045565, 0x40045566
+
+BUTTONS = {"left": 0x110, "right": 0x111, "middle": 0x112}
+WHEEL_VERTICAL, WHEEL_HORIZONTAL = 0x08, 0x06
+
+# Modifier name -> left-hand key code.
+MODIFIERS = {
+    "ctrl": 29,
+    "control": 29,
+    "shift": 42,
+    "alt": 56,
+    "super": 125,
+    "meta": 125,
+}
+
+# US layout, shifted and unshifted, for `cockpit type`.
+UNSHIFTED = {
+    " ": 57, "-": 12, "=": 13, "[": 26, "]": 27, "\\": 43, ";": 39, "'": 40,
+    ",": 51, ".": 52, "/": 53, "`": 41, "0": 11, "1": 2, "2": 3, "3": 4, "4": 5,
+    "5": 6, "6": 7, "7": 8, "8": 9, "9": 10, "\n": 28, "\t": 15,
+}
+SHIFTED = {
+    "!": 2, "@": 3, "#": 4, "$": 5, "%": 6, "^": 7, "&": 8, "*": 9, "(": 10,
+    ")": 11, "_": 12, "+": 13, "{": 26, "}": 27, "|": 43, ":": 39, '"': 40,
+    "<": 51, ">": 52, "?": 53, "~": 41,
+}
+
+
+def key_names() -> dict[str, int]:
+    """Map KEY_<NAME> from the kernel header, so names are never guessed."""
+    names: dict[str, int] = {}
+    try:
+        with open(INPUT_CODES, encoding="utf-8") as header:
+            for line in header:
+                if not line.startswith("#define KEY_"):
+                    continue
+                parts = line.split()
+                if len(parts) < 3:
+                    continue
+                try:
+                    names[parts[1][4:].lower()] = int(parts[2], 0)
+                except ValueError:
+                    continue
+    except FileNotFoundError:
+        pass
+    return names
+
+
+class Input:
+    """A throwaway virtual mouse+keyboard created for the length of one command."""
+
+    def __init__(self, name: str = "cockpit-input") -> None:
+        self.fd = os.open("/dev/uinput", os.O_WRONLY | os.O_NONBLOCK)
+        fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_KEY)
+        fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_REL)
+        fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_SYN)
+        for code in set(BUTTONS.values()) | set(MODIFIERS.values()) | set(UNSHIFTED.values()):
+            fcntl.ioctl(self.fd, UI_SET_KEYBIT, code)
+        for code in range(2, 128):
+            fcntl.ioctl(self.fd, UI_SET_KEYBIT, code)
+        for axis in (0x00, 0x01, WHEEL_VERTICAL, WHEEL_HORIZONTAL):
+            fcntl.ioctl(self.fd, UI_SET_RELBIT, axis)
+
+        device = struct.pack(
+            "80sHHHHi", name.encode(), BUS_USB, 0x1234, 0x5678, 1, 0
+        ) + struct.pack("64i", *([0] * 64)) * 4
+        os.write(self.fd, device)
+        fcntl.ioctl(self.fd, UI_DEV_CREATE)
+        time.sleep(0.06)
+
+    def _emit(self, kind: int, code: int, value: int) -> None:
+        os.write(self.fd, struct.pack("llHHi", 0, 0, kind, code, value))
+
+    def sync(self) -> None:
+        self._emit(EV_SYN, 0, 0)
+        time.sleep(0.012)
+
+    def key(self, code: int, value: int) -> None:
+        self._emit(EV_KEY, code, value)
+        self.sync()
+
+    def tap(self, code: int, modifiers: list[int] | None = None) -> None:
+        for modifier in modifiers or []:
+            self._emit(EV_KEY, modifier, 1)
+        self._emit(EV_KEY, code, 1)
+        self._emit(EV_KEY, code, 0)
+        for modifier in reversed(modifiers or []):
+            self._emit(EV_KEY, modifier, 0)
+        self.sync()
+
+    def relative(self, dx: int, dy: int) -> None:
+        while dx or dy:
+            step_x = max(-60, min(60, dx))
+            step_y = max(-60, min(60, dy))
+            dx -= step_x
+            dy -= step_y
+            if step_x:
+                self._emit(EV_REL, 0x00, step_x)
+            if step_y:
+                self._emit(EV_REL, 0x01, step_y)
+            self.sync()
+
+    def button(self, name: str, pressed: bool) -> None:
+        self._emit(EV_KEY, BUTTONS[name], 1 if pressed else 0)
+        self.sync()
+
+    def scroll(self, amount: int, horizontal: bool = False) -> None:
+        axis = WHEEL_HORIZONTAL if horizontal else WHEEL_VERTICAL
+        steps = amount if abs(amount) <= 12 else (12 if amount > 0 else -12)
+        self._emit(EV_REL, axis, steps)
+        self.sync()
+        remaining = amount - steps
+        if remaining:
+            self.scroll(remaining, horizontal)
+
+    def close(self) -> None:
+        try:
+            fcntl.ioctl(self.fd, UI_DEV_DESTROY)
+        finally:
+            os.close(self.fd)
+
+
+# ----------------------------------------------------------------- session ---
+
+
+def state_path(app: str) -> str:
+    return os.path.join(STATE_DIR, f"{app}.json")
+
+
+def load_state(app: str | None) -> dict:
+    if app is None:
+        raise SystemExit("cockpit: which session? pass --app or use a single running session")
+    path = state_path(app)
+    if not os.path.exists(path):
+        raise SystemExit(f"cockpit: no session for {app!r} (start one first)")
+    with open(path, encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def save_state(app: str, state: dict) -> None:
+    os.makedirs(STATE_DIR, exist_ok=True)
+    with open(state_path(app), "w", encoding="utf-8") as handle:
+        json.dump(state, handle, indent=2)
+
+
+def sessions() -> dict[str, dict]:
+    found: dict[str, dict] = {}
+    if not os.path.isdir(STATE_DIR):
+        return found
+    for entry in sorted(os.listdir(STATE_DIR)):
+        if not entry.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(STATE_DIR, entry), encoding="utf-8") as handle:
+                found[entry[:-5]] = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            continue
+    return found
+
+
+def window_of(state: dict) -> dict:
+    """The session's window, re-resolved by class on its workspace.
+
+    Addresses change: Orca replaces its window during start-up, and a fullscreen
+    toggle can remap it. The class on the session workspace is the stable key.
+    """
+    on_workspace = [client for client in clients() if client["workspace"]["id"] == state["ws"]]
+    for client in on_workspace:
+        if client.get("address") == state.get("address"):
+            return client
+    for client in on_workspace:
+        if state.get("class") and client.get("class") == state["class"]:
+            state["address"] = client["address"]
+            save_state(state["app"], state)
+            return client
+    if on_workspace:
+        state["address"] = on_workspace[0]["address"]
+        state["class"] = on_workspace[0].get("class", state.get("class", ""))
+        save_state(state["app"], state)
+        return on_workspace[0]
+    raise SystemExit("cockpit: the session window is gone; run `cockpit stop` then start again")
+
+
+def to_screen(state: dict, x: float, y: float) -> tuple[int, int]:
+    window = window_of(state)
+    left, top = window["at"]
+    width, height = window["size"]
+    if not (0 <= x <= width and 0 <= y <= height):
+        print(
+            f"cockpit: warning: ({x:g}, {y:g}) is outside the {width}x{height} window",
+            file=sys.stderr,
+        )
+    return int(left + x), int(top + y)
+
+
+# ---------------------------------------------------------------- commands ---
+
+
+def cmd_start(args: argparse.Namespace) -> int:
+    state = sessions().get(args.app)
+    if state is not None:
+        try:
+            window_of(state)
+            print(f"cockpit: {args.app} is already running on workspace {state['ws']}")
+            return 1
+        except SystemExit:
+            os.unlink(state_path(args.app))
+
+    workspace = args.workspace or free_workspace()
+    here = active_workspace()
+    focus_workspace(workspace)
+    time.sleep(0.25)
+
+    command = args.command or args.app
+    if args.model:
+        command = f"{command} {os.path.abspath(args.model)}"
+    spawn(command)
+
+    address = ""
+    deadline = time.monotonic() + args.wait
+    while time.monotonic() < deadline and not address:
+        time.sleep(0.4)
+        for client in clients():
+            if client["workspace"]["id"] == workspace:
+                address = client["address"]
+                break
+    if not address:
+        print(f"cockpit: nothing appeared on workspace {workspace} within {args.wait:g}s")
+        return 1
+
+    if not args.no_fullscreen:
+        hypr("dispatch", f'hl.dsp.window.fullscreen({{window="address:{address}"}})')
+        time.sleep(0.35)
+
+    # Qt swallows the click that activates a freshly mapped window, so the first
+    # scripted click would only raise it. Focus once here instead.
+    hypr("dispatch", f'hl.dsp.focus({{window="address:{address}"}})')
+    time.sleep(0.5)
+
+    state = {"app": args.app, "ws": workspace, "return_ws": here, "address": address,
+             "class": window_of({"app": args.app, "ws": workspace,
+                                  "address": address})["class"],
+             "command": command, "started": time.time()}
+    save_state(args.app, state)
+    window = window_of(state)
+    print(f"cockpit: {args.app} on workspace {workspace}, window {window['size'][0]}x"
+          f"{window['size'][1]} at {window['at'][0]},{window['at'][1]}")
+    return 0
+
+
+def cmd_stop(args: argparse.Namespace) -> int:
+    state = load_state(args.app)
+    try:
+        hypr("dispatch", f'hl.dsp.window.close({{window="address:{state["address"]}"}})')
+    except RuntimeError:
+        pass
+    deadline = time.monotonic() + 3.0
+    while time.monotonic() < deadline:
+        if not any(client["workspace"]["id"] == state["ws"] for client in clients()):
+            break
+        time.sleep(0.2)
+    os.unlink(state_path(args.app))
+    if state.get("return_ws"):
+        focus_workspace(state["return_ws"])
+    print(f"cockpit: stopped {args.app}")
+    return 0
+
+
+def cmd_status_args(_: argparse.Namespace) -> int:
+    found = sessions()
+    if not found:
+        print("cockpit: no sessions")
+        return 0
+    for name, state in found.items():
+        alive = any(client["address"] == state.get("address") for client in clients())
+        print(f"{name}: workspace {state['ws']}, {'running' if alive else 'gone'}, "
+              f"address {state.get('address')}")
+    return 0
+
+
+def cmd_windows(args: argparse.Namespace) -> int:
+    state = load_state(args.app)
+    for client in clients():
+        if client["workspace"]["id"] != state["ws"]:
+            continue
+        print(f"{client['address']} {client['class']!r} {client['title']!r} "
+              f"at {client['at'][0]},{client['at'][1]} size {client['size'][0]}x{client['size'][1]}")
+    return 0
+
+
+def cmd_focus(args: argparse.Namespace) -> int:
+    state = load_state(args.app)
+    focus_workspace(state["ws"])
+    time.sleep(0.2)
+    hypr("dispatch", f'hl.dsp.focus({{window="address:{state["address"]}"}})')
+    return 0
+
+
+def cmd_shot(args: argparse.Namespace) -> int:
+    state = load_state(args.app)
+    out = os.path.abspath(args.out)
+    subprocess.run(["shot", "onws", str(state["ws"]), out, *args.grim], check=True)
+    print(out)
+    return 0
+
+
+def cmd_move(args: argparse.Namespace) -> int:
+    state = load_state(args.app)
+    move_cursor(*to_screen(state, args.x, args.y))
+    return 0
+
+
+def capture(args: argparse.Namespace) -> str:
+    state = load_state(args.app)
+    out = os.path.join(STATE_DIR, f"{args.app}.png")
+    os.makedirs(STATE_DIR, exist_ok=True)
+    subprocess.run(["shot", "onws", str(state["ws"]), out], check=True,
+                   capture_output=True)
+    return out
+
+
+def _ocr_pass(png: str, scale: float, psm: str = "3") -> list[dict]:
+    result = subprocess.run(["tesseract", png, "stdout", "tsv", "--psm", psm],
+                            capture_output=True, text=True)
+    words: list[dict] = []
+    lines = result.stdout.splitlines()
+    if not lines:
+        return words
+    header = lines[0].split("\t")
+    for line in lines[1:]:
+        fields = line.split("\t")
+        if len(fields) != len(header):
+            continue
+        row = dict(zip(header, fields))
+        text = row.get("text", "").strip()
+        if not text or float(row.get("conf", 0)) < 0:
+            continue
+        words.append({"text": text,
+                      "x": int(int(row["left"]) * scale), "y": int(int(row["top"]) * scale),
+                      "w": int(int(row["width"]) * scale), "h": int(int(row["height"]) * scale),
+                      "conf": float(row["conf"])})
+    return words
+
+
+def ocr_passes(png: str) -> list[list[dict]]:
+    """OCR runs kept separate, best-suited first.
+
+    Dark-theme text reads best raw; a light toolbar on a dark background needs an
+    inverted enlargement, and small glyphs need tesseract's sparse-text mode.
+    Merging the runs would break line grouping, so they stay apart.
+    """
+    passes = [_ocr_pass(png, 1.0)]
+    if not shutil.which("magick"):
+        return passes
+    prepared = os.path.join(STATE_DIR, "ocr-prepared.png")
+    subprocess.run(["magick", png, "-colorspace", "gray", "-negate", "-resize", "300%",
+                    prepared], check=True, capture_output=True)
+    passes.append(_ocr_pass(prepared, 1 / 3, "11"))
+    return passes
+
+
+def ocr_words(png: str) -> list[dict]:
+    words: list[dict] = []
+    for run in ocr_passes(png):
+        words.extend(run)
+    return words
+
+
+def best_matches(png: str, query: str) -> list[dict]:
+    for words in ocr_passes(png):
+        matches = find_matches(words, query)
+        if matches:
+            return matches
+    return []
+
+
+def find_matches(words: list[dict], query: str) -> list[dict]:
+    """Locate a label on screen, tolerating the way OCR splits phrases into words.
+
+    A query matches a run of consecutive words on one line once spaces are
+    ignored, so "Slice plate" is found even though OCR reports two words.
+    """
+    lines: list[list[dict]] = []
+    for word in sorted(words, key=lambda item: (item["y"], item["x"])):
+        if lines and abs(word["y"] - lines[-1][0]["y"]) <= 6:
+            lines[-1].append(word)
+        else:
+            lines.append([word])
+
+    wanted = "".join(query.lower().split())
+    matches: list[dict] = []
+    for line in lines:
+        line.sort(key=lambda item: item["x"])
+        joined = "".join(word["text"].lower() for word in line)
+        start = joined.find(wanted)
+        while start >= 0:
+            offset = 0
+            chosen: list[dict] = []
+            for word in line:
+                end = offset + len(word["text"])
+                if end > start and offset < start + len(wanted):
+                    chosen.append(word)
+                offset = end
+            if chosen:
+                matches.append(_box(chosen))
+            start = joined.find(wanted, start + 1)
+
+    if matches:
+        return matches
+
+    # OCR mangles small toolbar labels ("Slice plate" comes back as "sicepate"),
+    # so fall back to the closest run of words on one line.
+    best: tuple[float, list[dict]] | None = None
+    for line in lines:
+        for first in range(len(line)):
+            for last in range(first, len(line)):
+                candidate = "".join(word["text"].lower() for word in line[first:last + 1])
+                ratio = difflib.SequenceMatcher(None, wanted, candidate).ratio()
+                if ratio >= 0.7 and (best is None or ratio > best[0]):
+                    best = (ratio, line[first:last + 1])
+    if best is not None:
+        return [_box(best[1], best[0])]
+    return []
+
+
+def _box(chosen: list[dict], ratio: float | None = None) -> dict:
+    left = min(word["x"] for word in chosen)
+    top = min(word["y"] for word in chosen)
+    right = max(word["x"] + word["w"] for word in chosen)
+    bottom = max(word["y"] + word["h"] for word in chosen)
+    return {"text": " ".join(word["text"] for word in chosen), "x": left, "y": top,
+            "w": right - left, "h": bottom - top,
+            "conf": min(word["conf"] for word in chosen), "ratio": ratio}
+
+
+def window_relative(args: argparse.Namespace, matches: list[dict]) -> list[dict]:
+    """OCR boxes are in screen pixels; the CLI speaks window pixels."""
+    window = window_of(load_state(args.app))
+    left, top = window["at"]
+    for match in matches:
+        match["x"] -= left
+        match["y"] -= top
+    return matches
+
+
+def cmd_find_text(args: argparse.Namespace) -> int:
+    png = capture(args)
+    matches = best_matches(png, args.text)
+    if not matches:
+        print(f"cockpit: no text matching {args.text!r} on screen", file=sys.stderr)
+        for word in ocr_words(png)[:60]:
+            print(f"  {word['text']}", file=sys.stderr)
+        return 1
+    for index, match in enumerate(window_relative(args, matches)):
+        print(f"{index} {match['x'] + match['w'] // 2} {match['y'] + match['h'] // 2} "
+              f"{match['text']!r} conf {match['conf']:.0f}")
+    return 0
+
+
+def cmd_ocr(args: argparse.Namespace) -> int:
+    words = window_relative(args, ocr_words(capture(args)))
+    for word in sorted(words, key=lambda item: (item["y"], item["x"])):
+        print(f"{word['x']:4d} {word['y']:4d} {word['w']:3d} {word['h']:3d} "
+              f"{word['conf']:5.0f} {word['text']}")
+    return 0
+
+
+def cmd_click_text(args: argparse.Namespace) -> int:
+    matches = best_matches(capture(args), args.text)
+    if not matches:
+        print(f"cockpit: no text matching {args.text!r} on screen", file=sys.stderr)
+        return 1
+    matches = window_relative(args, matches)
+    if args.index >= len(matches):
+        print(f"cockpit: only {len(matches)} match(es) for {args.text!r}", file=sys.stderr)
+        return 1
+    match = matches[args.index]
+    args.x = match["x"] + match["w"] / 2
+    args.y = match["y"] + match["h"] / 2
+    print(f"cockpit: clicking {match['text']!r} at ({args.x:.0f}, {args.y:.0f})")
+    return cmd_click(args)
+
+
+def cmd_click(args: argparse.Namespace) -> int:
+    state = load_state(args.app)
+    screen = to_screen(state, args.x, args.y)
+    hypr("dispatch", f'hl.dsp.focus({{window="address:{state["address"]}"}})')
+    move_cursor(*screen)
+    time.sleep(args.settle)
+    device = Input()
+    try:
+        for _ in range(2 if args.double else 1):
+            device.button(args.button, True)
+            time.sleep(0.02)
+            device.button(args.button, False)
+            time.sleep(0.06)
+    finally:
+        device.close()
+    return 0
+
+
+def cmd_drag(args: argparse.Namespace) -> int:
+    state = load_state(args.app)
+    start = to_screen(state, args.x1, args.y1)
+    end = to_screen(state, args.x2, args.y2)
+    hypr("dispatch", f'hl.dsp.focus({{window="address:{state["address"]}"}})')
+    move_cursor(*start)
+    time.sleep(args.settle)
+    device = Input()
+    try:
+        device.button(args.button, True)
+        time.sleep(0.05)
+        for step in range(1, args.steps + 1):
+            x = start[0] + (end[0] - start[0]) * step // args.steps
+            y = start[1] + (end[1] - start[1]) * step // args.steps
+            move_cursor(x, y)
+            time.sleep(args.step_delay)
+        time.sleep(0.05)
+        device.button(args.button, False)
+    finally:
+        device.close()
+    return 0
+
+
+def cmd_scroll(args: argparse.Namespace) -> int:
+    state = load_state(args.app)
+    if args.x is not None and args.y is not None:
+        move_cursor(*to_screen(state, args.x, args.y))
+        time.sleep(0.05)
+    device = Input()
+    try:
+        device.scroll(args.amount, args.horizontal)
+    finally:
+        device.close()
+    return 0
+
+
+def cmd_key(args: argparse.Namespace) -> int:
+    names = key_names()
+    alias = {"escape": "esc", "return": "enter", "del": "delete", "pgup": "pageup"}
+    wanted = args.name.lower().lstrip("_")
+    code = names.get(alias.get(wanted, wanted))
+    if code is None:
+        raise SystemExit(f"cockpit: unknown key {args.name!r} (try `cockpit keys | grep {args.name.lower()}`)")
+    modifiers = [MODIFIERS[name] for name in args.modifier]
+    device = Input()
+    try:
+        for _ in range(args.times):
+            device.tap(code, modifiers)
+            time.sleep(args.interval)
+    finally:
+        device.close()
+    return 0
+
+
+def cmd_type(args: argparse.Namespace) -> int:
+    device = Input()
+    try:
+        for character in args.text:
+            if character in SHIFTED:
+                device.tap(SHIFTED[character], [MODIFIERS["shift"]])
+            elif character in UNSHIFTED:
+                device.tap(UNSHIFTED[character])
+            elif character.isalpha():
+                code = 30 + (ord(character.lower()) - ord("a"))
+                device.tap(code, [MODIFIERS["shift"]] if character.isupper() else [])
+            else:
+                raise SystemExit(f"cockpit: cannot type {character!r}")
+            time.sleep(args.interval)
+    finally:
+        device.close()
+    return 0
+
+
+def cmd_keys(_: argparse.Namespace) -> int:
+    for name, code in sorted(key_names().items()):
+        print(f"{name} {code}")
+    return 0
+
+
+def cmd_run(args: argparse.Namespace) -> int:
+    if args.app is None:
+        raise SystemExit("cockpit: `run` needs --app when more than one session is running")
+    if not os.path.exists(args.script):
+        raise SystemExit(f"cockpit: no script at {args.script}")
+    with open(args.script, encoding="utf-8") as handle:
+        lines = [line.split("#", 1)[0].strip() for line in handle]
+    for number, line in enumerate(lines, 1):
+        if not line:
+            continue
+        print(f"cockpit run {number}: {line}")
+        words = shlex.split(line)
+        if words[0] == "sleep":
+            time.sleep(float(words[1]))
+            continue
+        if words[0] == "shot":
+            subprocess.run(["shot", "onws", str(load_state(args.app)["ws"]),
+                            os.path.abspath(words[1]), *words[2:]], check=True)
+            continue
+        if main(["--app", args.app, *words], nested=True) != 0:
+            print(f"cockpit: script stopped at line {number}")
+            return 1
+    return 0
+
+
+# -------------------------------------------------------------------- main ---
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="cockpit", description=__doc__.splitlines()[0])
+    parser.add_argument("--app", help="session name (defaults to the only running one)")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    start = subparsers.add_parser("start", help="launch the app alone on an unused workspace")
+    start.add_argument("app")
+    start.add_argument("--command", default=None, help="binary to run (default: the app name)")
+    start.add_argument("--model", help="model file passed as the first argument")
+    start.add_argument("--workspace", type=int, help="use this workspace instead of a free one")
+    start.add_argument("--wait", type=float, default=25.0, help="seconds to wait for a window")
+    start.add_argument("--no-fullscreen", action="store_true")
+    start.set_defaults(func=cmd_start)
+
+    stop = subparsers.add_parser("stop", help="close the app and drop the session")
+    stop.set_defaults(func=cmd_stop)
+
+    status = subparsers.add_parser("status", help="list sessions")
+    status.set_defaults(func=cmd_status_args)
+
+    windows = subparsers.add_parser("windows", help="list windows on the session workspace")
+    windows.set_defaults(func=cmd_windows)
+
+    focus = subparsers.add_parser("focus", help="focus the app's window and workspace")
+    focus.set_defaults(func=cmd_focus)
+
+    shot = subparsers.add_parser("shot", help="capture the workspace to a PNG")
+    shot.add_argument("out")
+    shot.add_argument("grim", nargs="*", help="extra arguments for grim")
+    shot.set_defaults(func=cmd_shot)
+
+    move = subparsers.add_parser("move", help="move the pointer (window pixels)")
+    move.add_argument("x", type=float)
+    move.add_argument("y", type=float)
+    move.set_defaults(func=cmd_move)
+
+    click = subparsers.add_parser("click", help="click a point (window pixels)")
+    click.add_argument("x", type=float)
+    click.add_argument("y", type=float)
+    click.add_argument("--button", default="left", choices=sorted(BUTTONS))
+    click.add_argument("--double", action="store_true")
+    click.add_argument("--settle", type=float, default=0.08)
+    click.set_defaults(func=cmd_click)
+
+    drag = subparsers.add_parser("drag", help="press, move, release between two points")
+    drag.add_argument("x1", type=float)
+    drag.add_argument("y1", type=float)
+    drag.add_argument("x2", type=float)
+    drag.add_argument("y2", type=float)
+    drag.add_argument("--button", default="left", choices=sorted(BUTTONS))
+    drag.add_argument("--steps", type=int, default=12)
+    drag.add_argument("--settle", type=float, default=0.08)
+    drag.add_argument("--step-delay", type=float, default=0.02)
+    drag.set_defaults(func=cmd_drag)
+
+    scroll = subparsers.add_parser("scroll", help="scroll the wheel (positive is up)")
+    scroll.add_argument("amount", type=int)
+    scroll.add_argument("--x", type=float)
+    scroll.add_argument("--y", type=float)
+    scroll.add_argument("--horizontal", action="store_true")
+    scroll.set_defaults(func=cmd_scroll)
+
+    key = subparsers.add_parser("key", help="press a key by its KEY_<NAME> name")
+    key.add_argument("name")
+    key.add_argument("--modifier", action="append", default=[], choices=sorted(MODIFIERS))
+    key.add_argument("--times", type=int, default=1)
+    key.add_argument("--interval", type=float, default=0.05)
+    key.set_defaults(func=cmd_key)
+
+    keys = subparsers.add_parser("keys", help="list known key names")
+    keys.set_defaults(func=cmd_keys)
+
+    ocr = subparsers.add_parser("ocr", help="list every word on screen with its position")
+    ocr.set_defaults(func=cmd_ocr)
+
+    find_text = subparsers.add_parser("find-text", help="locate text on screen")
+    find_text.add_argument("text")
+    find_text.set_defaults(func=cmd_find_text)
+
+    click_text = subparsers.add_parser("click-text", help="click a label found on screen")
+    click_text.add_argument("text")
+    click_text.add_argument("--index", type=int, default=0)
+    click_text.add_argument("--button", default="left", choices=sorted(BUTTONS))
+    click_text.add_argument("--double", action="store_true")
+    click_text.add_argument("--settle", type=float, default=0.08)
+    click_text.set_defaults(func=cmd_click_text)
+
+    type_command = subparsers.add_parser("type", help="type text (US layout)")
+    type_command.add_argument("text")
+    type_command.add_argument("--interval", type=float, default=0.01)
+    type_command.set_defaults(func=cmd_type)
+
+    run = subparsers.add_parser("run", help="run a file of cockpit commands")
+    run.add_argument("script")
+    run.set_defaults(func=cmd_run)
+
+    return parser
+
+
+def main(argv: list[str] | None = None, nested: bool = False) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if not nested and getattr(args, "func", None) is not cmd_start and args.app is None:
+        running = sessions()
+        if len(running) == 1:
+            args.app = next(iter(running))
+    try:
+        return args.func(args)
+    except RuntimeError as error:
+        print(f"cockpit: {error}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

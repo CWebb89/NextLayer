@@ -1,0 +1,10 @@
+# Open a model in Orca and capture the prepare view. Coordinates are window
+# pixels; Orca's toolbar is at the top, its plate in the middle.
+#   cockpit start orca --command ~/.local/bin/orca-slicer --model oracle/models/cube_20.stl --wait 60
+#   cockpit run tools/cockpit/scripts/orca-open.drive
+
+shot /tmp/cockpit-orca-0.png
+# Tabs sit at y = 51: Prepare ~111, Preview ~247, Device ~400, Project ~520.
+click 111 51
+sleep 2
+shot /tmp/cockpit-orca-1-prepare.png
