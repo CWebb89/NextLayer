@@ -2,7 +2,7 @@
 id: plate-document-several-objects-per-object-transf-20261104-184014
 status: awaiting_approval
 created: 2026-11-04T18:40:14.975Z
-updated: 2026-11-04T18:40:14.975Z
+updated: 2026-11-04T19:18:04.965Z
 ---
 
 # Plate document: several objects, per-object transforms, save/load, undo
@@ -21,10 +21,12 @@ Replace the one-model-per-window session with a real document hosted on the engi
 
 ## Steps
 
-1. [ ] Spike the seam before building anything on it: add a `--scene-selftest` flag that stands up an in-process scene session, loads two STLs as separate objects on the bed, offsets one by 40 mm, slices, and prints object count, each object's position, and the G-code move count. This answers the one risky question — whether the engine's headless project/scene API runs inside our Qt app — and proves placement survives slicing.
+1. [x] Spike the seam before building anything on it: add a `--scene-selftest` flag that stands up an in-process scene session, loads two STLs as separate objects on the bed, offsets one by 40 mm, slices, and prints object count, each object's position, and the G-code move count. This answers the one risky question — whether the engine's headless project/scene API runs inside our Qt app — and proves placement survives slicing.
    - files: upstream/src/slic3r-app-qt/src/main.cpp, upstream/src/slic3r-app-qt/src/PlateDocument.hpp, upstream/src/slic3r-app-qt/src/PlateDocument.cpp
-2. [ ] Build the document model: PlateDocument owns the engine project (one bed, N objects), and exposes to QML an object list (id, name, path, position, rotation, scale, selected) with signals for add, remove, transform and selection. Session becomes a thin view over the document instead of its own single-path state.
+   - note: --scene-selftest: 2 objects on one bed, moved apart, sliced as one job (100 layers, 4791 moves left of X=145 / 4798 right). Oracle 12/12, tools/check 7/7. Two traps recorded: an undo provider must be installed or a finished arrange job asserts; load_models_to_project arranges asynchronously and clobbers placement.
+2. [x] Build the document model: PlateDocument owns the engine project (one bed, N objects), and exposes to QML an object list (id, name, path, position, rotation, scale, selected) with signals for add, remove, transform and selection. Session becomes a thin view over the document instead of its own single-path state.
    - files: upstream/src/slic3r-app-qt/src/PlateDocument.hpp, upstream/src/slic3r-app-qt/src/PlateDocument.cpp, upstream/src/slic3r-app-qt/src/Session.hpp, upstream/src/slic3r-app-qt/src/Session.cpp, upstream/src/slic3r-app-qt/src/main.cpp
+   - note: PlateDocument added: normalised geometry, per-object Transformation (offset/rotation/scale), shelf placement, duplicate/remove/select, aggregate bounds, baked world meshes and staged STLs. Session is now a view over it (hasModel/path/displayName/error + refresh of geometry, camera pivot and slicer input). --scene-selftest drives the document end to end: 2 objects on the bed, +40 mm move, 45-degree rotation (footprint 28.28 mm), duplicate/remove/select, then slices both objects through the engine (100 layers, 6612 moves, X 113.23..176.82). tools/check 7/7, oracle 12/12, app window verified with cockpit.
 3. [ ] Render every object in the viewport: one mesh component per object driven by the document, click-picking returns which object was hit, and the selected object carries the accent tint. Keeps printer Z-up end to end; existing camera and bed drawing untouched.
    - files: upstream/src/slic3r-app-qt/qml/views/Viewport.qml, upstream/src/slic3r-app-qt/src/MeshGeometry.hpp, upstream/src/slic3r-app-qt/src/main.cpp
 4. [ ] Object list panel matching Orca's placement: rows with name, visibility and per-object position; select, delete and duplicate. Verify with a cockpit capture beside Orca rather than from the code.
