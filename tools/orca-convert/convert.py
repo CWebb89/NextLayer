@@ -56,7 +56,6 @@ RENAMES = {
     "minimum_sparse_infill_area": ("solid_infill_below_area", "float"),
     "sparse_infill_anchor_max": ("infill_anchor_max", "float"),
     "sparse_infill_anchor": ("infill_anchor", "float"),
-    "ironing_pattern": ("ironing_type", None),
     # Line widths
     "line_width": ("extrusion_width", "float"),
     "outer_wall_line_width": ("external_perimeter_extrusion_width", "float"),
@@ -232,22 +231,32 @@ ENUMS = {
 }
 
 
+def head_of(value):
+    """First number of a value that may be comma-joined (Orca's per-extruder form)."""
+    scalar = value[0] if isinstance(value, list) and value else value
+    return str(scalar).split(",")[0].strip().rstrip("%").replace(",", "")
+
+
 def transform_value(value, transform):
     if transform is None:
         return value
     scalar = value[0] if isinstance(value, list) and value else value
     if transform == "percent":
-        return float(str(scalar).rstrip("%"))
+        return float(head_of(value))
     if transform == "percent_obj":
-        return {"value": float(str(scalar).rstrip("%")), "is_percent": True}
+        return {"value": float(head_of(value)), "is_percent": True}
     if transform == "int":
-        return int(float(str(scalar).rstrip("%").replace(",", "")))
+        return int(float(head_of(value)))
     if transform == "float":
-        return float(str(scalar).rstrip("%").replace(",", ""))
+        return float(head_of(value))
     if transform == "float_list":
-        if isinstance(value, list):
-            return [float(str(v)) for v in value]
-        return float(str(value))
+        items = value if isinstance(value, list) else [value]
+        numbers = []
+        for item in items:
+            head = str(item).split(",")[0].strip()
+            if head:
+                numbers.append(float(head))
+        return numbers or [0.0]
     if transform == "bool":
         return str(value) in ("1", "true", "True", "on")
     if transform == "bed_shape":

@@ -209,6 +209,28 @@ Now part of the same strip.
 | Undo / redo | done — `Ctrl+Z` / `Ctrl+Shift+Z` over add, delete, duplicate, transform and visibility |
 | Sequential printing | staged — settings exist, no scene arrangement |
 
+## Printer catalog
+
+`tools/orca-catalog/generate.py` turns the OrcaSlicer vendor profiles into a
+next-layer bundle: **67 vendors, 450 printers**, written to
+`upstream/resources/presets/orca-catalog/` (a build artifact, regenerated, not
+tracked). Pick one from the Printer dropdown — the list is searchable — and the
+engine resolves it like any other preset.
+
+| Aspect | State |
+| --- | --- |
+| Machine geometry (bed size, height, nozzle, extruder count, limits) | done — 450 machines, sliced end to end |
+| Per-vendor printer listing and search | done — catalog counts 471 printers in `--dump-presets`, `tools/check` slices one |
+| Process and filament settings | staged — borrowed from the PrusaResearch templates, not the vendor's own |
+| Vendor start/end G-code | staged — imported for 96 of 450 machines; the rest use Orca-only placeholders and are dropped whole (see below) |
+| Per-vendor profile UI (vendor > machine > variant tree) | staged — the flat searchable list stands in for Orca's grouped picker |
+
+Known loss: a G-code template referencing a placeholder the engine does not have
+(`initial_no_support_extruder`, `plate_name`, `{brace expressions}`) is dropped
+entirely rather than half-applied, so those presets have no start/end sequence
+until it is written in Printer → Custom G-code. Line-level salvage is the
+obvious next step.
+
 ## Orca config converter
 
 `tools/orca-convert/convert.py` turns OrcaSlicer profiles (flat JSON, `inherits`
@@ -229,10 +251,12 @@ config.json` to convert; the output is a `configuration` fragment to merge onto 
 base config.
 
 **Known limits.** Names and units map cleanly; value *formats* do not always:
-some enum vocabularies (`gcode_flavor`, `machine_limits_usage`), gcode templates
-(`start_gcode`), and per-extruder vector shapes differ between the two slicers and
-need manual review before a converted config slices byte-identically. The keymap
-is the reference; the conversion is a starting point, not a lossless port.
+some enum vocabularies (`gcode_flavor`, `machine_limits_usage`), and per-extruder
+vector shapes differ between the two slicers. G-code templates are translated
+token by token (`PLACEHOLDER_RENAMES`) and validated against the engine's own
+option names; a template that still carries an unknown name, or a brace
+expression, is dropped and reported instead of being written out broken. The
+keymap is the reference; the conversion is a starting point, not a lossless port.
 
 ## What "done" means here
 

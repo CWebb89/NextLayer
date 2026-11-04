@@ -234,6 +234,34 @@ print(f"{max(xs) - min(xs):.1f} {len(xs)}" if xs else "0 0")
         __ok "plate: 2 objects, $scene_match[2] layers, $scene_match[3] moves, X span $span_parts[1] mm"
     end
 end
+# The catalog gate: the shipped vendor catalog has to load, and one printer from
+# it -- not one of our own Prusa presets -- has to slice end to end. A preset that
+# resolves but exports nothing looks identical to a good one in --dump-presets.
+set -l catalog_out ($bin --dump-presets 2>&1)
+set -l catalog_count (printf '%s\n' $catalog_out | grep -c 'extruder)')
+set -l sample '(Anycubic Kobra 2 0.4)'
+set -l sample_cfg /tmp/nl-check-catalog.json
+set -l sample_gcode /tmp/nl-check-catalog.gcode
+rm -f $sample_cfg $sample_gcode
+$bin --printer 'Anycubic Kobra 2 0.4' --process Standard --filament Generic --dump-config $sample_cfg >/dev/null 2>&1
+set -l sample_rc $status
+if test $catalog_count -lt 400
+    __bad "printer catalog: only $catalog_count printers listed (expected at least 400)"
+else if test $sample_rc -ne 0 -o ! -f $sample_cfg
+    __bad "printer catalog: a catalog printer did not resolve to a config ($sample)"
+else
+    $bin $model --slice $sample_cfg,$sample_gcode >/dev/null 2>&1
+    set -l sample_size 0
+    if test -f $sample_gcode
+        set sample_size (stat -c %s $sample_gcode)
+    end
+    if test $sample_size -lt 100000
+        __bad "printer catalog: $sample sliced $sample_size bytes (expected a full G-code file)"
+    else
+        __ok "printer catalog: $catalog_count printers, $sample slices $sample_size bytes"
+    end
+end
+
 set -l integrity_out (python3 $root/oracle/baseline_check.py 2>&1)
 set -l integrity_rc $status
 set -l integrity_tally (string match -r '(\d+)/(\d+) baseline files match the manifest' -- $integrity_out)
