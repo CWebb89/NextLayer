@@ -23,6 +23,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -34,6 +35,20 @@ import convert as orca  # noqa: E402
 
 BUNDLE_ID = "orca-catalog"
 NOZZLE = "0.4"
+
+# The engine ships its own PrusaResearch bundle, and preset resolution matches a
+# hardware config by display name and then takes the first hit. Hardware config
+# ids are fresh UUIDs on every load, so the map that orders them is re-shuffled
+# each run: two bundles publishing the same name make resolution pick a
+# different machine run to run (measured 5 failures in 12 identical
+# invocations for "Prusa MK4 0.4"). Prusa machines come from that built-in
+# bundle already, so the catalog does not publish them a second time.
+SKIPPED_VENDORS = {"Prusa"}
+
+# Display names that would shadow a machine next-layer's own fixtures ship. The
+# custom Voron 2.4 350 bundle is the default machine, so Orca's profiles for the
+# same printer are kept but named apart.
+NAME_OVERRIDES = {"Voron 2.4 350": "Voron 2.4 350 (Orca)"}
 KINDS = ("printer", "print", "filament")
 SETTINGS_SECTION = {"printer": "printer_settings", "print": "print_settings",
                     "filament": "filament_settings"}
@@ -261,6 +276,13 @@ SPECIAL_PLACEHOLDERS = {
 }
 
 TOKEN = re.compile(r"\[(?:([a-z0-9_]+)|([^\[\]]*))\]")
+BRACE = re.compile(r"\{([^{}]*)\}")
+IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+EXPRESSION_WORDS = {
+    "if", "else", "endif", "and", "or", "not", "true", "false",
+    "min", "max", "random", "digits", "zdigits", "int", "round", "ceil",
+    "is_nil", "one_of", "empty", "size", "interpolate_table", "repeat",
+}
 
 
 def translate_placeholders(text):
@@ -281,6 +303,18 @@ def unknown_placeholders(text, known):
         if candidate in known or candidate in SPECIAL_PLACEHOLDERS:
             continue
         names.add(candidate)
+    return names
+
+
+def unknown_expression_names(text, known):
+    names = set()
+    for body in BRACE.findall(text):
+        for identifier in IDENTIFIER.findall(body):
+            if identifier in known or identifier in SPECIAL_PLACEHOLDERS:
+                continue
+            if identifier in EXPRESSION_WORDS:
+                continue
+            names.add(identifier)
     return names
 
 
@@ -311,13 +345,10 @@ def printer_values(data, machine_name, vendor, nozzle_float, allowed, enums,
         if not translated.strip():
             del values[key]
             continue
-        unknown = unknown_placeholders(translated, known_placeholders)
+        unknown = (unknown_placeholders(translated, known_placeholders)
+                   | unknown_expression_names(translated, known_placeholders))
         if unknown:
             dropped.update(unknown)
-            del values[key]
-            continue
-        if "{" in translated or "}" in translated:
-            dropped.add("brace expressions")
             del values[key]
             continue
         values[key] = translated
@@ -392,6 +423,47 @@ def preset_document(kind, name, values, condition=None):
     return "\n".join(lines) + "\n"
 
 
+def unique_machine_name(machines, name, values, report):
+    """Disambiguate a machine name against the ones already emitted.
+
+    Identical name and identical values is the same machine published twice by
+    the vendor's index, which is dropped. A name clash with different settings
+    is renamed, because the engine resolves presets by name.
+    """
+    for machine in machines:
+        if machine["name"] != name:
+            continue
+        if machine["values"] == values:
+            report.append("skip %s: published twice by the vendor" % name)
+            return None
+        suffix = 2
+        taken = {existing["name"] for existing in machines}
+        while "%s (%d)" % (name, suffix) in taken:
+            suffix += 1
+        renamed = "%s (%d)" % (name, suffix)
+        report.append("renamed %s -> %s: the name already exists with other settings"
+                      % (name, renamed))
+        return renamed
+    return name
+
+
+def unique_slug(machines, slug):
+    """Keep generated ids unique.
+
+    slugify drops punctuation, so "UltiMaker 2" and "UltiMaker 2+" both slug to
+    "ultimaker-2" and the second machine overwrote the first one's preset file
+    and vendor entry: one machine silently disappeared and the survivor was
+    published under the other one's name.
+    """
+    taken = {machine["slug"] for machine in machines}
+    if slug not in taken:
+        return slug
+    index = 2
+    while "%s-%d" % (slug, index) in taken:
+        index += 1
+    return "%s-%d" % (slug, index)
+
+
 def build_vendor(orca_root, vendor_dir, vendor, out_root, nozzle, nozzle_float, allowed,
                  enums, borrowed, placeholders, engine_defaults, report, machines_filter=None):
     index = index_of(orca_root, vendor)
@@ -401,10 +473,12 @@ def build_vendor(orca_root, vendor_dir, vendor, out_root, nozzle, nozzle_float, 
 
     for preset_name, path in machine_presets(vendor_dir, vendor, index, nozzle, machines_filter):
         data = orca.resolve_inherits(path, cache)
-        name = strip_nozzle(preset_name, nozzle)
+        name = NAME_OVERRIDES.get(strip_nozzle(preset_name, nozzle),
+                                  strip_nozzle(preset_name, nozzle))
         slug = slugify(name)
         if not slug.startswith(vendor_slug):
             slug = vendor_slug + "-" + slug
+        slug = unique_slug(machines, slug)
         values, bucket, dropped_gcode = printer_values(data, name, vendor, nozzle_float,
                                                       allowed["printer"], enums, placeholders,
                                                       engine_defaults)
@@ -413,6 +487,9 @@ def build_vendor(orca_root, vendor_dir, vendor, out_root, nozzle, nozzle_float, 
                           % (name, ", ".join(dropped_gcode)))
         if "bed_shape" not in values:
             report.append("skip %s: no printable area" % name)
+            continue
+        name = unique_machine_name(machines, name, values, report)
+        if name is None:
             continue
         unsupported.update(bucket["unsupported"])
         machines.append({"name": name, "slug": slug, "values": values,
@@ -481,6 +558,12 @@ def main():
     if args.vendors:
         wanted = {name.strip() for name in args.vendors.split(",") if name.strip()}
     out_root = Path(args.out)
+    # A full run owns its output directory: renamed or skipped machines leave
+    # files behind, and a stale printer preset is published exactly like a fresh
+    # one, so a leftover name reintroduces the duplicate-name defect below.
+    if wanted is None and not args.machines and out_root.is_dir():
+        shutil.rmtree(out_root)
+        print("cleared %s" % out_root)
     report, failed = [], []
     totals = {"machines": 0, "vendors": 0}
     allowed = reference_keys(args.bin, args.model)
@@ -498,6 +581,11 @@ def main():
     for directory in directories:
         vendor = directory.name
         if wanted is not None and vendor not in wanted:
+            continue
+        if vendor in SKIPPED_VENDORS:
+            report.append("skip vendor %s: the engine ships its own bundle for it, and a "
+                          "second copy of a machine name makes preset resolution "
+                          "non-deterministic" % vendor)
             continue
         try:
             result = build_vendor(orca_root, directory, vendor, out_root, args.nozzle,
@@ -521,7 +609,17 @@ def main():
         print("  " + line)
     for line in failed:
         print("  FAILED " + line)
-    return 1 if failed else 0
+
+    published = Counter()
+    for path in sorted(out_root.glob("*/preset-printer-*.yaml")):
+        for line in path.read_text().splitlines():
+            if line.startswith("name: "):
+                published[line[len("name: "):].strip("'")] += 1
+                break
+    duplicates = sorted(name for name, count in published.items() if count > 1)
+    for name in duplicates:
+        print("  DUPLICATE name %s (%d machines)" % (name, published[name]))
+    return 1 if failed or duplicates else 0
 
 
 if __name__ == "__main__":

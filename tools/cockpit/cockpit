@@ -317,6 +317,8 @@ def cmd_start(args: argparse.Namespace) -> int:
     time.sleep(0.25)
 
     command = args.command or args.app
+    if args.arg:
+        command = f"{command} {' '.join(args.arg)}"
     if args.model:
         command = f"{command} {os.path.abspath(args.model)}"
     spawn(command)
@@ -720,6 +722,8 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("app")
     start.add_argument("--command", default=None, help="binary to run (default: the app name)")
     start.add_argument("--model", help="model file passed as the first argument")
+    start.add_argument("--arg", action="append", default=[],
+                       help="extra argument passed before the model (repeatable)")
     start.add_argument("--workspace", type=int, help="use this workspace instead of a free one")
     start.add_argument("--wait", type=float, default=25.0, help="seconds to wait for a window")
     start.add_argument("--no-fullscreen", action="store_true")

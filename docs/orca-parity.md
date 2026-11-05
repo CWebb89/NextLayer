@@ -9,8 +9,15 @@ Status values:
   disabled or the work is not finished.
 - **needs-engine** — the engine has the feature but nothing below its own plater
   exposes it (no CLI flag, no domain API we can call).
+- **needs-host** — the feature is wx-free C++ in `slic3r-shared/…/App/Plater` and is
+  driven through `PlaterRenderModule`, which only `slic3r-app-desktop` hosts. Nothing
+  to write except the host; see "Why the tool rail is one job" below.
 - **n/a** — deliberately out of scope (vendor cloud, GUI-only conveniences we
   replace with something else).
+
+Counted 2026-11-05: `slic3r-shared/src/Slic3r/App/Plater/` holds **77** `.cpp` files
+and exactly **one** of them mentions the wx `GLCanvas3D`. Every tool in the rail
+below lives there, in a wx-free library, on an ImGui + `slic3r-render` device.
 
 ## Settings — tabs and sub-tabs
 
@@ -18,6 +25,23 @@ The tab tree is the engine's own taxonomy (`ConfigItemDef::Category` and
 `OptionGroup`), not a hand-written list. Verify with
 `next-layer-qt --dump-tabs` and inspect one sub-tab with
 `next-layer-qt --dump-subtab process/104`.
+
+### Presets and onboarding, before the tabs
+
+| Feature | Status |
+| --- | --- |
+| Filament profiles for the vendor bundles | done — a catalog machine lists its bundle's own materials (Prusa MK4 lists 254); the list is the union across that machine's print profiles, not just the first one |
+| Filament profiles for our own printer bundle | done — the Voron bundle ships 9: Generic (PLA), PLA Silk, PETG, PETG-CF, PLA-CF, ABS, ASA, TPU, PA-CF, each with its own temperatures, cooling, flow and density; `tools/check` slices Generic PETG and requires an 80 °C bed |
+| First-run setup | done — next-layer's own flow (`qml/views/SetupFlow.qml`): machine (search + vendor picker over the whole catalog), material, quality, review; keyboard navigable, `Ctrl+,` to reopen, remembered in QSettings and re-applied on the next launch. No account, no network |
+| The engine's own onboarding (account, online/offline, release notes) | n/a — that is PrusaSlicer's, and its plater module is not hosted |
+
+### Viewport interaction
+
+| Feature | Status |
+| --- | --- |
+| Left drag orbits; left drag moves an object only with the Move tool armed | done — without the guard a rotate that started on the model committed a move, and a move in the sliced view dropped the toolpath; that was the "rotating cuts the model off" report |
+| Near/far clip planes scale with camera distance | done — a fixed 1 mm near plane clipped into the model when zoomed in close |
+| Sliced toolpaths survive orbiting, panning and zooming | done — verified in the window with real input at 5 zoom steps and three drags |
 
 ### Process (`FDMConfigLocation::Print`, 222 settings → 14 sub-tabs)
 
@@ -31,7 +55,7 @@ The tab tree is the engine's own taxonomy (`ConfigItemDef::Category` and
 | Speed | 25 | done |
 | Motion & Dynamics | 22 | done |
 | Extrusion & Retraction | 19 | done |
-| Multi-Material | 28 | done |
+| Tools & Wipe Tower | 21 | done — the engine's own extruder assignment, wipe tower and tool-change options; the seven colour-mixing-only options are filtered out |
 | Precision & Slicing | 19 | done |
 | Custom G-code | 1 | done |
 | Output options | 1 | done |
@@ -48,7 +72,7 @@ shape; a second material needs the multi-slot UI, which is not built.
 | Material & Temperatures | 13 | done |
 | Extrusion & Calibration | 6 | done |
 | Cooling | 17 | done |
-| Multi-Material | 20 | done |
+| Tool Changes | 18 | done — ramming, tip shaping and wipe-tower purging; the MMU flush/purge options are filtered out |
 | Overrides | 3 | done |
 | Custom G-code | 3 | done |
 | Notes | 1 | done |
@@ -115,14 +139,14 @@ Plates on the left, tools next, object actions on the right — one panel.
 | Duplicate | done — the document copies the selected object beside it |
 | Centre on bed | done — the document moves the selected object's centre onto the bed centre |
 | Drop to bed | done — the document lifts/lowers the selected object until its minimum Z sits on the bed |
-| Cut at Z | staged — still runs the engine on the single selected file, so it replaces the plate; the document needs a mesh split |
+| Cut at Z | staged — still runs the engine on the single selected file, so it replaces the plate; the document needs a mesh split. `Plater::CutGizmo` does this properly and comes with the host |
 | Export G-code | done — writes the sliced file to a chosen path |
 | Object list (name, visibility, X/Y, centre/drop/duplicate/delete) | done — `Ctrl+L` or the list button; acts on the document, so a plate edit is undoable |
 | Undo / redo (`Ctrl+Z`, `Ctrl+Shift+Z`) | done — snapshot stack over the document's objects, transforms and visibility |
-| Arrange | needs-engine — `arrange_and_wait` is internal to the CLI app, not a flag; imports are shelf-packed instead |
-| Auto-orient | needs-engine — no CLI flag |
+| Arrange | needs-engine — `arrange_and_wait` is internal to the CLI app, not a flag; imports are shelf-packed instead. `Plater::ArrangeGizmo` and the `slic3r-biz-arrange` kernels are wx-free |
+| Auto-orient | needs-engine — no CLI flag; the orienter is in the same arrange library |
 | Multi-select | staged — one selection at a time; the document holds N objects but the tools act on the selected one |
-| Engine-level plates (one project, many beds, one slice) | needs-engine — `Domain::Bed`/`BedContainer` exist, no plater command |
+| Engine-level plates (one project, many beds, one slice) | needs-engine — `Domain::Bed`/`BedContainer` exist, no plater command. A hosted `PlaterRenderModule` brings the bed tabs with it |
 
 ## Tool rail
 
@@ -136,13 +160,15 @@ Now part of the same strip.
 | Cut at Z | done |
 | Measure (two points, distance, deltas, angle from vertical) | done |
 | Fuzzy skin | done — jumps to Process › Walls & Perimeters |
-| Lay on face | needs-engine — gizmo only |
-| Support painting | needs-engine — paint-on gizmo only |
-| Seam painting | needs-engine — paint-on gizmo only |
-| MMU / multi-material painting | needs-engine — paint-on gizmo only |
-| Text object | needs-engine — text-to-mesh lives in the plater |
-| Variable layer height | needs-engine — layer-height profile API is plater-only |
-| Assemble (split parts) | needs-engine — needs multi-object scenes |
+| Lay on face | done — click a face; the facet normal is turned down and the object dropped to the bed |
+| Support painting | done — sphere brush over the picked facets, stored as the engine's own `FacetsAnnotation`, drawn in the viewport and honoured by the slice (`--slice-features` proves 0 → 983 support moves) |
+| Seam painting | done — same brush, `seam_facets` |
+| Colour painting for a tool changer | done — the brush writes a per-facet tool index (`mm_segmentation_facets`, the engine's tool field) and the swatch list is the printer's own tool colours, so the overlay is what the machine will print. **There is no MMU and no single-nozzle colour mixing anywhere in this app**: those options are filtered out of the settings panel and the words do not appear in the UI |
+| Add a shape (box, cylinder, sphere) | done — an object built by the engine's own `its_make_cube`/`make_cylinder`/`make_sphere`, normalised to the app's XY-centred, Z-on-the-bed convention, so every tool and per-object setting works on it. `--shape-test` slices one and measures the filament |
+| Modifier, negative, support-blocker and support-enforcer volumes | done — a volume on the selected object with the engine's own `ModelVolumeType`; the FDM slice path slices each type and booleans it, so a negative volume cuts the toolpath (`--shape-test`: 3899.4 mm → 2823.2 mm of filament, and back to 3899.4 when removed). Drawn translucent by role (red subtracts, amber modifies, purple blocks, green forces) and the object turns into a ghost so an interior volume is visible. The object list nests the volumes with their type and a delete |
+| Text object | needs-host — `Plater::TextGizmo` + `TextDialog`, `Biz::Emboss` and `IFontManager` |
+| Variable layer height | done — a band and a height in the object panel, written as a `LayerHeightProfile` on the object; the slice honours it (`--slice-features` proves 125 → 187 layers) |
+| Assemble (split parts) | needs-host — `Plater::CutGizmo`'s part tree, or `SimplifyGizmo` for the mesh-reduction half |
 | Calibration suite (flow, pressure advance, retraction…) | not started |
 | Gizmo handles, drag-rotate/scale, snapping | not started — transforms are numeric panels apart from drag-move |
 
@@ -150,7 +176,8 @@ Now part of the same strip.
 
 | Feature | Status |
 | --- | --- |
-| Left-drag orbit | done |
+| Left-drag orbit | done — and in the sliced view it is the only thing a left drag does |
+| Clip planes follow the camera | done — near = distance × 0.004, far = distance × 8 + plate radius × 8 + 500, so orbiting close no longer clips into the model |
 | Right-drag / middle-drag pan | done |
 | Wheel zoom | done |
 | `R` / `Home` resets yaw, pitch, zoom and pan | done |
@@ -159,12 +186,16 @@ Now part of the same strip.
 | Fit plate (`F`, camera bar) | done — frames the whole `bed_shape`, which is Orca's opening framing |
 | Layer step from the keyboard (Up / Down) | done |
 | Click to select an object (accent tint) | done — picking walks every visible object's triangles, nearest hit wins, the document's selection follows |
-| Drag the selected object on the bed with the Move tool | done — commits `setPosition` on the document, so it is undoable and does not touch the file |
+| Drag the selected object on the bed with the Move tool | done — commits `setPosition` on the document, so it is undoable and does not touch the file; the drag only arms with the Move tool, so a rotate never moves the plate under you |
 | Object list / per-object context menu | done — object list docked bottom-right; a context menu is still Orca-only |
-| Multi-select | staged — one selection at a time |
+| Multi-select | done — Ctrl-click toggles, Shift-click extends from the anchor, Ctrl+A selects the plate, and a drag with the Move tool moves every selected object by the same delta, undoably |
 | Ray picking for selection and measure | done — Möller–Trumbore over the mesh in printer coordinates; View3D.pick() returns nothing in this app |
+| Place on face | done — click a face with the tool armed; the facet's normal is turned to point down and the object is dropped onto the bed |
+| Auto-orient | done — every distinct face normal is tried as a resting surface and the pose scoring best on printed height plus overhanging area wins |
+| Arrange | done — the engine's own NFP packer (`Biz::Arrange`, the same kernel the plater uses) with rotations allowed, applied in the document and undoable |
 | Snap to bed centre, rotation snapping | not started |
 | Gizmo handles (red/green/blue arrows) for axis drags | not started — drag moves freely on the grabbed plane |
+| Visibility modes | done — per-object hide, isolate the selection (Ctrl+I), show everything again (Ctrl+Shift+H); hidden objects are excluded from the slice |
 
 ## Preview
 
@@ -194,6 +225,33 @@ Now part of the same strip.
 | Layer view modes | done — Range / All / 1 layer, on top of the vertical layer slider |
 | Tool marker | off — the engine defaults it on, which draws a translucent cylinder on the bed beside the print |
 
+## Object settings and plates
+
+| Feature | Status |
+| --- | --- |
+| Per-object settings | done — 136 print settings are overridable per object in this engine; the object panel lists them with an inherit/override switch and a typed editor, they are stored in `ObjectSettings::overrides` and reach the slicer through the plate path (`--slice-features` proves 0.30 mm per-object layer height → 84 layers instead of 125) |
+| Variable layer height | done — see the tool rail row; the profile covers the whole object and restates the printer height outside the band |
+| Plates | done — every plate is its own set of objects with its own toolpath; the toolbar shows the object count per plate, adding and removing plates keeps the document (and undo) intact, and each plate slices and exports separately |
+| Save / load project file | done — Ctrl+S / Ctrl+Shift+O, one `.nextproj` file holding every object with its transform, overrides, layer height profile and paint, the plates, the tool colours and the print setup; `--project-test` saves, reloads into a cleared document, compares and slices the reloaded plate |
+| Preset diff | done — Ctrl+Shift+D lists every setting changed from the preset, with before/after and a per-row reset |
+| Preset export / import | done — Ctrl+Shift+E writes the configuration the app would slice with; Ctrl+Shift+I loads one back into the settings panel |
+| Preferences | done — Ctrl+, : bed plate, grid, field of view, re-slice on change, status duration, units; stored in QSettings and applied to the viewport |
+| Shortcut map | done — `?` lists every binding, filterable; the same table drives the key handling, so the help cannot drift from the code |
+
+## Product and chrome
+
+| Feature | Status |
+| --- | --- |
+| Product identity | done — a mark, wordmark, version chip and tagline in the header and About; the exported G-code header and JSON producer carry the same name and version |
+| File menu | done — New plate, Add model, Open/Save project, Export G-code, Export/Load configuration, Preferences, Shortcuts, About, Quit, each with its shortcut shown |
+| About | done — version, engine version, data and preset paths, all read from the build |
+| Preferences | done — Ctrl+, |
+| First run | done — a welcome screen (what next-layer is, what it does not do, and the three steps to a slice) leading into the printer setup wizard; "Skip for now" is remembered instead of reopening on every launch |
+| Object rename | done — double-click the name in the object list |
+| Statistics | done — the footer carries the engine's own estimate: printing time, filament in grams, layers, moves, slice time |
+| Unsaved-changes guard | done — closing the window with an unsaved plate asks, with save / discard / cancel |
+| Units | staged — the preference is stored but the fields still display millimetres |
+
 ## Project and scene
 
 | Feature | Status |
@@ -204,7 +262,7 @@ Now part of the same strip.
 | Object position survives slicing | done — an import is centred once, then slices run with dont_arrange; before this the engine's arrange re-centred every slice and moves were discarded |
 | Icon set | Material Symbols Outlined, matching Orca's outline style |
 | Several objects on one plate | done — the document holds N objects; a slice bakes them into one STL of separate shells and the engine prints every island |
-| Per-object settings | needs-engine — the merge is geometry only, so object-level configs are not applied yet |
+| Per-object settings | staged — the merge is geometry only, so object configs are not applied yet; `Domain::ModelObject` carries them and the shared plater's object settings page edits them, so this lands with either step 3 or the host |
 | Save/load project (`.3mf` with settings and objects) | needs-engine — `store_3mf(const std::string&, const Domain::Project&)` and `load_3mf` exist, but building a `Domain::Project` needs a live `ProjectInteractor`; doing that beside the worker-thread `CLI::run` slice would put two engine runtimes in one process |
 | Undo / redo | done — `Ctrl+Z` / `Ctrl+Shift+Z` over add, delete, duplicate, transform and visibility |
 | Sequential printing | staged — settings exist, no scene arrangement |
@@ -219,23 +277,34 @@ engine resolves it like any other preset.
 
 | Aspect | State |
 | --- | --- |
-| Machine geometry (bed size, height, nozzle, extruder count, limits) | done — 450 machines, sliced end to end |
-| Per-vendor printer listing and search | done — catalog counts 471 printers in `--dump-presets`, `tools/check` slices one |
+| Machine geometry (bed size, height, nozzle, extruder count, limits) | done — 432 machines, sliced end to end |
+| Per-vendor printer listing and search | done — catalog counts 482 printers in `--dump-presets`, `tools/check` slices one and fails on duplicate names |
 | Process and filament settings | staged — borrowed from the PrusaResearch templates, not the vendor's own |
-| Vendor start/end G-code | staged — imported for 96 of 450 machines; the rest use Orca-only placeholders and are dropped whole (see below) |
+| Vendor start/end G-code | staged — imported for 284 of 432 machines, brace expressions included; the rest use Orca-only names and are dropped whole (see below) |
 | Per-vendor profile UI (vendor > machine > variant tree) | staged — the flat searchable list stands in for Orca's grouped picker |
 
-Known loss: a G-code template referencing a placeholder the engine does not have
-(`initial_no_support_extruder`, `plate_name`) is dropped entirely rather than
-half-applied, so those presets have no start/end sequence until it is written in
-Printer → Custom G-code. The same rule rejects `{brace expressions}`, which the
-engine does support in its own defaults — conservative, and to be revisited.
-Line-level salvage and brace support are the obvious next steps.
+Known loss: a G-code template referencing a name the engine does not have
+(`initial_no_support_extruder`, `plate_name`, `machine_max_speed_z`) is dropped
+entirely rather than half-applied, so those presets have no start/end sequence
+until it is written in Printer → Custom G-code. The same test now reads inside
+`{brace expressions}`: braces are kept, `{first_layer_bed_temperature[0]}` and
+`{max_layer_z + 0.5}` are evaluated by the engine, but a brace naming an unknown
+option stops the whole export (no G-code, exit 0), so it is checked the same way.
+Line-level salvage is the obvious next step.
 
-Slicing state, measured across the whole catalog: 480 printers listed, 426
-sliced, 54 did not — mostly PrusaResearch presets without a `Standard` process;
-the catalog machines among them are Anycubic Kobra Max / Kobra Plus / Vyper and
-Flashforge Artemis / Guider 2s.
+Slicing state, measured with `validate.py` over the catalog's own 432 machines: 423
+slice with their vendor start G-code and 9 write no G-code at all (Anycubic Kobra
+Max / Plus / Vyper, Flashforge Guider 2s / Adventurer 3 / Adventurer 4 / Artemis,
+UltiMaker S5 ×2) — the vendor's start G-code still names an option the engine
+cannot evaluate, and the export stops silently. None fail to resolve.
+
+Two generation bugs hid that: `slugify` mapped `UltiMaker 2` and `UltiMaker 2+` to
+the same id, so one machine overwrote the other's preset, and `validate.py` parsed
+the padded column dump, reading the vendor as part of 12 over-long names. Ids are
+unique per vendor now, `validate.py` reads `--dump-presets-json`, and the app's
+hardware configs carry no duplicate names — which is what made process lookup look
+nondeterministic: resolution takes the first config with a matching name, and a
+duplicate name resolved differently from run to run.
 
 ## Orca config converter
 
@@ -263,6 +332,56 @@ token by token (`PLACEHOLDER_RENAMES`) and validated against the engine's own
 option names; a template that still carries an unknown name, or a brace
 expression, is dropped and reported instead of being written out broken. The
 keymap is the reference; the conversion is a starting point, not a lossless port.
+
+## Why the tool rail is one job, not eleven
+
+It is tempting to read `needs-engine` as "we would have to rewrite support and
+seam painting from scratch". That is the wrong reading, and the count is what
+settles it:
+
+```sh
+ls upstream/src/slic3r-shared/src/Slic3r/App/Plater/*.cpp | wc -l              # 77
+grep -l 'GLCanvas3D' upstream/src/slic3r-shared/src/Slic3r/App/Plater/*.cpp | wc -l  # 1
+cd upstream/build && find . -path '*App/Plater*' -name '*.o' | wc -l           # 78
+find . -path '*App/Plater*' -name '*.o' -print0 | xargs -0 nm -uC 2>/dev/null \
+    | grep -ci 'wx[A-Z]\|wxString\|wxWidgets'                                 # 0
+```
+
+The last line is the decisive one: those 78 object files need **zero** wx symbols.
+
+`CutGizmo`, `PlaceOnFaceGizmo`, `PaintOnSupportsGizmo`, `PaintOnSeamsGizmo`,
+`PaintOnFuzzySkinGizmo`, `MultiMaterialPaintingGizmo`, `TextGizmo`/`SvgGizmo`,
+`VariableLayerHeightGizmo`, `HeightRangeGizmo`, `ArrangeGizmo`, `MeasureGizmo`,
+`SimplifyGizmo`, the rotate/scale/translate gizmos, `SelectionHandler`,
+`GizmoWindow`, `SidebarPlaterActionButtons` and `ThumbnailRenderer` are all in
+that directory. They are ImGui + `slic3r-render` device code (`CommandBuffer`,
+`FramebufferManager`, `ShaderManager`, `ImageCodec`) behind
+`Platform::AbstractRenderModule`, `IDialogManager` and `AppServices`. PrusaSlicer
+3.0's whole point was extracting them from wx so a second frontend can host them.
+
+Exactly one application does that today:
+
+```sh
+upstream/src/slic3r-app-desktop/src/Slic3r/App/Desktop/DesktopApp.cpp:473
+```
+
+`PlaterRenderModule(workbench, project_interactor, undo_store, thumbnail_store,
+thumbnail_store_updater, thumbnail_image_generator, font_manager, project_saver)`,
+rendered into a `Platform::AbstractRenderCanvas` — the wx implementation of which
+is `slic3r-platform-wx/…/WXRenderCanvas.cpp`, **1247 lines**.
+
+So the cost of the entire tool rail is not eleven features. It is one host: a Qt
+equivalent of `WXRenderCanvas` (GL surface, ImGui input plumbing, framebuffer
+handoff), the services that constructor asks for, and `set_sidebars_visible(false)`
+if the QML chrome is to stay. Painting, cut, lay-on-face, text, variable layer
+height, arrange, measure, gizmo handles and the bed tabs all arrive together,
+because they are gizmos on that one module.
+
+The trade, stated plainly: the render module owns the GL surface and the scene, so
+`Viewport3D`/`Gizmo`-style Qt Quick 3D model rendering and the custom picking and
+ribbon preview built so far would be superseded for plater and preview duty. What
+survives that trade is the half that made next-layer viable — `SliceRuntime`,
+`PresetStore`, `SettingsModel`, the oracle, the cockpit and this ledger.
 
 ## What "done" means here
 
