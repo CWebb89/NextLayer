@@ -169,7 +169,7 @@ Now part of the same strip.
 | Text object | needs-host — `Plater::TextGizmo` + `TextDialog`, `Biz::Emboss` and `IFontManager` |
 | Variable layer height | done — a band and a height in the object panel, written as a `LayerHeightProfile` on the object; the slice honours it (`--slice-features` proves 125 → 187 layers) |
 | Assemble (split parts) | needs-host — `Plater::CutGizmo`'s part tree, or `SimplifyGizmo` for the mesh-reduction half |
-| Calibration suite (flow, pressure advance, retraction…) | not started |
+
 | Gizmo handles, drag-rotate/scale, snapping | not started — transforms are numeric panels apart from drag-move |
 
 ## Camera and selection
@@ -251,6 +251,13 @@ Now part of the same strip.
 | Statistics | done — the footer carries the engine's own estimate: printing time, filament in grams, layers, moves, slice time |
 | Unsaved-changes guard | done — closing the window with an unsaved plate asks, with save / discard / cancel |
 | Units | staged — the preference is stored but the fields still display millimetres |
+| Multiple plates | done — the tab strip adds, renames, duplicates, clears and deletes plates, and every plate is drawn in the scene as its own bed with its objects, so a new plate appears where it will print |
+| Plate options | done — the chevron on the active plate tab: rename, duplicate, clear, delete |
+| Custom G-code per layer | done — right-click the layer slider: custom G-code, a pause (M601) or a tool change at that Z. Markers draw as ticks on the slider, are saved in the project, and the engine's own `CustomGCode::Info` emits them at their layer (`tools/check` proves the marker lands once, in the right layer) |
+| Object right-click menu | not started — object actions are the toolbar, the object list footer and the File menu |
+| Send to printer (Klipper/Moonraker, OctoPrint, PrusaLink…) | not started — the engine ships the whole `Biz::PrintHost` family including `PrintHostMoonraker` and a `create_print_host()` factory; wiring it is a settings surface for the host and a `perform()` call on the G-code |
+| Multi-filament / multicolour | not started — one filament is resolved per slice (`material_profile_presets` takes one name), so a tool-changing printer slices in one colour. The engine supports N materials and per-object/per-volume `extruder`, so this is a settings-and-plumbing job, not an engine one. MMU single-nozzle mixing stays out by design |
+| Calibration suite (flow, pressure advance, retraction…) | not started — Orca's calibration menu has no counterpart here |
 
 ## Project and scene
 

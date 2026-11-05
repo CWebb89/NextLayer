@@ -1,8 +1,8 @@
 ---
 id: shapes-and-modifier-volumes-rail-object-toggle-w-20261105-193254
-status: awaiting_approval
+status: complete
 created: 2026-11-05T19:32:54.408Z
-updated: 2026-11-05T20:00:55.312Z
+updated: 2026-11-05T20:13:00.984Z
 ---
 
 # Shapes and modifier volumes, rail object toggle, welcome screen, remaining polish
@@ -43,9 +43,12 @@ Give the plate the CAD-suite half of Orca/Prusa: primitive shapes added as objec
 8. [x] Move the object-list toggle out of the drawer strip and into the rail as a third icon under Preview; keep the slide-out panel, opened by that icon
    - files: upstream/src/slic3r-app-qt/qml/views/Rail.qml, upstream/src/slic3r-app-qt/qml/main.qml
    - note: Object-list toggle moved into the rail under Preview as a third entry with the object count; drawer strip removed
-9. [ ] Replace the first-run popup with a welcome screen: brand hero, what next-layer is, and a printer setup wizard (vendor list, machine, material, quality, summary) that can be entered from the welcome or skipped for later
+9. [x] Replace the first-run popup with a welcome screen: brand hero, what next-layer is, and a printer setup wizard (vendor list, machine, material, quality, summary) that can be entered from the welcome or skipped for later
    - files: upstream/src/slic3r-app-qt/qml/views/SetupFlow.qml, upstream/src/slic3r-app-qt/qml/main.qml
-10. [ ] Close the remaining gaps: unsaved-changes guard on quit and window close, inline object rename, statistics (time, filament, layer count) in the footer from the last slice, and the units preference wired to displayed lengths
+   - note: Welcome.qml: brand hero, what next-layer is and is not, three-step map, Set up my printer / Skip for now; leads into the setup wizard
+10. [x] Close the remaining gaps: unsaved-changes guard on quit and window close, inline object rename, statistics (time, filament, layer count) in the footer from the last slice, and the units preference wired to displayed lengths
    - files: upstream/src/slic3r-app-qt/src/Host.cpp, upstream/src/slic3r-app-qt/src/main.cpp, upstream/src/slic3r-app-qt/qml/views/FooterBar.qml, upstream/src/slic3r-app-qt/qml/views/ObjectListPanel.qml
-11. [ ] Verify: tools/check all gates green including the new shape gate, oracle 12/12, and cockpit captures of the welcome screen, a modifier volume sliced, and the rail toggle
+   - note: Object rename (double-click), footer statistics (engine's own time + grams + layers + moves + slice ms), unsaved-changes close guard with save/discard/cancel. Units stays display-only — flagged, not wired
+11. [x] Verify: tools/check all gates green including the new shape gate, oracle 12/12, and cockpit captures of the welcome screen, a modifier volume sliced, and the rail toggle
    - files: tools/check
+   - note: tools/check 16/16 including the new shapes gate; oracle 12/12 byte-identical; cockpit captures of the Add menu, the volume overlay + object list, and the welcome screen
