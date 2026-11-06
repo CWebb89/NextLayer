@@ -74,12 +74,13 @@ tools/cockpit/cockpit drag 1905 267 1905 600    # layer slider
 tools/cockpit/cockpit stop
 ```
 
+- **Pointer and keyboard are separate devices.** `cockpit` used to create one
+  device with both a relative pointer and keys; libinput classified it as a
+  pointer and the compositor delivered clicks while dropping every key, so
+  typing and Escape silently did nothing. Each command now creates the device it
+  needs, so `type` and `key` work in every text field.
 - **First click often only focuses the window.** If a control does not respond,
   click the same coordinates again before assuming it is broken.
-- **Synthesised keyboard text does not reach this app.** `cockpit type` delivers
-  nothing, and single keys do not arrive either. Anything that needs typing (the
-  search fields, the preset name box) cannot be driven from the harness; test it
-  by hand and say so, or test the same behaviour headlessly.
 - `cockpit ocr` is the fastest way to find a control: read the coordinates off it
   instead of guessing window geometry.
 

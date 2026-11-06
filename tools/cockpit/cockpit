@@ -153,19 +153,31 @@ def key_names() -> dict[str, int]:
 
 
 class Input:
-    """A throwaway virtual mouse+keyboard created for the length of one command."""
+    """A throwaway virtual device created for the length of one command.
 
-    def __init__(self, name: str = "cockpit-input") -> None:
+    Pointer and keyboard are separate devices, not one combo device. Composed
+    together, libinput classified the node as a pointer and the compositor
+    delivered its button presses while dropping every key event, so typing and
+    Escape silently did nothing. A device that advertises only EV_KEY is a
+    keyboard to libinput, and its keys arrive.
+    """
+
+    def __init__(self, name: str = "cockpit-pointer", kind: str = "pointer") -> None:
+        self.name = name
         self.fd = os.open("/dev/uinput", os.O_WRONLY | os.O_NONBLOCK)
         fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_KEY)
-        fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_REL)
         fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_SYN)
-        for code in set(BUTTONS.values()) | set(MODIFIERS.values()) | set(UNSHIFTED.values()):
-            fcntl.ioctl(self.fd, UI_SET_KEYBIT, code)
-        for code in range(2, 128):
-            fcntl.ioctl(self.fd, UI_SET_KEYBIT, code)
-        for axis in (0x00, 0x01, WHEEL_VERTICAL, WHEEL_HORIZONTAL):
-            fcntl.ioctl(self.fd, UI_SET_RELBIT, axis)
+        if kind == "pointer":
+            fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_REL)
+            for code in set(BUTTONS.values()):
+                fcntl.ioctl(self.fd, UI_SET_KEYBIT, code)
+            for axis in (0x00, 0x01, WHEEL_VERTICAL, WHEEL_HORIZONTAL):
+                fcntl.ioctl(self.fd, UI_SET_RELBIT, axis)
+        else:
+            # Every keyboard code the kernel knows: Escape is 1, and a device
+            # that does not advertise a key has its events dropped.
+            for code in range(1, 256):
+                fcntl.ioctl(self.fd, UI_SET_KEYBIT, code)
 
         device = struct.pack(
             "80sHHHHi", name.encode(), BUS_USB, 0x1234, 0x5678, 1, 0
@@ -179,14 +191,18 @@ class Input:
         deadline = time.monotonic() + 2.0
         while time.monotonic() < deadline and not self._ready():
             time.sleep(0.02)
-        time.sleep(0.05)
+        # libinput finishes opening the node after the kernel publishes it, and
+        # the first key of a brand-new keyboard is dropped while that happens:
+        # "voron" arrived as "voro". A keyboard waits longer than a pointer,
+        # which only loses a click that is repeated anyway.
+        time.sleep(0.30 if kind == "keyboard" else 0.05)
 
     def _ready(self) -> bool:
         """True once the kernel has published this device's node."""
         for path in glob.glob("/sys/class/input/event*/device/name"):
             try:
                 with open(path, encoding="utf-8") as handle:
-                    if handle.read().strip() == "cockpit-input":
+                    if handle.read().strip() == self.name:
                         return True
             except OSError:
                 continue
@@ -662,6 +678,9 @@ def cmd_scroll(args: argparse.Namespace) -> int:
 
 
 def cmd_key(args: argparse.Namespace) -> int:
+    state = load_state(args.app)
+    hypr("dispatch", f'hl.dsp.focus({{window="address:{state["address"]}"}})')
+    time.sleep(0.05)
     names = key_names()
     alias = {"escape": "esc", "return": "enter", "del": "delete", "pgup": "pageup"}
     wanted = args.name.lower().lstrip("_")
@@ -669,7 +688,7 @@ def cmd_key(args: argparse.Namespace) -> int:
     if code is None:
         raise SystemExit(f"cockpit: unknown key {args.name!r} (try `cockpit keys | grep {args.name.lower()}`)")
     modifiers = [MODIFIERS[name] for name in args.modifier]
-    device = Input()
+    device = Input("cockpit-keyboard", kind="keyboard")
     try:
         for _ in range(args.times):
             device.tap(code, modifiers)
@@ -680,7 +699,10 @@ def cmd_key(args: argparse.Namespace) -> int:
 
 
 def cmd_type(args: argparse.Namespace) -> int:
-    device = Input()
+    state = load_state(args.app)
+    hypr("dispatch", f'hl.dsp.focus({{window="address:{state["address"]}"}})')
+    time.sleep(0.05)
+    device = Input("cockpit-keyboard", kind="keyboard")
     try:
         for character in args.text:
             if character in SHIFTED:

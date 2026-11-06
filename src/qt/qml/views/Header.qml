@@ -21,6 +21,7 @@ Item {
     signal modeRequested(string mode)
     signal fileMenuRequested(real x, real y)
     signal sideToggleRequested()
+    signal savePresetRequested()
 
     readonly property int groupGap: Metrics.lg
     readonly property int dividerGap: Metrics.lg
@@ -162,6 +163,19 @@ Item {
         font.pixelSize: Type.sizeSmall
         color: root.documentName.length > 0 ? Colors.textSecondary : Colors.textMuted
         elide: Text.ElideMiddle
+    }
+
+    // Saving the current settings as a preset is the one preset action that does
+    // not belong behind a gear: a person who just changed a value looks at the
+    // header, and the same three buttons are where they were already looking.
+    Button {
+        id: savePreset
+        anchors.right: modeSwitch.left
+        anchors.rightMargin: Metrics.md
+        anchors.verticalCenter: parent.verticalCenter
+        text: "Save preset"
+        hint: "Save the settings in the open tab as a preset"
+        onClicked: root.savePresetRequested()
     }
 
     Rectangle {

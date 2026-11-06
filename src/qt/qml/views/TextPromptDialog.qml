@@ -52,12 +52,24 @@ Popup {
             anchors.margins: Metrics.panelPadding
             spacing: Metrics.md
 
-            Text {
-                text: root.title
-                font.family: Type.family
-                font.pixelSize: Type.sizeBody
-                font.bold: true
-                color: Colors.textPrimary
+            Row {
+                width: parent.width
+
+                Text {
+                    width: parent.width - promptClose.width
+                    text: root.title
+                    font.family: Type.family
+                    font.pixelSize: Type.sizeBody
+                    font.bold: true
+                    color: Colors.textPrimary
+                }
+
+                ToolButton {
+                    id: promptClose
+                    icon: "close"
+                    hint: "Close"
+                    onClicked: root.close()
+                }
             }
 
             Rectangle {
@@ -105,6 +117,15 @@ Popup {
                     onClicked: root.close()
                 }
             }
+        }
+
+        ResizeGrip {
+            dialog: root
+            minWidth: 380
+            minHeight: 190
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.margins: Metrics.xs
         }
     }
 }

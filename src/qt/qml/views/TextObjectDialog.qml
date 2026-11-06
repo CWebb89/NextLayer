@@ -68,16 +68,26 @@ Popup {
 
             spacing: Metrics.md
 
-            Text {
+            RowLayout {
                 Layout.fillWidth: true
                 Layout.leftMargin: Metrics.md
                 Layout.rightMargin: Metrics.md
                 Layout.topMargin: Metrics.md
-                text: "Text"
-                font.family: Type.family
-                font.pixelSize: Type.sizeBody
-                font.bold: true
-                color: Colors.textPrimary
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "Text"
+                    font.family: Type.family
+                    font.pixelSize: Type.sizeBody
+                    font.bold: true
+                    color: Colors.textPrimary
+                }
+
+                ToolButton {
+                    icon: "close"
+                    hint: "Close"
+                    onClicked: root.close()
+                }
             }
 
             Field {

@@ -793,14 +793,33 @@ Window {
                 // An open dialog owns Escape. The shell keeps focus while a dialog
                 // is up -- a popup only takes it when something inside can hold it --
                 // so dismissing it has to happen here or Escape does nothing.
+                // `opened` is the Popup property; asking for `closed` matched
+                // nothing and every dialog swallowed Escape in silence.
                 const overlays = Overlay.overlay ? Overlay.overlay.children : []
                 for (let i = overlays.length - 1; i >= 0; --i) {
                     const overlay = overlays[i]
-                    if (overlay && overlay.closed === false && typeof overlay.close === "function") {
+                    if (overlay && overlay.opened === true && typeof overlay.close === "function") {
                         overlay.close()
                         event.accepted = true
                         return
                     }
+                }
+                // Panels drawn inside the scene rather than in the overlay are
+                // not Popups, so the loop above cannot see them.
+                if (root.closeGuardOpen) {
+                    root.closeGuardOpen = false
+                    event.accepted = true
+                    return
+                }
+                if (setupFlow.visible) {
+                    setupFlow.close()
+                    event.accepted = true
+                    return
+                }
+                if (welcome.visible) {
+                    welcome.close()
+                    event.accepted = true
+                    return
                 }
                 if (viewport.measureActive) {
                     viewport.clearMeasure()
@@ -874,6 +893,10 @@ Window {
             documentName: session.hasModel ? session.displayName() : ""
             onModeRequested: (requested) => root.mode = requested
             onFileMenuRequested: root.fileMenuVisible = !root.fileMenuVisible
+            onSavePresetRequested: {
+                root.mode = "model"
+                settingsPanel.openPresetEditor(settingsPanel.activeTab)
+            }
         }
 
         Rail {

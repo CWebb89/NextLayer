@@ -98,6 +98,12 @@ Popup {
 
                 Item { Layout.fillWidth: true }
 
+                ToolButton {
+                    icon: "close"
+                    hint: "Close"
+                    onClicked: root.close()
+                }
+
                 Button {
                     text: "cancel"
                     onClicked: root.close()

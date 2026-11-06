@@ -25,7 +25,8 @@ with its position in the same space — the fastest way to find a control.
 | --- | --- |
 | workspace | `cockpit start` takes the next unused workspace id, focuses it, launches the command there, waits for a window, and records `ws`, window class and address in `/tmp/cockpit/<app>.json` |
 | pointer position | `hl.dsp.cursor.move({x,y})` — Hyprland moves the cursor exactly, with no pointer acceleration |
-| buttons, wheel, keys | a throwaway virtual input device on `/dev/uinput` (the udev ACL already grants this user access), created per command and destroyed afterwards |
+| buttons, wheel | a throwaway virtual pointer on `/dev/uinput` (the udev ACL already grants this user access), created per command and destroyed afterwards |
+| keys, type | a second virtual device that advertises only keys. One device carrying both a relative pointer and a keyboard is classified by libinput as a pointer, and the compositor then delivers clicks while dropping every key — which is why typing and Escape used to do nothing |
 | capture | `shot onws <ws> out.png`, so only the app's workspace is captured and the agent's terminal is never in frame |
 | labels | `find-text` / `click-text` OCR the capture with tesseract, matching a run of words on one line so `Slice plate` is found even though OCR returns two words |
 

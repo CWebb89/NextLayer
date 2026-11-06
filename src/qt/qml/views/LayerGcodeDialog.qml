@@ -46,6 +46,7 @@ Popup {
                                                             : "Custom G-code at layer "
 
     Rectangle {
+        id: surface
         anchors.fill: parent
         radius: Metrics.radiusLarge
         color: Colors.surfaceContainerLow
@@ -57,13 +58,25 @@ Popup {
             anchors.margins: Metrics.panelPadding
             spacing: Metrics.md
 
-            Text {
-                text: root.title + (root.layerIndex + 1)
-                      + "   \u00b7   " + root.layerZ.toFixed(2) + " mm"
-                font.family: Type.family
-                font.pixelSize: Type.sizeBody
-                font.bold: true
-                color: Colors.textPrimary
+            Row {
+                width: parent.width
+
+                Text {
+                    width: parent.width - closeButton.width
+                    text: root.title + (root.layerIndex + 1)
+                          + "   \u00b7   " + root.layerZ.toFixed(2) + " mm"
+                    font.family: Type.family
+                    font.pixelSize: Type.sizeBody
+                    font.bold: true
+                    color: Colors.textPrimary
+                }
+
+                ToolButton {
+                    id: closeButton
+                    icon: "close"
+                    hint: "Close"
+                    onClicked: root.close()
+                }
             }
 
             Text {
@@ -123,6 +136,15 @@ Popup {
                     onClicked: root.close()
                 }
             }
+        }
+
+        ResizeGrip {
+            dialog: root
+            minWidth: 420
+            minHeight: 260
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.margins: Metrics.xs
         }
     }
 }
