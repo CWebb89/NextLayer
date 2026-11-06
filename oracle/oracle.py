@@ -170,7 +170,11 @@ def capture(binary, label, runner):
     BASELINE.mkdir(parents=True, exist_ok=True)
     gcode_dir = BASELINE / "gcode"
     gcode_dir.mkdir(exist_ok=True)
-    manifest = {"label": label, "binary": str(binary), "cases": {}}
+    try:
+        shown = binary.relative_to(PROJECT)
+    except ValueError:
+        shown = binary
+    manifest = {"label": label, "binary": str(shown), "cases": {}}
     for case in ALL_CASES:
         if case.get("preset") is not None and runner != "qt":
             print(f"  SKIPPED  {case['name']:<22} (preset cases need --runner qt)")
@@ -238,7 +242,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("action", choices=["capture", "verify"])
     parser.add_argument("--bin", default=str(DEFAULT_BIN), help="slicer binary to exercise")
-    parser.add_argument("--label", default="prusaslicer-3.0.0-alpha12", help="name for this baseline")
+    parser.add_argument("--label", default="engine-3.0.0-alpha12", help="name for this baseline")
     parser.add_argument("--runner", choices=["launcher", "app", "qt"], default="launcher", help="argument style the binary expects")
     args = parser.parse_args()
     binary = Path(args.bin).resolve()

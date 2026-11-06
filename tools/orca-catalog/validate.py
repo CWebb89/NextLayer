@@ -28,7 +28,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-BIN = ROOT / "upstream/build/src/slic3r-app-qt/next-layer-qt"
+BIN = ROOT / "upstream/build/src/next-layer-qt/next-layer-qt"
 BUNDLE = ROOT / "upstream/resources/presets/orca-catalog"
 MODEL = ROOT / "oracle/models/cube_20.stl"
 MINIMUM_BYTES = 100_000

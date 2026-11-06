@@ -1,52 +1,42 @@
 #!/usr/bin/env fish
-# Shows what is uncommitted, in both repositories, without changing anything.
+# Shows what is uncommitted and what state the engine checkout is in, without
+# changing anything.
 #
 #   tools/status
 
 set -l root (realpath (dirname (status filename))/..)
-set -l code_repo $root/upstream
 
-function __section --argument-names label dir
-    echo "== $label  ($dir)"
-    if not test -e $dir/.git
-        echo '   not a git repository'
-        return
-    end
-    set -l branch (git -C $dir symbolic-ref --short --quiet HEAD)
-    set -l head (git -C $dir log --oneline -1)
-    if test -z "$branch"
-        echo "   HEAD detached at: $head"
-    else
-        echo "   branch $branch: $head"
-    end
-    set -l unmerged (git -C $dir ls-files --unmerged | wc -l)
-    if test $unmerged -gt 0
-        echo "   MID-MERGE: $unmerged unmerged path(s)"
-    end
-    set -l changed (git -C $dir status --porcelain | count)
-    if test $changed -eq 0
-        echo '   clean'
-    else
-        echo "   $changed changed file(s):"
-        git -C $dir status --short | head -n 40 | sed 's/^/     /'
-        if test $changed -gt 40
-            echo "     ... and "(math $changed - 40)" more"
-        end
-    end
+echo "== this repository  ($root)"
+set -l branch (git -C $root symbolic-ref --short --quiet HEAD)
+set -l head (git -C $root log --oneline -1)
+if test -z "$branch"
+    echo "   HEAD detached at: $head"
+else
+    echo "   branch $branch: $head"
 end
 
-__section 'our code' $code_repo
+set -l unmerged (git -C $root ls-files --unmerged | wc -l)
+if test $unmerged -gt 0
+    echo "   MID-MERGE: $unmerged unmerged path(s)"
+end
+
+set -l changed (git -C $root status --porcelain | count)
+if test $changed -eq 0
+    echo '   clean'
+else
+    echo "   $changed changed file(s):"
+    git -C $root status --short | head -n 40 | sed 's/^/     /'
+    if test $changed -gt 40
+        echo "     ... and "(math $changed - 40)" more"
+    end
+end
 echo
 
-set -l ours src/slic3r-app-qt src/slic3r-app-spike src/CMakeLists.txt
-set -l stray (git -C $code_repo status --porcelain -- . ':(exclude)src/slic3r-app-qt' ':(exclude)src/slic3r-app-spike' ':(exclude)src/CMakeLists.txt' 2>/dev/null)
-if test -n "$stray"
-    echo '   upstream files changed outside our two directories:'
-    for line in $stray
-        echo "     $line"
-    end
-    echo '   upstream/ is a pinned engine tree: revert those'
-    echo
+echo '== engine checkout  (upstream/)'
+$root/tools/bootstrap --status
+set -l engine_rc $status
+if test $engine_rc -ne 0
+    echo '   run tools/bootstrap to fetch and patch it'
 end
 
-__section 'the harness' $root
+exit 0

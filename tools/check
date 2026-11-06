@@ -15,11 +15,11 @@
 # names the files, because a green run against a stale binary is a lie.
 
 set -l root (realpath (dirname (status filename))/..)
-set -l bin $root/upstream/build/src/slic3r-app-qt/next-layer-qt
+set -l bin $root/upstream/build/src/next-layer-qt/next-layer-qt
 set -l model $root/oracle/models/cube_20.stl
-set -l qml $root/upstream/src/slic3r-app-qt/qml
-set -l code $root/upstream/src/slic3r-app-qt/src
-set -l spike $root/upstream/src/slic3r-app-spike
+set -l qml $root/src/qt/qml
+set -l code $root/src/qt/src
+set -l spike $root/src/cli
 set -l baseline $root/tools/qmllint-baseline
 
 set -g passed 0
@@ -94,7 +94,7 @@ if test $ready -eq 0
     exit 1
 end
 
-pushd $root/upstream/src/slic3r-app-qt >/dev/null
+pushd $root/src/qt >/dev/null
 set -l qmlfiles (find qml -name '*.qml')
 set -l qml_import (qtpaths6 --query QT_INSTALL_QML 2>/dev/null)
 set -l lint (qmllint --unqualified disable -I $qml_import $qmlfiles 2>&1)

@@ -21,7 +21,7 @@ installed Orca:
 orca-slicer /opt/orca-slicer/resources/calib/temperature_tower/temperature_tower.drc \
     --export-stl --outputdir /tmp/calib
 python3 tools/calib-meshes/decimate.py /tmp/calib/stl/obj_1_temperature_tower.drc.stl \
-    upstream/src/slic3r-app-qt/resources/calib/temperature_tower.stl 0.3
+    src/qt/resources/calib/temperature_tower.stl 0.3
 ```
 
 `decimate.py` is vertex clustering: the exporter writes the full-resolution mesh

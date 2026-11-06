@@ -562,7 +562,7 @@ def main():
     parser.add_argument("--machines", help="comma-separated substrings; only matching machine presets")
     parser.add_argument("--nozzle", default=NOZZLE)
     parser.add_argument("--bin", default=str(Path(__file__).resolve().parents[2]
-                                            / "upstream/build/src/slic3r-app-qt/next-layer-qt"))
+                                            / "upstream/build/src/next-layer-qt/next-layer-qt"))
     parser.add_argument("--model", default=str(Path(__file__).resolve().parents[2]
                                               / "oracle/models/cube_20.stl"))
     parser.add_argument("--engine-source", default=str(Path(__file__).resolve().parents[2]

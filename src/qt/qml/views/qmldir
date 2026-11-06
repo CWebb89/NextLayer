@@ -1,0 +1,17 @@
+DeviceView 1.0 DeviceView.qml
+DeviceWebView 1.0 DeviceWebView.qml
+Header 1.0 Header.qml
+Rail 1.0 Rail.qml
+Viewport 1.0 Viewport.qml
+SettingsPanel 1.0 SettingsPanel.qml
+FooterBar 1.0 FooterBar.qml
+PreviewLegend 1.0 PreviewLegend.qml
+GcodeWindow 1.0 GcodeWindow.qml
+ViewportToolbar 1.0 ViewportToolbar.qml
+TransformPanel 1.0 TransformPanel.qml
+SettingsTree 1.0 SettingsTree.qml
+PresetEditorDialog 1.0 PresetEditorDialog.qml
+BedShapeDialog 1.0 BedShapeDialog.qml
+ColourDialog 1.0 ColourDialog.qml
+SubstitutionsDialog 1.0 SubstitutionsDialog.qml
+StringListDialog 1.0 StringListDialog.qml

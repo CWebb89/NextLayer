@@ -75,21 +75,31 @@ slicer shippable is the boring middle: fifty prints across profiles you did not
 write, and every failure triaged. That is 6–10 weekends of testing, not 6–10 of
 coding.
 
-## 3. Repository shape — the one real restructuring
+## 3. Repository shape — done, 2026-11-06
 
-Today the work lives in two git repos: this harness, and `upstream/` (a fork of
-Prusa's tree with our code inside it). That layout is right for development and
-wrong for publication, because a visitor cloning the public repo gets `/upstream/`
-ignored and an empty program.
+The work used to live in two git repos: this project, and `upstream/` (the engine
+with our code inside it). That layout was right for development and wrong for
+publication, because a visitor cloning the project got `/upstream/` ignored and an
+empty program.
 
-Two ways out:
+The layout now in the tree, which is **A below, implemented**:
 
-**A. Recommended — one public repo, vendored engine, patch series.**
-Move `src/slic3r-app-qt` and `src/slic3r-app-spike` to the repo root as `src/`, and
-keep `upstream/` as a gitignored checkout produced by a script. The two
-`add_subdirectory` lines, plus the out-of-tree source directory, become
-`patches/0001-app-subdirectory.patch`, exported with `git format-patch` from the
-`next-layer` branch. `tools/bootstrap` then does:
+- `src/qt` and `src/cli` are at the repo root, tracked here with all our history.
+- `patches/0001-app-subdirectories.patch` is the whole of our footprint in the
+  engine: two `add_subdirectory` lines, pointing at our sources from outside the
+  engine tree, with an explicit binary directory.
+- `tools/bootstrap` fetches the engine at its pinned commit and applies that
+  patch. `upstream/` is gitignored and disposable.
+- `tools/check` 24/24 and the oracle 12/12 on both runners passed in the new
+  layout before it was committed.
+
+The two options, kept because the reasoning still applies to any future move:
+
+**A. Implemented** — one public repo, vendored engine, patch series.
+Our sources live at the repo root as `src/`, and `upstream/` is a gitignored
+checkout produced by a script. The two `add_subdirectory` lines, plus the
+out-of-tree source directory, are `patches/0001-app-subdirectories.patch`,
+exported with `git format-patch`. `tools/bootstrap` then does:
 
 ```fish
 git clone --filter=blob:none --branch 3.0.0-alpha12 <prusa> upstream
@@ -208,7 +218,7 @@ That is roughly a day's work and it is the difference between "an updater" and "
 supply chain".
 
 Also: keep the version in one place. `NEXT_LAYER_VERSION` in
-`src/slic3r-app-qt/CMakeLists.txt` is the source of truth, and today nothing checks
+`src/qt/CMakeLists.txt` is the source of truth, and today nothing checks
 it: `tools/release` takes a version on the command line and will happily stamp
 `0.3.0` onto a binary built as `0.1.0`. It should read the constant and refuse a
 mismatch.

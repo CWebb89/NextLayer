@@ -28,8 +28,8 @@ if not string match -qr '^[0-9]+\.[0-9]+\.[0-9]+$' -- $version
     exit 2
 end
 
-set -l bin $root/upstream/build/src/slic3r-app-qt/next-layer-qt
-set -l qml $root/upstream/src/slic3r-app-qt/qml
+set -l bin $root/upstream/build/src/next-layer-qt/next-layer-qt
+set -l qml $root/src/qt/qml
 
 if not test -x $bin
     echo "tools/release: $bin is missing; build it first" >&2

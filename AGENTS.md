@@ -10,12 +10,14 @@ the decisions, measured facts, dead ends, and the reasoning behind each.
 
 ## Layout
 
-- `upstream/` — PrusaSlicer 3.0.0-alpha12 at a pinned commit. **Treat as
-  upstream.** Our code lives in two directories of our own
-  (`src/slic3r-app-spike`, `src/slic3r-app-qt`) plus two `add_subdirectory`
-  lines inside the existing `if (SLIC3R_GUI)` block in `src/CMakeLists.txt`.
-  Nothing else is modified. Keeping it that way is what makes pulling engine
-  updates cheap — do not edit upstream files to solve our problems.
+- `src/` — ours, all of it. `src/qt` is the application; `src/cli` is the
+  headless slicing harness the oracle's `app` runner drives.
+- `patches/` — the single patch that makes the engine build our sources. It
+  replaces two `add_subdirectory` lines in the engine's `src/CMakeLists.txt`
+  with two that point here, from outside the engine tree.
+- `upstream/` — the slicing engine, fetched at a pinned commit and patched in
+  place by `tools/bootstrap`. Gitignored: it is a dependency, never edited by
+  hand and never committed. The patch is the whole of our footprint in it.
 - `oracle/` — the G-code oracle: model corpus, config profiles, baselines, and
   `oracle.py`. This is the regression harness for the slicing engine.
 
@@ -70,9 +72,9 @@ Slicing parity (the important one):
 cd ~/dev/next-layer
 python3 oracle/oracle.py capture                                    # stock engine → baselines
 python3 oracle/oracle.py verify --runner app \
-    --bin upstream/build/src/slic3r-app-spike/next-layer-spike      # spike binary vs baselines
+    --bin upstream/build/src/next-layer-cli/next-layer-spike        # spike binary vs baselines
 python3 oracle/oracle.py verify --runner qt \
-    --bin upstream/build/src/slic3r-app-qt/next-layer-qt            # app binary vs baselines
+    --bin upstream/build/src/next-layer-qt/next-layer-qt            # app binary vs baselines
 ```
 
 `verify` exits 0 only when every case is byte-identical after header
@@ -89,16 +91,15 @@ keeps them honest, and `tools/check` runs it.
 
 The UI's own headless knobs (`--dump-tabs`, `--dump-subtab`, `--settings-tab`,
 `--panel-left`, `--transform`) are documented in
-`upstream/src/slic3r-app-qt/README.md`. `docs/orca-parity.md` is the Orca/Prusa
+`src/qt/README.md`. `docs/orca-parity.md` is the Orca/Prusa
 feature ledger: every tab, tool and setting marked done / staged / needs-engine,
 so "do we have it yet" is a lookup rather than a guess.
 
 Viewport rendering, headless (no window on the desktop, no screen capture):
 
 ```sh
-cd upstream/src/slic3r-app-qt
-QT_QPA_PLATFORM=eglfs ../../build/src/slic3r-app-qt/next-layer-qt \
-    ../../../oracle/models/bridge_30.stl --smoke --shot /tmp/frame.png
+QT_QPA_PLATFORM=eglfs upstream/build/src/next-layer-qt/next-layer-qt \
+    oracle/models/bridge_30.stl --smoke --shot /tmp/frame.png
 ```
 
 `--smoke` renders one frame, reports coverage and exits non-zero if nothing
@@ -109,11 +110,10 @@ looks like a pass if you only check the exit code.
 The app's own pipeline, without a window or a mouse:
 
 ```sh
-cd upstream/src/slic3r-app-qt
-BIN=../../build/src/slic3r-app-qt/next-layer-qt
-$BIN ../../../oracle/models/cube_20.stl --selftest-slice     # SliceController path
-$BIN ../../../oracle/models/cube_20.stl --dump-config /tmp/c.json
-$BIN ../../../oracle/models/cube_20.stl --preview ../../../oracle/baseline/gcode/cube_default.gcode --smoke --shot /tmp/preview.png
+BIN=upstream/build/src/next-layer-qt/next-layer-qt
+$BIN oracle/models/cube_20.stl --selftest-slice     # SliceController path
+$BIN oracle/models/cube_20.stl --dump-config /tmp/c.json
+$BIN oracle/models/cube_20.stl --preview oracle/baseline/gcode/cube_default.gcode --smoke --shot /tmp/preview.png
 ```
 
 ## Preset fixtures
@@ -136,41 +136,38 @@ old one.
 
 ## Saving work
 
-Two repositories. One command:
+One repository. One command:
 
 ```sh
-tools/save "what changed"   # commits both, or reports there is nothing to save
-tools/status                # what is uncommitted, either side
+tools/save "what changed"   # commits, or says there is nothing to save
+tools/status                # what is uncommitted, and what state the engine is in
 ```
 
-- `~/dev/next-layer` (branch `main`) — the harness: oracle corpus and baselines,
-  `tools/`, `docs/`, `AGENTS.md`, `.pi/plans/`. `.gitignore` is `/upstream/`.
-- `upstream/` (branch `next-layer`) — our code only: `src/slic3r-app-qt`,
-  `src/slic3r-app-spike`, and the two `add_subdirectory` lines. One commit on top
-  of the pinned engine tag.
+- `~/dev/next-layer` (branch `main`) — everything: `src/`, `patches/`, `tools/`,
+  `oracle/`, `docs/`, `AGENTS.md`. `.gitignore` is `/upstream/` and `/dist/`.
+- `upstream/` is not a repository of ours. `tools/bootstrap` fetches it from the
+  engine's own repository at the pinned commit and applies `patches/`, so it can
+  always be discarded and rebuilt. Nothing in it is ever staged.
 
-Our code cannot live in the root repo: git records any directory containing
-`.git` as a gitlink instead of tracking inside it, so a repo above `upstream/`
-can never track files below it. `tools/save` stages only those three paths and
-reports — without committing — any other change under `upstream/`, which is the
-"never edit upstream files" rule turned into a check.
-
-Nothing is pushed and `upstream`'s `origin` is still Prusa's repository. Bumping
-the engine pin is a rebase of the `next-layer` commit onto the new tag; do not
-re-clone, the branch lives only here.
+Bumping the engine pin: fetch the new commit, re-export `patches/` against it
+(`git format-patch` in a scratch checkout), re-run `tools/bootstrap` and the
+oracle. The patch failing to apply is the signal that the engine's build files
+moved and need a look — that is deliberate, not a nuisance.
 
 ## Building
 
-Configure/build already done: `upstream/build/` and `upstream/deps/build/` are
-populated. To rebuild after a C++ change:
+`upstream/build/` and `upstream/deps/build/` are populated on this machine, so
+`tools/bootstrap` has nothing to fetch and a rebuild is incremental:
 
 ```sh
 cmake --build upstream/build --target next-layer-qt -j4
 ```
 
-Use the cgroup wrapper from the memory file for anything heavier than an
-incremental link. QML under `upstream/src/slic3r-app-qt/qml/` is loaded from disk
-at runtime — editing it needs no rebuild.
+On a fresh machine, order is: `tools/bootstrap`, then one cmake configure of
+`upstream/` into `upstream/build/`, which fetches the engine's dependencies (hours
+and tens of GB), then the build. Use the memory-capped scope for anything heavier
+than an incremental link. QML under `src/qt/qml/` is loaded from disk at runtime —
+editing it needs no rebuild.
 
 Launching: `~/.local/bin/next-layer` is a fish wrapper around the build-tree
 binary, so the app starts from any directory and with any arguments. It resolves

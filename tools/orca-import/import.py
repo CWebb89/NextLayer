@@ -158,7 +158,7 @@ def main():
     parser.add_argument("--vendor", default="Voron")
     parser.add_argument("--bundle-id", default="orca-catalog")
     parser.add_argument("--out", default=None)
-    parser.add_argument("--bin", default=str(REPO / "upstream/build/src/slic3r-app-qt/next-layer-qt"))
+    parser.add_argument("--bin", default=str(REPO / "upstream/build/src/next-layer-qt/next-layer-qt"))
     parser.add_argument("--model", default=str(REPO / "oracle/models/cube_20.stl"))
     parser.add_argument("--engine-source", default=str(REPO / (
         "upstream/src/slic3r-shared/src/Slic3r/Biz/Config/Legacy/PrintConfig.cpp")))

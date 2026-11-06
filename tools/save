@@ -1,97 +1,38 @@
 #!/usr/bin/env fish
-# Saves work in both repositories with one message.
+# Saves work with one message, in one repository.
 #
 #   tools/save "what changed"
 #
-# Our code is committed on the `next-layer` branch inside upstream/ with only
-# the two directories of ours and the CMakeLists lines that build them staged;
-# anything else modified under upstream/ is reported and left alone, because
-# that means an upstream file was edited by hand. Everything outside upstream/
-# is committed in the project repository. Never pushes, never resets, never
-# touches history.
+# Everything tracked here is ours. The engine checkout under upstream/ is a
+# dependency and is ignored, so it cannot be committed by accident. Never
+# pushes, never resets, never touches history.
 
 set -l root (realpath (dirname (status filename))/..)
-set -l code_repo $root/upstream
-set -l ours src/slic3r-app-qt src/slic3r-app-spike src/CMakeLists.txt
 
 if test (count $argv) -lt 1
     echo 'usage: tools/save "what changed"' >&2
-    echo '  commits our code (upstream, branch next-layer) and the harness (project root)' >&2
     exit 2
 end
 
 set -l message (string join ' ' -- $argv)
-set -l problems 0
-set -l commits 0
-
-set -l harness_repo $root
-
-function __unmerged --argument-names dir
-    string length -q -- (git -C $dir ls-files --unmerged | head -n 1)
-end
-
-function __dirty --argument-names dir
-    string length -q -- (git -C $dir status --porcelain | head -n 1)
-end
 
 echo "saving: $message"
 
-if __unmerged $harness_repo
-    echo '  the harness is mid-merge: resolve it, then save' >&2
-    set problems 1
-else if __dirty $harness_repo
-    git -C $harness_repo add -A
-    set -l staged (git -C $harness_repo diff --cached --name-only | count)
-    if git -C $harness_repo commit -q -m "$message"
-        echo "  the harness: committed $staged file(s)"
-        set commits (math $commits + 1)
-    else
-        echo '  the harness: commit FAILED' >&2
-        set problems 1
-    end
-else
-    echo '  the harness: nothing to save'
+if string length -q -- (git -C $root ls-files --unmerged | head -n 1)
+    echo '  mid-merge: resolve it, then save' >&2
+    exit 1
 end
 
-set -l branch (git -C $code_repo symbolic-ref --short --quiet HEAD)
-if test -z "$branch"
-    echo "  our code: HEAD is detached in $code_repo (expected branch next-layer)" >&2
-    echo '  fix with: git -C upstream switch -c next-layer' >&2
-    set problems 1
-else if test "$branch" != next-layer
-    echo "  our code: on branch $branch, expected next-layer; saving anyway" >&2
-end
-
-if __unmerged $code_repo
-    echo '  our code is mid-merge: resolve it, then save' >&2
-    set problems 1
-else
-    git -C $code_repo add -- $ours
-    set -l staged (git -C $code_repo diff --cached --name-only | count)
-    if test $staged -gt 0
-        if git -C $code_repo commit -q -m "$message"
-            echo "  our code: committed $staged file(s)"
-            set commits (math $commits + 1)
-        else
-            echo '  our code: commit FAILED' >&2
-            set problems 1
-        end
-    else
-        echo '  our code: nothing to save'
-    end
-    set -l stray (git -C $code_repo status --porcelain -- . ':(exclude)src/slic3r-app-qt' ':(exclude)src/slic3r-app-spike' ':(exclude)src/CMakeLists.txt')
-    if test -n "$stray"
-        echo '  WARNING: files under upstream/ outside our two directories changed and were NOT saved:' >&2
-        for line in $stray
-            echo "    $line" >&2
-        end
-        echo '  upstream/ is a pinned engine tree: revert those, do not commit them' >&2
-        set problems 1
-    end
-end
-
-if test $commits -eq 0 -a $problems -eq 0
+if not string length -q -- (git -C $root status --porcelain | head -n 1)
     echo 'nothing to save'
+    exit 0
 end
 
-exit $problems
+git -C $root add -A
+set -l staged (git -C $root diff --cached --name-only | count)
+if not git -C $root commit -q -m "$message"
+    echo '  commit FAILED' >&2
+    exit 1
+end
+
+echo "  committed $staged file(s)"

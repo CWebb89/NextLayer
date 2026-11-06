@@ -65,7 +65,7 @@ filament presets into the Orca bundle next-layer ships, translating Orca's
 setting names to this engine's. With the same model, printer and `2.4 PLA`:
 
 ```sh
-B=upstream/build/src/slic3r-app-qt/next-layer-qt
+B=upstream/build/src/next-layer-qt/next-layer-qt
 QT_QPA_PLATFORM=offscreen $B oracle/models/cube_20.stl \
     --printer 'Voron 2.4 350 0.4 nozzle - Copy 0.4' --process '2.4' \
     --filament '2.4 PLA' --dump-config /tmp/v.json

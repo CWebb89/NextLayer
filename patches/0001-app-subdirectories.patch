@@ -1,0 +1,25 @@
+From 09fed2f3a81eaf348cacc68f86f3198d4738b622 Mon Sep 17 00:00:00 2001
+From: CWebb89 <webbwerkx@gmail.com>
+Date: Fri, 6 Nov 2026 14:29:57 -0500
+Subject: [PATCH] build: build the next-layer app from outside the engine tree
+
+---
+ src/CMakeLists.txt | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 98fa530..8e2382d 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -32,6 +32,8 @@ if (SLIC3R_GUI)
+     # targets without GUI dependencies. It requires splitting slic3r-shared first.
+     add_subdirectory(slic3r-app-cli)      
+     add_subdirectory(slic3r-app-launcher) 
++    add_subdirectory(${CMAKE_SOURCE_DIR}/../src/cli ${CMAKE_BINARY_DIR}/src/next-layer-cli)
++    add_subdirectory(${CMAKE_SOURCE_DIR}/../src/qt ${CMAKE_BINARY_DIR}/src/next-layer-qt)
+ 
+     add_subdirectory(slic3r-render)
+     add_subdirectory(slic3r-platform)
+-- 
+2.56.0
+

@@ -22,12 +22,12 @@ const REPO = "/home/cwebb/dev/next-layer";
 const CAPTURE_LIMIT = 2 * 1024 * 1024;
 const BUILD_MEMORY = "MemoryMax=8G";
 const BUILD_SWAP = "MemorySwapMax=2G";
-const QT_BIN = `${REPO}/upstream/build/src/slic3r-app-qt/next-layer-qt`;
+const QT_BIN = `${REPO}/upstream/build/src/next-layer-qt/next-layer-qt`;
 const DEFAULT_MODEL = `${REPO}/oracle/models/cube_20.stl`;
 
 const RUNNER_BIN = {
 	qt: QT_BIN,
-	app: `${REPO}/upstream/build/src/slic3r-app-spike/next-layer-spike`,
+	app: `${REPO}/upstream/build/src/next-layer-cli/next-layer-spike`,
 	launcher: `${REPO}/upstream/build/src/slic3r-app-launcher/slic3r-app-launcher`,
 };
 

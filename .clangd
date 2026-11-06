@@ -6,6 +6,6 @@ Index:
 
 ---
 If:
-  PathMatch: src/slic3r-app-qt/.*
+  PathMatch: src/qt/.*
 Index:
   Background: Build

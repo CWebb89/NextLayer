@@ -1,6 +1,6 @@
 {
-  "label": "prusaslicer-3.0.0-alpha12",
-  "binary": "/home/cwebb/dev/next-layer/upstream/build/src/slic3r-app-qt/next-layer-qt",
+  "label": "engine-3.0.0-alpha12",
+  "binary": "upstream/build/src/next-layer-qt/next-layer-qt",
   "cases": {
     "cube_default": {
       "model": "cube_20.stl",
