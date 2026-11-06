@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Curtis Webb
+
 #include "SettingsModel.hpp"
 #include "PresetYaml.hpp"
 
@@ -630,9 +633,13 @@ struct SettingsModel::Impl
         seedFromProfile();
     }
 
-    // The shipped base-config.json is a complete --load config captured from the
-    // stock engine. Seeding from it makes the panel's defaults match the profile
-    // the oracle pins, so an untouched UI slices exactly what the baseline holds.
+    // The shipped base-config.json is a machine-neutral --load config: every
+    // setting at a value of the right shape, no printer named. It exists for the
+    // shape, not for a machine — the engine's item types (a points list, a
+    // per-tool vector) cannot be inferred from an untyped default, so a config
+    // built without it is rejected item by item. Nothing is drawn from it: the
+    // bed and the printer model in it are nominal and a resolved preset replaces
+    // every one of these values before anything slices.
     void seedFromProfile()
     {
         QFile file(QStringLiteral(":/next-layer/base-config.json"));

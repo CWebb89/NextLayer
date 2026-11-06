@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Curtis Webb
+
 #include <GL/glew.h>
 
 extern "C" GLenum __real_glewInit(void);

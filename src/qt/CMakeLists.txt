@@ -65,7 +65,7 @@ add_executable(next-layer-qt
     src/Toolpath.hpp
 )
 
-qt_add_resources(next-layer-qt "base_config"
+qt_add_resources(next-layer-qt "app_assets"
     PREFIX "/next-layer"
     BASE assets
     FILES assets/base-config.json

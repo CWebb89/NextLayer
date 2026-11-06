@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Curtis Webb
+
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
@@ -126,6 +129,19 @@ Popup {
                 }
 
                 Text {
+                    text: "Licence"
+                    font.family: Type.family
+                    font.pixelSize: Type.sizeCaption
+                    color: Colors.textMuted
+                }
+                Text {
+                    text: "AGPL-3.0-or-later"
+                    font.family: Type.family
+                    font.pixelSize: Type.sizeCaption
+                    color: Colors.textPrimary
+                }
+
+                Text {
                     text: "Data"
                     font.family: Type.family
                     font.pixelSize: Type.sizeCaption
@@ -157,6 +173,19 @@ Popup {
             }
 
             Item { Layout.fillHeight: true; Layout.preferredHeight: Metrics.sm }
+
+            Text {
+                Layout.leftMargin: Metrics.xl
+                Layout.rightMargin: Metrics.xl
+                Layout.fillWidth: true
+                text: "This program is free software under the GNU Affero General Public License, version 3 or later, with no warranty. The full licence text and every third-party notice ship with the source, as LICENSE and THIRD-PARTY.md."
+                wrapMode: Text.WordWrap
+                font.family: Type.family
+                font.pixelSize: Type.sizeCaption
+                color: Colors.textTertiary
+            }
+
+            Item { Layout.fillHeight: true; Layout.preferredHeight: Metrics.xs }
 
             RowLayout {
                 Layout.leftMargin: Metrics.xl

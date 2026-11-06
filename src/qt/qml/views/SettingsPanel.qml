@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Curtis Webb
+
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
@@ -117,30 +120,28 @@ Item {
             presetEditor.openOn(dialog)
     }
 
-    // A printer is always selected: an empty bar reads as a broken app, and the
-    // first node of the bundle is what is shown before anything is
-    // chosen. The setup flow overrides this the moment it resolves a triple.
     Connections {
         target: presetStore
 
-        // Last used machine first, then the first of the bundle: the panel must
-        // never open empty, and it should open on the machine that was last
-        // sliced with rather than on whatever sorts first in the catalogue.
+        // Restore the machine last sliced with, and nothing else. There is no
+        // default printer: on a fresh install nothing is chosen, the panel stays
+        // empty, and the setup flow is what picks a machine — never the order a
+        // catalog happens to be sorted in.
         function onPrintersChanged() {
             if (presetBar.printer.length > 0)
                 return
             const printers = presetStore.printers
             if (printers.length === 0)
                 return
-            let wanted = rememberedSetup.printer
-            let found = false
+            const wanted = rememberedSetup.printer
+            if (wanted.length === 0)
+                return
             for (let i = 0; i < printers.length; ++i) {
                 if (printers[i].name === wanted) {
-                    found = true
-                    break
+                    presetBar.choosePrinter(wanted)
+                    return
                 }
             }
-            presetBar.choosePrinter(found ? wanted : printers[0].name)
         }
 
         function onResolved() {

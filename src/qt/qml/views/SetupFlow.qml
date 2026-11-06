@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Curtis Webb
+
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -31,6 +34,8 @@ Item {
     property string quality: ""
     property string filter: ""
     property string vendor: ""
+    property bool customOpen: false
+    property string customMessage: ""
 
     readonly property var steps: ["Machine", "Material", "Quality", "Review"]
     readonly property bool ready: machine !== "" && material !== "" && quality !== ""
@@ -116,8 +121,26 @@ Item {
     function open() {
         visible = true
         root.filter = ""
+        root.customOpen = false
+        root.customMessage = ""
         if (presetStore.printers.length === 0)
             presetStore.refreshPrinters()
+    }
+
+    // A machine the catalog does not carry: the user knows its bed, so the bed is
+    // the whole question. This writes a printer preset into the local bundle and
+    // nothing is inherited from any vendor's profile.
+    function createCustom(name, width, depth, height) {
+        const error = presetStore.createPrinter(name, width, depth, height)
+        if (error.length > 0) {
+            root.customMessage = error
+            return
+        }
+        presetStore.refreshPrinters()
+        root.customOpen = false
+        root.customMessage = ""
+        root.chooseMachine(name)
+        root.step = 1
     }
 
     function close() {
@@ -513,7 +536,7 @@ Item {
                     Item {
                         id: machinePane
                         anchors.fill: parent
-                        visible: root.step === 0
+                        visible: root.step === 0 && !root.customOpen
 
                         ColumnLayout {
                             anchors.fill: parent
@@ -528,7 +551,7 @@ Item {
                                 spacing: Metrics.sm
 
                                 ComboBox {
-                                    width: parent.width * 0.55
+                                    width: parent.width * 0.42
                                     choices: root.vendorChoices
                                     currentValue: root.vendor
                                     searchable: true
@@ -537,7 +560,7 @@ Item {
 
                                 Text {
                                     anchors.verticalCenter: parent.verticalCenter
-                                    width: parent.width * 0.45 - parent.spacing
+                                    width: parent.width * 0.33 - parent.spacing
                                     text: root.machines.length + " machines"
                                             + (root.vendor === "" ? "" : " from " + root.vendor)
                                     textFormat: Text.PlainText
@@ -545,6 +568,14 @@ Item {
                                     font.family: Type.family
                                     font.pixelSize: Type.sizeCaption
                                     color: Colors.textTertiary
+                                }
+
+                                Button {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: parent.width * 0.25 - parent.spacing
+                                    text: "Not listed?"
+                                    hint: "Create a printer of my own"
+                                    onClicked: root.customOpen = true
                                 }
                             }
 
@@ -610,6 +641,124 @@ Item {
                                         onClicked: root.chooseMachine(machineRow.modelData.name)
                                     }
                                 }
+                            }
+                        }
+                    }
+
+                    Item {
+                        id: customPane
+                        anchors.fill: parent
+                        visible: root.step === 0 && root.customOpen
+
+                        Column {
+                            anchors.fill: parent
+                            spacing: Metrics.md
+
+                            Text {
+                                width: parent.width
+                                text: "A printer the catalog does not carry. Give it a name and the size it actually prints on — this writes a printer preset of your own, inherited from no vendor profile."
+                                textFormat: Text.PlainText
+                                wrapMode: Text.WordWrap
+                                font.family: Type.family
+                                font.pixelSize: Type.sizeCaption
+                                color: Colors.textTertiary
+                            }
+
+                            Rectangle {
+                                width: parent.width
+                                height: Metrics.controlHeight
+                                radius: Metrics.radiusSmall
+                                color: Colors.surfaceContainer
+                                border.width: Metrics.borderWidth
+                                border.color: customName.activeFocus ? Colors.accent : Colors.edge
+
+                                TextInput {
+                                    id: customName
+                                    anchors.fill: parent
+                                    anchors.leftMargin: Metrics.controlPaddingX
+                                    anchors.rightMargin: Metrics.controlPaddingX
+                                    verticalAlignment: TextInput.AlignVCenter
+                                    font.family: Type.family
+                                    font.pixelSize: Type.sizeSmall
+                                    color: Colors.textPrimary
+                                    selectionColor: Colors.primaryContainer
+                                    selectedTextColor: Colors.primaryContainerText
+                                    clip: true
+                                    onTextChanged: root.customMessage = ""
+                                }
+
+                                Text {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: Metrics.controlPaddingX
+                                    verticalAlignment: Text.AlignVCenter
+                                    visible: customName.text === ""
+                                    text: "printer name"
+                                    font.family: Type.family
+                                    font.pixelSize: Type.sizeSmall
+                                    color: Colors.textTertiary
+                                }
+                            }
+
+                            Row {
+                                width: parent.width
+                                spacing: Metrics.sm
+
+                                NumberField {
+                                    id: customWidth
+                                    width: (parent.width - parent.spacing * 2) / 3
+                                    value: 350
+                                    from: 10
+                                    to: 2000
+                                    units: "W"
+                                }
+
+                                NumberField {
+                                    id: customDepth
+                                    width: (parent.width - parent.spacing * 2) / 3
+                                    value: 350
+                                    from: 10
+                                    to: 2000
+                                    units: "D"
+                                }
+
+                                NumberField {
+                                    id: customHeight
+                                    width: (parent.width - parent.spacing * 2) / 3
+                                    value: 330
+                                    from: 10
+                                    to: 2000
+                                    units: "H"
+                                }
+                            }
+
+                            Row {
+                                spacing: Metrics.sm
+
+                                Button {
+                                    text: "Create this printer"
+                                    primary: true
+                                    enabled: !presetStore.busy && customName.text.length > 0
+                                    onClicked: root.createCustom(customName.text, customWidth.value,
+                                                                 customDepth.value, customHeight.value)
+                                }
+
+                                Button {
+                                    text: "Back to the list"
+                                    onClicked: {
+                                        root.customOpen = false
+                                        root.customMessage = ""
+                                    }
+                                }
+                            }
+
+                            Text {
+                                width: parent.width
+                                visible: root.customMessage !== ""
+                                text: root.customMessage
+                                wrapMode: Text.WordWrap
+                                font.family: Type.family
+                                font.pixelSize: Type.sizeCaption
+                                color: Colors.error
                             }
                         }
                     }

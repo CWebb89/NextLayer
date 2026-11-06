@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Curtis Webb
+
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
@@ -397,6 +400,14 @@ Window {
     }
 
     function addModels(paths) {
+        // A plate is only as big as the machine on it. Without a printer there is
+        // no bed to place anything on, so the answer is the setup, not a model
+        // clamped into a zero-sized bed.
+        if (Host.bedShape.length < 3) {
+            root.setStatus("choose a printer first — there is no bed yet")
+            setupFlow.reopen()
+            return 0
+        }
         const added = session.addModels(paths)
         if (added > 0) {
             root.mode = root.modelMode
@@ -899,6 +910,67 @@ Window {
             function onBedChanged() {
                 viewport.resetView()
                 root.setStatus("bed for " + Host.printerModel)
+            }
+        }
+
+        // Nothing is configured for a machine until a preset resolves, so this is
+        // the state a fresh install is actually in: no bed, no plate, and the one
+        // action that fixes it.
+        Item {
+            id: noPrinter
+
+            anchors.top: header.bottom
+            anchors.bottom: footer.top
+            x: root.panelOnLeft
+               ? Metrics.railWidth + root.panelWidth
+               : Metrics.railWidth
+            width: shell.width - Metrics.railWidth - root.panelWidth
+            visible: Host.bedShape.length < 3 && root.mode !== root.deviceMode
+            z: 4
+
+            Rectangle {
+                anchors.centerIn: parent
+                width: Math.min(parent.width - Metrics.panelMargin * 4, 460)
+                height: card.implicitHeight + Metrics.panelPadding * 2
+                radius: Metrics.radiusLarge
+                color: Colors.surfaceContainerLow
+                border.width: Metrics.borderWidth
+                border.color: Colors.edge
+
+                Column {
+                    id: card
+
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.margins: Metrics.panelPadding
+                    spacing: Metrics.sm
+
+                    Text {
+                        text: "No printer yet"
+                        font.family: Type.family
+                        font.pixelSize: Type.sizeLarge
+                        font.bold: true
+                        color: Colors.textPrimary
+                    }
+
+                    Text {
+                        width: parent.width
+                        text: "next-layer ships no machine of its own. Pick your printer and the bed, its height and its materials become yours; until then there is nothing to slice onto."
+                        wrapMode: Text.WordWrap
+                        font.family: Type.family
+                        font.pixelSize: Type.sizeSmall
+                        color: Colors.textSecondary
+                    }
+
+                    Item { width: 1; height: Metrics.xs }
+
+                    Button {
+                        text: "Choose my printer"
+                        primary: true
+                        onClicked: setupFlow.reopen()
+                    }
+                }
             }
         }
 

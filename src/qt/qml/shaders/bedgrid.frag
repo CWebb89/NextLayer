@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Curtis Webb
+
 // A clip-space distance field draws the bed grid the way it looks rather than
 // as geometry: 10 mm lines with every fifth heavier, anchored on the print origin,
 // one pixel wide at any zoom. Wide GL lines would be exact, but Qt Quick 3D has

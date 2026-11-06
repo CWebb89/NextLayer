@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Curtis Webb
+
 #pragma once
 
 #include <QObject>
@@ -23,7 +26,6 @@ class Host : public QObject
     Q_PROPERTY(QString modelPath READ modelPath NOTIFY modelPathChanged)
     Q_PROPERTY(QVariantList bedShape READ bedShape NOTIFY bedChanged)
     Q_PROPERTY(double maxPrintHeight READ maxPrintHeight NOTIFY bedChanged)
-    Q_PROPERTY(QString baseConfigPath READ baseConfigPath CONSTANT)
     Q_PROPERTY(QVariantList focusWorld READ focusWorld NOTIFY framingChanged)
     Q_PROPERTY(QVariantList bedCentreWorld READ bedCentreWorld NOTIFY bedChanged)
     Q_PROPERTY(double bedRadius READ bedRadius NOTIFY bedChanged)
@@ -35,7 +37,7 @@ class Host : public QObject
 
 public:
     Host(const Palette& palette, QVariantList bedShape, double maxPrintHeight,
-         QString baseConfigPath, QVariantList focusWorld, double modelRadius,
+         QVariantList focusWorld, double modelRadius,
          QString printerModel, QVector3D bedMin, QVector3D bedMax,
          bool bedPlateLoaded, QObject* parent = nullptr);
 
@@ -46,7 +48,6 @@ public:
     QString modelPath() const { return m_modelPath; }
     QVariantList bedShape() const { return m_bedShape; }
     double maxPrintHeight() const { return m_maxPrintHeight; }
-    QString baseConfigPath() const { return m_baseConfigPath; }
     QVariantList focusWorld() const { return m_focusWorld; }
     QVariantList bedCentreWorld() const { return m_bedCentreWorld; }
     double bedRadius() const { return m_bedRadius; }
@@ -76,7 +77,6 @@ private:
     QString m_modelPath;
     QVariantList m_bedShape;
     double m_maxPrintHeight = 0.0;
-    QString m_baseConfigPath;
     QVariantList m_focusWorld;
     QVariantList m_bedCentreWorld;
     double m_bedRadius = 0.0;

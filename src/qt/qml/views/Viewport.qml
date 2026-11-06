@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Curtis Webb
+
 import QtQuick
 import QtQuick3D
 import QtQuick.Controls
@@ -255,8 +258,15 @@ Item {
         const aspect = view.height > 0 ? view.width / view.height : 1.6
         const horizontal = 2 * Math.atan(Math.tan(vertical / 2) * aspect)
         const span = Math.min(vertical, horizontal)
-        return root.bedRadius / (0.92 * Math.tan(span / 2)) / root.fittedDistance
+        return root.fitRadius / (0.92 * Math.tan(span / 2)) / root.fittedDistance
     }
+
+    // With no printer chosen there is no bed to fit, and a one-millimetre radius
+    // would zoom the camera into the axes: the model is what the view has, so it
+    // is what the view frames.
+    readonly property real fitRadius: root.bedSize.x > 1 && root.bedSize.z > 1
+                                      ? root.bedRadius
+                                      : root.boundingRadius
 
 
     // One brush dab: pick the surface under the cursor, then paint a sphere of

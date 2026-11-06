@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Curtis Webb
+
 #include "Host.hpp"
 
 #include "Palette.hpp"
@@ -11,7 +14,7 @@
 #include <QUrl>
 
 next_layer::Host::Host(const Palette& palette, QVariantList bedShape, double maxPrintHeight,
-                       QString baseConfigPath, QVariantList focusWorld, double modelRadius,
+                       QVariantList focusWorld, double modelRadius,
                        QString printerModel, QVector3D bedMin, QVector3D bedMax,
                        bool bedPlateLoaded, QObject* parent)
     : QObject(parent)
@@ -19,7 +22,6 @@ next_layer::Host::Host(const Palette& palette, QVariantList bedShape, double max
     , m_paletteSource(palette.source())
     , m_bedShape(std::move(bedShape))
     , m_maxPrintHeight(maxPrintHeight)
-    , m_baseConfigPath(std::move(baseConfigPath))
     , m_focusWorld(std::move(focusWorld))
     , m_modelRadius(modelRadius)
     , m_printerModel(std::move(printerModel))

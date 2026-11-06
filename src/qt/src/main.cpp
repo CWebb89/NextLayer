@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Curtis Webb
+
 #include "GcodeBrand.hpp"
 
 #include <Slic3r/Version.hpp>
@@ -82,7 +85,10 @@
 
 namespace {
 
-constexpr const char* kBaseConfigPath = ":/next-layer/base-config.json";
+// Nothing is assumed about the machine before the user has chosen one: no
+// shipped printer profile is selected at start-up, so the bed, its height and its
+// model stay empty until a preset resolves. The viewport draws an empty state
+// until then rather than pretending to be a printer nobody configured.
 
 QString qmlEntry(const QString& override)
 {
@@ -399,6 +405,9 @@ void initEngine()
     prepareDataDir();
 }
 
+// The machine as the application knows it at start-up: nothing. A printer exists
+// only once the user has chosen one and a preset has resolved, so this is empty
+// until then and the viewport draws an empty state rather than a bed.
 struct PrinterSetup
 {
     QVector<QPointF> bed;
@@ -464,36 +473,6 @@ QString bedPlatePath(const QString& printerModel)
     return target;
 }
 
-PrinterSetup readPrinterSetup()
-{
-    PrinterSetup setup;
-
-    QFile file(QString::fromLatin1(kBaseConfigPath));
-    if (file.open(QIODevice::ReadOnly)) {
-        const QJsonObject printer = QJsonDocument::fromJson(file.readAll())
-            .object()
-            .value("configuration")
-            .toObject()
-            .value("printer_settings")
-            .toObject();
-
-        for (const QJsonValue& point : printer.value("bed_shape").toArray()) {
-            const QJsonArray pair = point.toArray();
-            if (pair.size() == 2)
-                setup.bed.append(QPointF(pair.at(0).toDouble(), pair.at(1).toDouble()));
-        }
-        setup.maxHeight = printer.value("max_print_height").toDouble();
-        setup.model = printer.value("printer_model").toString();
-    }
-
-    if (setup.bed.size() < 3 || setup.maxHeight <= 0.0) {
-        std::fprintf(stderr, "config template carried no usable bed, falling back to 250x220x270\n");
-        setup.bed = {QPointF(0.0, 0.0), QPointF(250.0, 0.0), QPointF(250.0, 220.0), QPointF(0.0, 220.0)};
-        setup.maxHeight = 270.0;
-    }
-    return setup;
-}
-
 QVariantList toVariantBed(const QVector<QPointF>& bed)
 {
     QVariantList points;
@@ -518,6 +497,8 @@ QVector<QPointF> bedFromVariant(const QVariantList& bed)
 
 QVector3D bedExtent(const QVector<QPointF>& bed, bool maximum)
 {
+    if (bed.isEmpty())
+        return QVector3D(0.0f, 0.0f, 0.0f);
     double x = maximum ? -1e9 : 1e9;
     double y = maximum ? -1e9 : 1e9;
     for (const QPointF& point : bed) {
@@ -554,6 +535,8 @@ bool loadPlateGeometry(MeshGeometry& geometry, const QString& path, const QVecto
 
 QVector2D bedCentre(const QVector<QPointF>& bed)
 {
+    if (bed.isEmpty())
+        return QVector2D(0.0, 0.0);
     qreal minX = bed.constFirst().x();
     qreal maxX = minX;
     qreal minY = bed.constFirst().y();
@@ -569,6 +552,8 @@ QVector2D bedCentre(const QVector<QPointF>& bed)
 
 double bedRadius(const QVector<QPointF>& bed)
 {
+    if (bed.size() < 3)
+        return 0.0;
     qreal minX = bed.constFirst().x();    qreal maxX = minX;
     qreal minY = bed.constFirst().y();
     qreal maxY = minY;
@@ -1073,7 +1058,7 @@ int main(int argc, char* argv[])
                                             QString::fromStdString(dataDir()));
     }
 
-    const PrinterSetup printer = readPrinterSetup();
+    const PrinterSetup printer;
     const QVector2D centre = bedCentre(printer.bed);
 
     next_layer::Palette palette;
@@ -1374,9 +1359,10 @@ int main(int argc, char* argv[])
 
     auto* geometry = new MeshGeometry;
     auto* bedPlate = new MeshGeometry;
-    const bool hasPlate = loadPlateGeometry(*bedPlate, bedPlatePath(printer.model), centre);
+    const QString platePath = bedPlatePath(printer.model);
+    const bool hasPlate = !platePath.isEmpty()
+                       && loadPlateGeometry(*bedPlate, platePath, centre);
     next_layer::Host host(palette, toVariantBed(printer.bed), printer.maxHeight,
-                          QString::fromLatin1(kBaseConfigPath),
                           QVariantList{centre.x(), 0.0, -centre.y()},
                           bedRadius(printer.bed), printer.model,
                           bedExtent(printer.bed, false), bedExtent(printer.bed, true),
@@ -1415,9 +1401,15 @@ int main(int argc, char* argv[])
 
     auto* slicer = new SliceController(std::string(), settings);
     auto* toolpath = new Toolpath(palette.roles());
-    const QVector3D bedLow = bedExtent(printer.bed, false);
-    const QVector3D bedHigh = bedExtent(printer.bed, true);
-    auto* document = new PlateDocument(centre, QVector2D(bedHigh.x() - bedLow.x(), bedHigh.y() - bedLow.y()));
+    // The plate the scene edits is the bed the settings model describes. It stays
+    // the nominal one from the config template until the user's own printer
+    // resolves, and the viewport draws an empty state in the meantime, so a bed
+    // here is scene geometry rather than a machine anybody is printing on.
+    const QVector<QPointF> sceneBed = bedFromVariant(settings->value(QStringLiteral("bed_shape")).toList());
+    const QVector3D bedLow = bedExtent(sceneBed, false);
+    const QVector3D bedHigh = bedExtent(sceneBed, true);
+    auto* document = new PlateDocument(sceneBed.size() >= 3 ? bedCentre(sceneBed) : centre,
+                                      QVector2D(bedHigh.x() - bedLow.x(), bedHigh.y() - bedLow.y()));
     slicer->setDocument(document);
     auto* scene = new PlateScene(document);
     auto* session = new Session(geometry, &host, slicer, document);
@@ -1606,9 +1598,7 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty("toolpath", toolpath);
     engine.rootContext()->setContextProperty("appVersionString", next_layer::applicationVersion());
     engine.rootContext()->setContextProperty(
-        "engineVersionString",
-        QStringLiteral("%1 %2").arg(QString::fromStdString(Slic3r::APP_NAME),
-                                    QString::fromStdString(Slic3r::VERSION)));
+        "engineVersionString", QString::fromStdString(Slic3r::VERSION));
     engine.rootContext()->setContextProperty("dataDirString", QString::fromStdString(dataDir()));
     engine.rootContext()->setContextProperty("presetDirString",
                                              QString::fromStdString(dataDir() + "/presets"));

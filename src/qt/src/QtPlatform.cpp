@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Curtis Webb
+
 #include "QtPlatform.hpp"
 
 #include <Slic3r/Biz/Emboss/Emboss.hpp>
