@@ -5,7 +5,7 @@ import QtQuick.Controls
 import "../theme"
 import "../components"
 
-// Hollow: how thick the inner wall should be. Two millimetres is Orca's default
+// Hollow: how thick the inner wall should be. Two millimetres is the default
 // and what a 0.4 mm nozzle prints as five perimeters.
 Popup {
     id: root

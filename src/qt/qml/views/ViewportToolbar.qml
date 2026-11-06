@@ -4,7 +4,7 @@ import QtQuick.Controls
 import "../theme"
 import "../components"
 
-// The single strip over the viewport, laid out like Orca's: plate tabs, a
+// The single strip over the viewport: plate tabs, a
 // divider, the object actions, a divider, the manipulation tools, then the
 // slice and export pills on the right. One panel, icon-only, tooltips carry the
 // labels.
@@ -128,9 +128,8 @@ Item {
                     }
                 }
 
-                // The active plate carries its own options button, as Orca's
-                // plate tab does: everything that belongs to that plate rather
-                // than to an object on it.
+                // The active plate carries its own options button: everything
+                // that belongs to that plate rather than to an object on it.
                 Text {
                     id: plateOptions
                     visible: plateChip.current
@@ -175,7 +174,7 @@ Item {
             }
         }
 
-        // Orca's plate cluster, beside the plate you just selected: the four
+        // The plate cluster, beside the plate you just selected: the four
         // things you do to a plate rather than to what is on it.
         ToolButton {
             icon: "add"

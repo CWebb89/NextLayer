@@ -15,7 +15,7 @@ namespace Slic3r::App::libvgcode {
 struct FdmViewerInputData;
 }
 
-// Renders the sliced toolpath with libvgcode, the renderer PrusaSlicer's own
+// Renders the sliced toolpath with libvgcode, the engine's own
 // preview is built on. The QML Quick 3D scene keeps the bed grid and the STL
 // model; this item draws the toolpath on top with a camera synced to that scene.
 //

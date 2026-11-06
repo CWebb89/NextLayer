@@ -1304,7 +1304,7 @@ int runCalibrationSelftest(const QString& configPath, const QString& dataDir)
         const char* marker;
         int minimumBands;
         // How many objects the test puts on the plate. The temperature test prints
-        // Orca's own tower cut to the requested range, so it is one object carrying
+        // The tower cut to the requested range, so it is one object carrying
         // one command per band; the rest are one object per band.
         int minimumObjects;
     };

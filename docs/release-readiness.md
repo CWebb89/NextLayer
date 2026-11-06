@@ -31,7 +31,7 @@ What that obliges, concretely:
 | No implied endorsement | README says plainly: not affiliated with, endorsed by, or supported by Prusa Research or the OrcaSlicer project. PrusaSlicer and OrcaSlicer are their trademarks; the app is called next-layer, not "Prusa-anything" |
 
 The OrcaSlicer material already in this tree — presets converted in
-`tools/orca-convert`, the generated printer catalog, and the calibration meshes in
+`tools/preset-convert`, the generated printer catalog, and the calibration meshes in
 `tools/calib-meshes` — is AGPL-3.0 content from an AGPL-3.0 project. Compatible,
 but each file's origin must be named in `THIRD-PARTY.md`, which `tools/calib-meshes/README.md`
 already does per model.
@@ -49,7 +49,7 @@ Gate:
 - `tools/check` green, oracle 12/12 on both runners.
 - No secrets, no build output, no machine paths in the tree (§4).
 - README exists and states that it is alpha, that it slices and prints, and what
-  is unfinished (list the staged/needs-engine rows of `docs/orca-parity.md`).
+  is unfinished (list the staged/needs-engine rows of `docs/features.md`).
 
 ### 0.2.0 – 0.9.x — binaries, marked beta
 Purpose: packs to install without a compiler. Each tag is a real improvement
@@ -132,7 +132,7 @@ must be reproducible from the public history alone.
 - Absolute machine paths: none today (`grep -rn /home/cwebb` over our sources is
   empty). Keep `NEXT_LAYER_QML_DIR` baked at configure time.
 - `.gitignore` covers `/upstream/`, build trees, `__pycache__`, `dist/`. Add
-  `resources/presets/orca-catalog/` to the engine checkout's exclude (done, local
+  `resources/presets/vendor-catalog/` to the engine checkout's exclude (done, local
   only) and never to a tracked file.
 - Screenshots before publishing: no printer addresses, no hostnames, no API keys in
   the Device tab. `10.0.0.x` is fine; a Moonraker key in a shot is not.

@@ -7,7 +7,7 @@ import "../theme"
 import "../components"
 import "."
 
-// Orca's preset editor: the gear next to a preset dropdown opens the whole
+// The preset editor: the gear next to a preset dropdown opens the whole
 // resolved configuration of that preset kind in one window, with its own preset
 // toolbar (select, revert, save, save as, rename, delete, add a machine) and the
 // same typed editors the docked panel uses. Edits apply to the live settings

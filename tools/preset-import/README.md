@@ -9,22 +9,22 @@ and a generic filament, which is exactly how a 20 mm cube once went out on a
 This tool imports **your own** OrcaSlicer presets:
 
 ```sh
-tools/orca-import/import.py                                     # Voron, from ~/.config/OrcaSlicer
-tools/orca-import/import.py --list                              # what it would take
-tools/orca-import/import.py --vendor Voron --nozzle 0.4 --dry-run
-tools/orca-import/import.py --out DIR --bundle-id orca-catalog
+tools/preset-import/import.py                                     # Voron, from ~/.config/OrcaSlicer
+tools/preset-import/import.py --list                              # what it would take
+tools/preset-import/import.py --vendor Voron --nozzle 0.4 --dry-run
+tools/preset-import/import.py --out DIR --bundle-id vendor-catalog
 ```
 
 It resolves each of your user presets through the Orca installation you actually
 run (`system/` vendor bundles plus your `user/default/` overrides), translates
-the settings with `tools/orca-convert`, and writes the result into the
-`orca-catalog` bundle next-layer already reads. Preset names are kept, so the
+the settings with `tools/preset-convert`, and writes the result into the
+`vendor-catalog` bundle next-layer already reads. Preset names are kept, so the
 printer, process and filament you pick by name in Orca are the names that appear
 in next-layer.
 
 ## What it does to a preset
 
-- **Printers** go through `tools/orca-catalog/generate.py`, which resolves the
+- **Printers** go through `tools/printer-catalog/generate.py`, which resolves the
   machine, translates its settings, drops what this engine cannot express, and
   writes a printer model, a printer config and the settings preset for it. Your
   machine's own values — bed shape and height, G-code flavour, macros, machine

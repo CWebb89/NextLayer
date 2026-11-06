@@ -1,6 +1,7 @@
 #include "GcodeBrand.hpp"
 
 #include <QFile>
+#include <QStringList>
 
 #ifndef NEXT_LAYER_VERSION
 #define NEXT_LAYER_VERSION "0.1.0"
@@ -39,6 +40,19 @@ bool rewriteLine(QString& line, int& changed)
             line.replace(start, end - start, applicationVersion());
             ++changed;
             return true;
+        }
+    }
+
+    static const QStringList blockKeys{QStringLiteral("_json_config = "),
+                                       QStringLiteral("_config = ")};
+    if (line.startsWith(QStringLiteral("; "))) {
+        for (const QString& key : blockKeys) {
+            const int at = line.indexOf(key);
+            if (at > 2 && !line.mid(2, at - 2).contains(QLatin1Char(' '))) {
+                line.replace(0, at, QStringLiteral("; next-layer"));
+                ++changed;
+                return true;
+            }
         }
     }
 

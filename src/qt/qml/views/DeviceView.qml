@@ -6,7 +6,7 @@ import QtQuick.Layouts
 import "../theme"
 import "../components"
 
-// The device tab, as Orca's: the printer's own web interface, embedded. Mainsail
+// The device tab: the printer's own web interface, embedded. Mainsail
 // and Fluid are both served from the Moonraker host, so the page is whatever that
 // host serves. The address is editable because a shell, a camera page or a
 // dashboard belongs here too, and a bare IP is accepted: "10.0.0.22" gets its

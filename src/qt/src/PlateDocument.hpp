@@ -145,8 +145,8 @@ public:
     QVector<int> idsOnPlate(int plate) const;
     Q_INVOKABLE void setActivePlate(int plate);
     /// Where a plate's own coordinate frame sits in the scene. Plates are laid
-    /// out in a row with one bed's width plus a gap between them, which is how
-    /// Orca and PrusaSlicer show a multi-plate project: every plate visible, the
+    /// out in a row with one bed's width plus a gap between them, which is how a
+    /// multi-plate project is shown: every plate visible, the
     /// active one where the camera is.
     Q_INVOKABLE QVector3D plateOffset(int plate) const;
     Q_INVOKABLE QVector3D plateSize() const { return QVector3D(m_bedSize.x(), m_bedSize.y(), 0.0f); }
@@ -160,7 +160,7 @@ public:
     Q_INVOKABLE int duplicatePlate(int plate);
     Q_INVOKABLE void clearPlate(int plate);
     Q_INVOKABLE void removePlate(int plate);
-    /// A locked plate is read-only, as in Orca: nothing can be dropped on it,
+    /// A locked plate is read-only: nothing can be dropped on it,
     /// moved on it, painted or removed until it is unlocked.
     Q_INVOKABLE bool plateLocked(int plate) const;
     Q_INVOKABLE void setPlateLocked(int plate, bool locked);
@@ -309,7 +309,7 @@ public:
     Q_INVOKABLE QVariantMap plateStatistics(int plate) const;
 
     /// Bake several objects into one mesh in world coordinates and keep the
-    /// first one as their container -- Orca's Merge. The result sits where the
+    /// first one as their container -- Merge. The result sits where the
     /// parts did, so nothing moves on the plate.
     Q_INVOKABLE bool mergeObjects(const QVector<int>& ids);
 
@@ -338,7 +338,7 @@ public:
                             const QString& fontPath);
     Q_INVOKABLE QVariantList fonts() const;
 
-    /// Hollow a solid the way Orca does: an inner wall `thickness` millimetres
+    /// Hollow a solid: an inner wall `thickness` millimetres
     /// inside the surface, through the engine's own voxel hollowing.
     Q_INVOKABLE bool hollowObject(int id, double thickness);
     Q_INVOKABLE void undo();

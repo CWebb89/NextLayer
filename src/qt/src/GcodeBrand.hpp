@@ -5,12 +5,10 @@
 namespace next_layer {
 
 /// Rewrites the branding the engine stamps into an exported G-code file. The
-/// engine hardcodes its own application name in the first line and in the JSON
-/// producer fields, and those are the two strings a user sees when the file is
-/// opened in an editor or handed to a printer host. The compatibility tokens the
-/// engine and PrusaSlicer/Orca use to parse a G-code config block
-/// (`; prusaslicer_config`, `; prusaslicer_json_config`) are deliberately left
-/// alone: they are a wire format, not branding.
+/// engine hardcodes its own application name in the first line, in the JSON
+/// producer fields, and in the delimiters of the two config blocks it appends.
+/// All of them are rewritten to this application's name; every config key and
+/// value inside those blocks is left byte-identical.
 QString applicationVersion();
 
 /// Returns the number of lines rewritten, or -1 when the file cannot be read or

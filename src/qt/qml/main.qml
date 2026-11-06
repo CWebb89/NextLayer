@@ -44,7 +44,7 @@ Window {
     property real objectMenuY: 0
 
     // What the object right-click offers: the actions that act on one object,
-    // grouped the way PrusaSlicer groups them -- edit, transform, plate, then the
+    // grouped by what they act on -- edit, transform, plate, then the
     // volumes that change what the object becomes.
     function openObjectMenu(objectId, x, y) {
         if (objectId <= 0)
@@ -472,8 +472,8 @@ Window {
         viewport.layOnFaceActive = false
         viewport.paintActive = false
         plateDocument.setActivePlate(index)
-        // The camera follows the plate the way it does in Orca: switching tabs
-        // frames the plate you switched to, wherever it sits in the scene.
+        // The camera follows the plate: switching tabs frames the plate you
+        // switched to, wherever it sits in the scene.
         viewport.fitPlate()
 
         const plate = root.plates[index]
@@ -990,8 +990,8 @@ Window {
             onSliceRequested: footer.startSlice()
         }
 
-        // The object list slides out of the settings panel's inner edge, as Orca's
-        // does. Its toggle is the rail's third entry, so the list has no tab of its
+        // The object list slides out of the settings panel's inner edge. Its
+        // toggle is the rail's third entry, so the list has no tab of its
         // own to sit in the way of the viewport.
         ObjectListPanel {
             id: objectList
@@ -1150,7 +1150,7 @@ Window {
             }
         }
 
-        // Orca's layer view modes — the part up to the slider, everything, or
+        // The layer view modes — the part up to the slider, everything, or
         // just that layer — sitting on top of the slider they act on.
         Item {
             id: layerModeButton

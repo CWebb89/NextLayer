@@ -5,7 +5,7 @@ import QtCore
 import "../theme"
 import "../components"
 
-// next-layer's first-run setup. The engine's onboarding is PrusaSlicer's — an
+// next-layer's first-run setup. The engine's onboarding is not this app's — an
 // account prompt, an online/offline question, release notes — so this app owns
 // its own: machine, material, print quality, review. No network, no account, and
 // the chosen triple is remembered for the next launch.

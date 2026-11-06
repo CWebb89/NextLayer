@@ -13,12 +13,12 @@ struct FdmViewerInputData;
 // Preview data for one sliced G-code file.
 //
 // Read through the engine's own G-code processor (Slic3r::Biz::libpgcode),
-// which is what PrusaSlicer's preview and its statistics panel are built from.
+// which is what the engine's preview and its statistics panel are built from.
 // That is where the real extrusion width, height, per-move time and per-role
 // filament usage come from — the previous hand-rolled reader in GcodeParser.cpp
 // had none of them and faked the width with a constant.
 
-// One extruded segment, in the form PrusaSlicer's own preview consumes it: the
+// One extruded segment, in the form the engine's own preview consumes it: the
 // two endpoints with their own extrusion width and height, and the extrusion
 // role at each end. The renderer builds a box per segment (cross section at each
 // endpoint) with a mitred cap, exactly as libvgcode's segment shader does, so it
@@ -76,7 +76,7 @@ struct PreviewData
 
 // Headless reference render: loads a G-code file into libvgcode and writes one
 // frame to OUT. The live preview drives the same renderer through GcodeView; this
-// flag exists to verify the render off-screen against Orca/PrusaSlicer.
+// flag exists to verify the render off-screen against the engine's own viewer.
 bool renderPreviewWithVgcode(const QString& gcodePath, const QString& outPath,
                              float yaw, float pitch, float zoom);
 

@@ -1,8 +1,8 @@
-// OrcaSlicer's bed grid, drawn the way it looks rather than as geometry: 10 mm
-// lines with every fifth heavier, anchored on the print origin, one pixel wide
-// at any zoom. Orca draws them as wide GL lines; Qt Quick 3D has no line
-// primitive with a width, and quads thicken as the camera closes in, so the
-// lines come from a distance field here instead.
+// A clip-space distance field draws the bed grid the way it looks rather than
+// as geometry: 10 mm lines with every fifth heavier, anchored on the print origin,
+// one pixel wide at any zoom. Wide GL lines would be exact, but Qt Quick 3D has
+// no line primitive with a width and quads thicken as the camera closes in, so
+// the lines come from a distance field here instead.
 //
 // The line width arrives as `pixelSize` — millimetres per screen pixel, measured
 // by the viewport from the camera — rather than from fwidth(), which comes back

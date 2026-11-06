@@ -6,10 +6,10 @@
 
 class PlateDocument;
 
-/// The calibration suite: the test plates Orca and PrusaSlicer ship, built from
+/// The calibration suite: the test plates a slicer ships, built from
 /// the engine's own primitives and the plate's layer G-code rather than from a
 /// checked-in model. Every test states what to measure and what to change, the
-/// parameters that shape it are the ones Orca's own dialog asks for, and the
+/// parameters that shape it are the ones the dialog asks for, and the
 /// plate it builds slices, previews and sends like any other.
 namespace next_layer {
 

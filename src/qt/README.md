@@ -325,8 +325,8 @@ YAML. One worker thread at a time; the engine is never driven from two.
 - Plates are an application concept: each plate holds a model path, a display
   label and its own G-code, and switching plates swaps the session and the
   toolpath. They are not engine `Domain::Bed` plates — that needs a plater API
-  the CLI does not expose (see `docs/orca-parity.md`).
-- `docs/orca-parity.md` (repo root) is the feature ledger this UI is measured
+  the CLI does not expose (see `docs/features.md`).
+- `docs/features.md` (repo root) is the feature ledger this UI is measured
   against.
 
 ## Assets

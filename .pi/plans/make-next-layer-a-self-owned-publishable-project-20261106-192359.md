@@ -2,7 +2,7 @@
 id: make-next-layer-a-self-owned-publishable-project-20261106-192359
 status: awaiting_approval
 created: 2026-11-06T19:23:59.781Z
-updated: 2026-11-06T19:23:59.781Z
+updated: 2026-11-06T19:39:08.073Z
 ---
 
 # Make next-layer a self-owned, publishable project
@@ -22,8 +22,9 @@ Restructure to one repo whose history is 100% ours (engine becomes a bootstrappe
 
 ## Steps
 
-1. [ ] Restructure to one repo: move upstream/src/slic3r-app-qt to src/qt and upstream/src/slic3r-app-spike to src/cli; export the 2 add_subdirectory lines as patches/0001-add-app-subdirectories.patch; add tools/bootstrap (shallow-clone the pinned engine commit, git am the patch); update every path in tools/check, tools/release, tools/save, tools/status, tools/fixtures, tools/cockpit, oracle/oracle.py, .gitignore and AGENTS.md; reduce tools/save to the single repo. Build tree stays at upstream/build so the 11 GB dependency build is not invalidated. Gate: reconfigure, build, tools/check 24/24 and oracle 12/12 on both runners.
+1. [x] Restructure to one repo: move upstream/src/slic3r-app-qt to src/qt and upstream/src/slic3r-app-spike to src/cli; export the 2 add_subdirectory lines as patches/0001-add-app-subdirectories.patch; add tools/bootstrap (shallow-clone the pinned engine commit, git am the patch); update every path in tools/check, tools/release, tools/save, tools/status, tools/fixtures, tools/cockpit, oracle/oracle.py, .gitignore and AGENTS.md; reduce tools/save to the single repo. Build tree stays at upstream/build so the 11 GB dependency build is not invalidated. Gate: reconfigure, build, tools/check 24/24 and oracle 12/12 on both runners.
    - files: src/qt, src/cli, patches/0001-add-app-subdirectories.patch, tools/bootstrap, tools/check, tools/release, tools/save, tools/status, tools/fixtures, tools/cockpit/cockpit, oracle/oracle.py, .gitignore, AGENTS.md
+   - note: One repo: src/qt + src/cli at the root, patches/0001-app-subdirectories.patch, tools/bootstrap, single-repo save/status. Rebuilt from the new location; tools/check 24/24, oracle 12/12 qt and 11/11 app.
 2. [ ] Neutralise naming across our tree: rename tools/orca-convert to tools/import-presets, tools/orca-import to tools/import-configs, tools/orca-catalog to tools/catalog, docs/orca-parity.md to docs/features.md; strip vendor names from comments and UI strings in ~60 C++/QML files; rename the calibration tests to next-layer's own labels. Leave exactly the three protocol/vendor-bundle identifiers, each with one comment stating it is a wire format or an on-disk engine path. Gate: grep -ri 'prusa\|orca' over src/, tools/, docs/ returns only allowlisted lines; tools/check still 24/24 and oracle 12/12 (proves the scrub changed no behaviour).
    - files: src/qt, src/cli, tools/import-presets, tools/import-configs, tools/catalog, docs/features.md, docs/real-prints.md, AGENTS.md
 3. [ ] Write the public face and the legal notices: LICENSE (AGPL-3.0-or-later, Copyright (C) 2026 Curtis Webb), THIRD-PARTY.md naming the engine, the borrowed presets and meshes, and Qt with their licences, README.md (what it is, alpha status, build via tools/bootstrap, GL 3.3+ requirement, honest printing claim, not-affiliated disclaimer, pinned engine commit), CONTRIBUTING.md pointing at tools/check, SECURITY.md, .github issue and PR templates. Wire the About dialog to the licence and the repo URL. Gate: an About-dialog capture plus a tools/check run.

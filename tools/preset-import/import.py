@@ -9,7 +9,7 @@ on a 350 mm machine.
 
 So importing is three steps: resolve each user preset against the Orca
 installation the user actually runs (system bundles plus their own overrides),
-translate it with ``tools/orca-convert``, and write a bundle whose presets carry
+translate it with ``tools/preset-convert``, and write a bundle whose presets carry
 the user's own names. A preset that cannot be translated cleanly is reported,
 and one that cannot slice is removed rather than shipped.
 
@@ -32,21 +32,21 @@ import uuid
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO / "tools" / "orca-convert"))
-sys.path.insert(0, str(REPO / "tools" / "orca-catalog"))
+sys.path.insert(0, str(REPO / "tools" / "preset-convert"))
+sys.path.insert(0, str(REPO / "tools" / "printer-catalog"))
 
-import convert as orca  # noqa: E402
+import convert as preset_convert  # noqa: E402
 import generate as catalog  # noqa: E402
 
 USER_KINDS = (("machine", "printer"), ("process", "print"), ("filament", "filament"))
-META_KEYS = orca.META
+META_KEYS = preset_convert.META
 
 
-def preset_index(orca_root, vendor):
+def preset_index(source_root, vendor):
     """Every preset the installation knows, by name; the user's own files win."""
     index = {}
     for pattern in ("system/**/*.json", "user/default/*/*.json"):
-        for path in sorted(glob.glob(str(orca_root / pattern), recursive=True)):
+        for path in sorted(glob.glob(str(source_root / pattern), recursive=True)):
             try:
                 data = json.loads(Path(path).read_text(errors="replace"))
             except (OSError, ValueError):
@@ -72,10 +72,10 @@ def resolve(name, index, seen=None):
     return merged
 
 
-def user_presets(orca_root):
+def user_presets(source_root):
     found = []
     for kind, target in USER_KINDS:
-        for path in sorted(glob.glob(str(orca_root / "user/default" / kind / "*.json"))):
+        for path in sorted(glob.glob(str(source_root / "user/default" / kind / "*.json"))):
             data = json.loads(Path(path).read_text(errors="replace"))
             if isinstance(data, dict) and data.get("name"):
                 found.append((kind, target, data["name"]))
@@ -154,9 +154,9 @@ def slice_verdict(binary, model, printer, process, filament):
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--orca", default=str(Path.home() / ".config/OrcaSlicer"))
+    parser.add_argument("--from", dest="source", required=True, help="directory of reference presets to read")
     parser.add_argument("--vendor", default="Voron")
-    parser.add_argument("--bundle-id", default="orca-catalog")
+    parser.add_argument("--bundle-id", default="next-layer-catalog")
     parser.add_argument("--out", default=None)
     parser.add_argument("--bin", default=str(REPO / "upstream/build/src/next-layer-qt/next-layer-qt"))
     parser.add_argument("--model", default=str(REPO / "oracle/models/cube_20.stl"))
@@ -169,11 +169,11 @@ def main():
                         help="leave presets in place that do not resolve and slice")
     args = parser.parse_args()
 
-    orca_root = Path(args.orca)
+    source_root = Path(args.source)
     out = Path(args.out) if args.out else (
         Path.home() / ".local/share/next-layer/presets/local" / args.bundle_id)
-    index = preset_index(orca_root, args.vendor)
-    presets = user_presets(orca_root)
+    index = preset_index(source_root, args.vendor)
+    presets = user_presets(source_root)
 
     if args.list:
         for kind, target, name in presets:
@@ -181,8 +181,8 @@ def main():
                   % (kind, name, index.get(name, {}).get("inherits", "-")))
         return 0
 
-    if not (orca_root / "system" / args.vendor).is_dir():
-        print("no %s vendor bundle under %s/system" % (args.vendor, orca_root))
+    if not (source_root / "system" / args.vendor).is_dir():
+        print("no %s vendor bundle under %s/system" % (args.vendor, source_root))
         return 2
 
     binary = Path(args.bin)
@@ -227,11 +227,11 @@ def main():
         machines.append((name, data))
 
     if not args.dry_run and machines:
-        staged_root = Path(tempfile.mkdtemp(prefix="orca-import-"))
+        staged_root = Path(tempfile.mkdtemp(prefix="preset-import-"))
         try:
-            shutil.copytree(orca_root / "system" / args.vendor, staged_root / args.vendor)
+            shutil.copytree(source_root / "system" / args.vendor, staged_root / args.vendor)
             index_path = staged_root / (args.vendor + ".json")
-            shutil.copy(orca_root / "system" / (args.vendor + ".json"), index_path)
+            shutil.copy(source_root / "system" / (args.vendor + ".json"), index_path)
             vendor_index = json.loads(index_path.read_text())
             for name, data in machines:
                 relative = "machine/%s.json" % name
@@ -243,8 +243,8 @@ def main():
             index_path.write_text(json.dumps(vendor_index, indent=1) + "\n")
             stage.mkdir(parents=True, exist_ok=True)
             catalog_result = subprocess.run(
-                [sys.executable, str(REPO / "tools/orca-catalog/generate.py"),
-                 "--orca", str(staged_root), "--vendors", args.vendor,
+                [sys.executable, str(REPO / "tools/printer-catalog/generate.py"),
+                 "--from", str(staged_root), "--vendors", args.vendor,
                  "--out", str(stage), "--nozzle", args.nozzle,
                  "--bin", str(binary), "--model", str(model),
                  "--engine-source", str(args.engine_source)],

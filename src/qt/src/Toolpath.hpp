@@ -59,7 +59,7 @@ public:
     Q_INVOKABLE void cycleLayerMode();
 
     // The G-code around the move the preview is currently stopped at, in the
-    // form Orca's g-code window shows it: one entry per line with the line's own
+    // form the g-code window shows it: one entry per line with the line's own
     // number, and the line that produced the current move flagged.
     QVariantList gcodeWindow() const;
     int gcodeLine() const;
@@ -107,7 +107,7 @@ private:
     GcodeView* m_view = nullptr;
     std::unique_ptr<Slic3r::App::libvgcode::FdmViewerInputData> m_pendingInput;
     QSet<QString> m_hidden;
-    // Orca and PrusaSlicer both open the preview with travel moves off: a plate
+    // The preview opens with travel moves off: a plate
     // of toolpaths is what the print is, and the travels between them are noise
     // until someone asks to see them.
     QSet<QString> m_hiddenOptions = {QStringLiteral("Travel")};

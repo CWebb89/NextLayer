@@ -5,7 +5,7 @@ import QtCore
 import "../theme"
 import "../components"
 
-// Settings surface, laid out like PrusaSlicer's: Process / Filament / Printer
+// Settings surface: Process / Filament / Printer
 // tabs on top, a horizontal strip of the engine's own option groups under them,
 // then one scroll of two-column rows (label left, editor right). Only the active
 // group is instantiated, so 335 engine settings cost a few dozen items.
@@ -118,7 +118,7 @@ Item {
     }
 
     // A printer is always selected: an empty bar reads as a broken app, and the
-    // first node of the bundle is what PrusaSlicer shows before anything is
+    // first node of the bundle is what is shown before anything is
     // chosen. The setup flow overrides this the moment it resolves a triple.
     Connections {
         target: presetStore

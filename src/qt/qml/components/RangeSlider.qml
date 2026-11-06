@@ -3,7 +3,7 @@ import "../theme"
 
 // The preview's layer range: one track, two knobs. The right knob is the top
 // layer — the one the model is cut at — and the left is the first layer still
-// drawn, which is how Orca and PrusaSlicer let you look inside a print without
+// drawn, which is how a print is inspected without
 // hiding the layers above it. A single mouse area handles both knobs: the one
 // grabbed is the nearer of the two, and because the area does not move with the
 // knob every pointer step maps to exactly one layer.

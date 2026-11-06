@@ -75,7 +75,7 @@ QVariantMap option(const char* value, const char* label)
     return entry;
 }
 
-/// Orca's temperature dialog: picking a filament type restates the range, so the
+/// The temperature dialog: picking a filament type restates the range, so the
 /// two numbers it carries travel with the choice rather than in a lookup table.
 QVariantMap filamentOption(const char* name, double start, double end)
 {
@@ -385,7 +385,7 @@ QString Calibration::build(const QString& kind, const QVariantMap& values)
         const double nozzle = params.number("nozzle", 0.4);
         const double nozzleScale = nozzle / 0.4;
 
-        // Orca's own tower, and its geometry contract: block n spans
+        // The tower's geometry contract: block n spans
         // [n * 10, (n + 1) * 10] mm of the 700 mm asset and prints at
         // 500 - 5n degrees, which is why the requested range is cut out of it
         // rather than generated. The tower is what the numbers are embossed on.

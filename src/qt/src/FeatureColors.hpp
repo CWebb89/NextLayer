@@ -7,7 +7,7 @@
 
 namespace next_layer {
 
-// PrusaSlicer 3.0 emits the exact feature names below in `;TYPE:` comments.
+// The engine emits the exact feature names below in `;TYPE:` comments.
 // Preview colours are a fixed palette, not theme roles: the sliced view has to
 // separate line types at a glance, which a single-hue MD3 scheme cannot do.
 inline QColor featureColor(const QString& feature, const QVariantMap& roles)

@@ -77,11 +77,11 @@ QtObject {
     readonly property color errorDim: Qt.rgba(error.r, error.g, error.b, 0.16)
     readonly property color urgent: error
 
-    // Viewport. Orca's 3D scene is three flat tones apart by a fixed ratio, not
+    // Viewport. The 3D scene is three flat tones apart by a fixed ratio, not
     // by palette role: background 0.329, plate 0.2666, plate side 0.133 in its
     // dark theme, with grid lines a tenth brighter than the plate. Reproducing
     // the ratios on the theme's own hue is what makes the viewport read as
-    // Orca's while still following matugen.
+    // that while still following matugen.
     function mix(a, b, t) {
         return Qt.rgba(a.r + (b.r - a.r) * t,
                        a.g + (b.g - a.g) * t,
@@ -89,7 +89,7 @@ QtObject {
     }
 
     readonly property color viewportBackground: mix(surfaceVariant, outline, 0.25)
-    // The Voron bed is a dark PEI sheet, not a mid grey. Orca's dark theme keeps
+    // The Voron bed is a dark PEI sheet, not a mid grey. A dark theme keeps
     // the plate a fixed step below its background; this steps the theme's own
     // background toward black by the same proportion, so the plate stays the
     // darkest large surface in the scene on any palette.

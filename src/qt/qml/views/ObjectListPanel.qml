@@ -3,7 +3,7 @@ import QtQuick.Controls
 import "../theme"
 import "../components"
 
-// Orca's object list, as a drawer on the inner edge of the settings panel: one
+// The object list, as a drawer on the inner edge of the settings panel: one
 // row per object with its visibility, name, size and bed position, and one set
 // of buttons acting on the selection. Selecting a row selects the object in the
 // document, which is what the viewport tint, the transform tools and the slice
@@ -171,7 +171,7 @@ Rectangle {
 
             // Ctrl toggles one row in and out of the selection, Shift extends the
             // selection from the anchor, a plain click replaces it -- the same
-            // convention Orca and PrusaSlicer use in their object lists.
+            // convention object lists share.
             TapHandler {
                 acceptedModifiers: Qt.NoModifier
                 onTapped: plateDocument.selectObject(row.modelData.id)
@@ -241,9 +241,8 @@ Rectangle {
                         onClicked: plateDocument.setVisible(row.modelData.id, !row.modelData.visible)
                     }
 
-                    // Double-click the name to rename the object, the way both
-                    // Orca and PrusaSlicer do: the name is the only thing here
-                    // that is the user's rather than the file's.
+                    // Double-click the name to rename the object: the name is the
+                    // only thing here that is the user's rather than the file's.
                     Text {
                         id: nameLabel
                         width: parent.width - Metrics.controlHeight * 2 - Metrics.sm * 2
@@ -304,9 +303,8 @@ Rectangle {
                     color: Colors.textMuted
                 }
 
-                // The volumes attached to this object, nested under it: the same
-                // list Orca shows under an object, because a modifier is part of
-                // the object, not another thing on the plate.
+                // The volumes attached to this object, nested under it, because a
+                // modifier is part of the object, not another thing on the plate.
                 Repeater {
                     model: row.volumeList
 

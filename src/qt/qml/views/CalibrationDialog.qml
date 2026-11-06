@@ -6,7 +6,7 @@ import QtQuick.Layouts
 import "../theme"
 import "../components"
 
-// The calibration suite, as Orca and PrusaSlicer present it: pick a test, then
+// The calibration suite: pick a test, then
 // set the parameters that shape it before it goes on the plate. Each row is a
 // test plate this app builds itself -- the geometry from the engine's primitives,
 // the per-band change from the plate's own layer G-code -- so nothing here

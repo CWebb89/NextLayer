@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Slice every printer the app lists, and report the ones that produce nothing.
 
-    python3 tools/orca-catalog/validate.py                 # whole catalog, ~7 min at --jobs 4
-    python3 tools/orca-catalog/validate.py --vendor Voron
+    python3 tools/printer-catalog/validate.py                 # whole catalog, ~7 min at --jobs 4
+    python3 tools/printer-catalog/validate.py --vendor Voron
 
 A printer preset can resolve, appear in the dropdown and carry sensible settings
 while the engine writes no G-code at all and still exits 0 -- three separate
@@ -29,7 +29,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 BIN = ROOT / "upstream/build/src/next-layer-qt/next-layer-qt"
-BUNDLE = ROOT / "upstream/resources/presets/orca-catalog"
+BUNDLE = ROOT / "upstream/resources/presets/vendor-catalog"
 MODEL = ROOT / "oracle/models/cube_20.stl"
 MINIMUM_BYTES = 100_000
 START_WINDOW = 8000
@@ -162,7 +162,7 @@ def main() -> int:
     if not MODEL.is_file():
         raise SystemExit(f"validate: no model at {MODEL}")
 
-    data_home = args.data_home or Path(tempfile.mkdtemp(prefix="orca-catalog-home-"))
+    data_home = args.data_home or Path(tempfile.mkdtemp(prefix="printer-catalog-home-"))
     data_home.mkdir(parents=True, exist_ok=True)
     print(f"preset home {data_home}")
 

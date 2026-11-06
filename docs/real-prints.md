@@ -56,11 +56,11 @@ is the failure this page exists to catch:
 
 The cause was the engine's own preset bundle. PrusaSlicer ships PrusaResearch
 only, so no Voron exists unless one is imported — see
-`tools/orca-import/README.md` and the section below.
+`tools/preset-import/README.md` and the section below.
 
 ### After the fix
 
-`tools/orca-import` now imports the user's own OrcaSlicer printer, process and
+`tools/preset-import` now imports the user's own OrcaSlicer printer, process and
 filament presets into the Orca bundle next-layer ships, translating Orca's
 setting names to this engine's. With the same model, printer and `2.4 PLA`:
 

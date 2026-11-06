@@ -3,7 +3,7 @@ import QtQuick.Controls
 import "../theme"
 
 // One entry in the viewport strip: a 40px hit area holding a Material Symbols
-// icon, matching Orca's icon-only toolbar. The tooltip carries the label, the
+// icon, matching the icon-only toolbar. The tooltip carries the label, the
 // shortcut, and the reason when the entry is disabled.
 Item {
     id: root

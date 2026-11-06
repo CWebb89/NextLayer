@@ -2,15 +2,15 @@
 
 Generates a printer bundle — one preset per vendor machine — from the profiles
 shipped in the OrcaSlicer checkout at `~/dev/reference/OrcaSlicer/resources/profiles`.
-The output is written into `upstream/resources/presets/orca-catalog/`, which the
+The output is written into `upstream/resources/presets/vendor-catalog/`, which the
 app already loads through `PresetStore::bundleRoots()`. Because it sits inside
 `upstream/`, the bundle is a build artifact: git does not track it, and a fresh
 clone regenerates it rather than inheriting a stale copy.
 
 ```sh
-python3 tools/orca-catalog/generate.py                  # every vendor
-python3 tools/orca-catalog/generate.py --vendors Voron  # one vendor
-python3 tools/orca-catalog/generate.py --out /tmp/try   # somewhere else
+python3 tools/printer-catalog/generate.py                  # every vendor
+python3 tools/printer-catalog/generate.py --vendors Voron  # one vendor
+python3 tools/printer-catalog/generate.py --out /tmp/try   # somewhere else
 ```
 
 Requires the OrcaSlicer checkout. `tools/check` fails loudly if the catalog is
@@ -28,7 +28,7 @@ machine profile; process and filament values are borrowed from the PrusaResearch
 templates in `templates/`, since Orca's own process settings use vocabularies the
 engine does not share (see the parity ledger's converter section).
 
-The keymap and the value-to-enum guards live in `../orca-convert/convert.py` and
+The keymap and the value-to-enum guards live in `../preset-convert/convert.py` and
 are imported, not duplicated: an Orca key reaches the engine only if the engine
 has that option, and a value reaches it only if the option's enum accepts it.
 
@@ -66,15 +66,15 @@ output file, its size and that the vendor's start G-code reached the output — 
 preset can resolve, list and look right while the engine writes nothing.
 
 ```sh
-python3 tools/orca-catalog/validate.py --jobs 6      # whole catalog, ~6 min
-python3 tools/orca-catalog/validate.py --vendor Voron
-python3 tools/orca-catalog/validate.py --names-only  # duplicates only, seconds
+python3 tools/printer-catalog/validate.py --jobs 6      # whole catalog, ~6 min
+python3 tools/printer-catalog/validate.py --vendor Voron
+python3 tools/printer-catalog/validate.py --names-only  # duplicates only, seconds
 ```
 
 It resolves presets under a throwaway `XDG_DATA_HOME`, because the app prefers
 `~/.local/share/next-layer/presets` and a copy left there silently shadows the
 bundle in the build tree; `--data-home` points it at a real one when needed. The
-one generated copy that does live there, `local/orca-catalog`, is a symlink into
+one generated copy that does live there, `local/vendor-catalog`, is a symlink into
 the build tree, so it cannot go stale.
 
 It sweeps the machines this bundle declares, read from each `vendor.yaml`'s

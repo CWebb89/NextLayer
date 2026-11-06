@@ -45,7 +45,7 @@ namespace {
 
 constexpr std::size_t kRoleCount = std::size_t(Slic3r::Domain::GCodeExtrusionRole::Count);
 
-// PrusaSlicer's own `;TYPE:` names, so the legend, the palette in
+// The engine's own `;TYPE:` names, so the legend, the palette in
 // FeatureColors.hpp and `--hide-feature` keep addressing the same labels.
 const char* const kRoleNames[kRoleCount] = {
     "None",
@@ -70,7 +70,7 @@ pg::ProcessorConfig configFor(const std::string& gcode)
     // ProcessorConfig::extract_processor_config_from_prusaslicer_gcode() ends
     // in `PANIC("Must load hw config!")` in this engine snapshot: the hardware
     // config subsystem it wants is not wired up in 3.0.0-alpha12, so the only
-    // usable source is the config block PrusaSlicer writes into the G-code
+    // usable source is the config block the engine writes into the G-code
     // footer. Read the keys that decide geometry (filament diameter), mass and
     // cost (density, cost) and the time estimate (machine limits, flavor).
     pg::ProcessorConfig config;
@@ -452,7 +452,8 @@ static PreviewData buildData(pg::ProcessorResult& result, double filamentCostPer
     // for its viewer, and those keep `delta_extruder`, so a per-move sum counts
     // filament twice (measured: 2.17 m for a 0.97 m print). `mass` is also in
     // density-per-mm3 units, i.e. 1000x grams. The statistics are the numbers
-    // PrusaSlicer prints in the G-code footer, which is what the panel shows.
+    // The statistics are the numbers the engine prints in the G-code footer,
+    // which is what the panel shows.
     using Slic3r::Domain::BasicPrintStatistics;
     using Slic3r::Domain::FullPrintStatistics;
 

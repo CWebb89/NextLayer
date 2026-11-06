@@ -40,7 +40,7 @@ the decisions, measured facts, dead ends, and the reasoning behind each.
 One command answers it:
 
 ```sh
-~/dev/next-layer/tools/check            # 23 s: 7 gates
+~/dev/next-layer/tools/check            # 23 s: 24 gates
 ~/dev/next-layer/tools/check --fast     # 8 s: skip the oracle
 ~/dev/next-layer/tools/check --ui       # + a real window, captured and read
 ```
@@ -58,7 +58,7 @@ IMSlider, the ImGui panels) and its `resources/profiles` when a control, a
 measurement or a workflow is in question. Match Orca or PrusaSlicer behaviour,
 naming and layout, adapting their code where it fits and writing new code only
 where theirs cannot be reused. The parity ledger this is measured against is
-`docs/orca-parity.md`.
+`docs/features.md`.
 
 **See the change, don't guess at it.** `tools/cockpit/cockpit` launches an app
 alone on an unused Hyprland workspace and drives it with real pointer and
@@ -91,7 +91,7 @@ keeps them honest, and `tools/check` runs it.
 
 The UI's own headless knobs (`--dump-tabs`, `--dump-subtab`, `--settings-tab`,
 `--panel-left`, `--transform`) are documented in
-`src/qt/README.md`. `docs/orca-parity.md` is the Orca/Prusa
+`src/qt/README.md`. `docs/features.md` is the Orca/Prusa
 feature ledger: every tab, tool and setting marked done / staged / needs-engine,
 so "do we have it yet" is a lookup rather than a guess.
 

@@ -7,7 +7,7 @@ import "../components"
 
 // Object statistics: what the mesh actually is. Volume and surface area come
 // from the mesh itself, and the mass is that volume times the current
-// filament's density -- the same numbers Orca shows in its object dialog.
+// filament's density -- the same numbers the object dialog shows.
 Popup {
     id: root
 

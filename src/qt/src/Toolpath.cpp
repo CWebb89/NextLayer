@@ -219,7 +219,7 @@ void Toolpath::setFeatureVisible(const QString& name, bool visible)
     emit changed();
 }
 
-// Orca's layer view modes: everything up to the slider, every layer, or the
+// The layer view modes: everything up to the slider, every layer, or the
 // slider's layer on its own. Mode 0 is the default because a slider that cuts
 // the model is what a slicer's preview is expected to do.
 void Toolpath::setSingleLayer(bool single)
@@ -392,7 +392,7 @@ double Toolpath::totalCost() const
     return m_data.totalCost;
 }
 
-// Per line type, in the order Orca's panel lists them: heaviest first, so the
+// Per line type, heaviest first, so the
 // rows that explain the print time sit at the top.
 QVariantList Toolpath::featureLegend() const
 {
@@ -449,7 +449,7 @@ void Toolpath::forwardLayerRange()
 // The moves slider narrows the layer range down to the moves of the current
 // layer. libvgcode's visible range counts its own vertices, one per G-code move,
 // so the viewer supplies the per-layer start and count; the slider works in that
-// space, which is the same one Orca's move slider scrubs.
+// space, which is the same one the move slider scrubs.
 void Toolpath::forwardMoveRange()
 {
     if (m_view == nullptr || !m_loaded || m_data.layers.isEmpty())

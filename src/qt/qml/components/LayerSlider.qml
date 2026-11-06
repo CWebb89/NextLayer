@@ -1,7 +1,7 @@
 import QtQuick
 import "../theme"
 
-// The preview's vertical layer slider, laid out like OrcaSlicer's: a track down
+// The preview's vertical layer slider: a track down
 // the right edge of the viewport with two handles — the upper one is the top
 // layer, the one the model is cut at, and the lower one is the first layer still
 // drawn. Both handles carry their layer number and Z height, so the control
@@ -20,7 +20,7 @@ Item {
     property string lowerDetail: ""
 
     /// Heights that carry a marker (custom G-code, pause, tool change), so the
-    /// track shows where they are: Orca draws the same ticks.
+    /// track shows where they are: the ticks are the same in both.
     property var markers: []
 
     signal lowerMoved(real value)

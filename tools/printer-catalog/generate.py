@@ -8,12 +8,12 @@ under a bundle root, one directory per vendor inside it, and that vendor's
 ``vendor.yaml`` describing its printer families plus one preset file per printer.
 
 This tool writes such a bundle from Orca's profiles. Machine keys are translated
-to the engine's vocabulary by ``tools/orca-convert``; anything that cannot be
+to the engine's vocabulary by ``tools/preset-convert``; anything that cannot be
 translated is dropped and reported rather than invented.
 
 Usage:
-    generate.py --orca ~/dev/reference/OrcaSlicer/resources/profiles \\
-                --out ../../upstream/resources/presets/orca-catalog \\
+    generate.py --from ~/dev/reference/OrcaSlicer/resources/profiles \\
+                --out ../../upstream/resources/presets/vendor-catalog \\
                 --vendors Creality,Elegoo,Voron
 
     generate.py --list                    # vendors and machine counts
@@ -30,12 +30,18 @@ import tempfile
 from collections import Counter
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "orca-convert"))
-import convert as orca  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "preset-convert"))
+import convert as preset_convert  # noqa: E402
 
-BUNDLE_ID = "orca-catalog"
+BUNDLE_ID = "vendor-catalog"
 NOZZLE = "0.4"
 
+# The bundle id is also the directory name a preset store scans, and the scan
+# order is alphabetical, so this name must sort after the bundle next-layer ships
+# for its own printer. Measured: with an id sorting before `next-layer-custom`,
+# "Voron 2.4 350 0.4" resolved into this catalog, whose Voron entry carries one
+# generic filament instead of the nine the app's own bundle lists, and the
+# filament gate failed. Renaming the display name alone does not prevent it.
 # The engine ships its own PrusaResearch bundle, and preset resolution matches a
 # hardware config by display name and then takes the first hit. Hardware config
 # ids are fresh UUIDs on every load, so the map that orders them is re-shuffled
@@ -176,8 +182,8 @@ def emit_mapping(mapping, indent):
     return lines
 
 
-def index_of(orca_root, vendor):
-    path = orca_root / (vendor + ".json")
+def index_of(source_root, vendor):
+    path = source_root / (vendor + ".json")
     if not path.is_file():
         return {}
     return json.loads(path.read_text(errors="replace"))
@@ -202,7 +208,7 @@ def machine_presets(vendor_dir, vendor, index, nozzle, machines_filter=None):
 
 
 def resolved(path):
-    return orca.resolve_inherits(path)
+    return preset_convert.resolve_inherits(path)
 
 
 def strip_nozzle(name, nozzle):
@@ -215,7 +221,7 @@ def strip_nozzle(name, nozzle):
 def converted(data, kind, allowed, enums, drop=()):
     bucket = {"renamed": {}, "unsupported": []}
     values = {}
-    for target, value in orca.convert_profile(data, bucket):
+    for target, value in preset_convert.convert_profile(data, bucket):
         if target is None or target in drop or value is None:
             continue
         if isinstance(value, dict) and "value" in value:
@@ -223,7 +229,7 @@ def converted(data, kind, allowed, enums, drop=()):
         if allowed and target not in allowed:
             bucket["unsupported"].append(target)
             continue
-        if target in orca.DROP_KEYS:
+        if target in preset_convert.DROP_KEYS:
             bucket["unsupported"].append(target)
             continue
         vocabulary = enums.get(target)
@@ -489,15 +495,15 @@ def unique_slug(machines, slug):
     return "%s-%d" % (slug, index)
 
 
-def build_vendor(orca_root, vendor_dir, vendor, out_root, nozzle, nozzle_float, allowed,
+def build_vendor(source_root, vendor_dir, vendor, out_root, nozzle, nozzle_float, allowed,
                  enums, borrowed, placeholders, engine_defaults, report, machines_filter=None):
-    index = index_of(orca_root, vendor)
+    index = index_of(source_root, vendor)
     vendor_slug = slugify(vendor)
     cache = {}
     machines, unsupported = [], Counter()
 
     for preset_name, path in machine_presets(vendor_dir, vendor, index, nozzle, machines_filter):
-        data = orca.resolve_inherits(path, cache)
+        data = preset_convert.resolve_inherits(path, cache)
         name = NAME_OVERRIDES.get(strip_nozzle(preset_name, nozzle),
                                   strip_nozzle(preset_name, nozzle))
         slug = slugify(name)
@@ -541,12 +547,12 @@ def build_vendor(orca_root, vendor_dir, vendor, out_root, nozzle, nozzle_float, 
     return {"vendor": vendor, "machines": len(machines), "unsupported": unsupported}
 
 
-def vendor_directories(orca_root):
+def vendor_directories(source_root):
     found = []
-    for directory in sorted(orca_root.iterdir()):
+    for directory in sorted(source_root.iterdir()):
         if not directory.is_dir():
             continue
-        if not (orca_root / (directory.name + ".json")).is_file():
+        if not (source_root / (directory.name + ".json")).is_file():
             continue
         found.append(directory)
     return found
@@ -555,7 +561,7 @@ def vendor_directories(orca_root):
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--orca", default=str(Path.home() / "dev/reference/OrcaSlicer/resources/profiles"))
+    parser.add_argument("--from", dest="source", required=True, help="directory of reference profiles to read")
     parser.add_argument("--out", default=str(Path(__file__).resolve().parents[2]
                                              / "upstream/resources/presets" / BUNDLE_ID))
     parser.add_argument("--vendors", help="comma-separated vendor directory names; default all")
@@ -570,11 +576,11 @@ def main():
     parser.add_argument("--list", action="store_true")
     args = parser.parse_args()
 
-    orca_root = Path(args.orca)
-    directories = vendor_directories(orca_root)
+    source_root = Path(args.source)
+    directories = vendor_directories(source_root)
     if args.list:
         for directory in directories:
-            index = index_of(orca_root, directory.name)
+            index = index_of(source_root, directory.name)
             count = len(entries(index, "machine_list"))
             print("%-24s %d machines" % (directory.name, count))
         return 0
@@ -613,7 +619,7 @@ def main():
                           "non-deterministic" % vendor)
             continue
         try:
-            result = build_vendor(orca_root, directory, vendor, out_root, args.nozzle,
+            result = build_vendor(source_root, directory, vendor, out_root, args.nozzle,
                                   float(args.nozzle.split()[0]), allowed, enums, borrowed,
                                   placeholders, engine_defaults, report,
                                   [token.strip() for token in (args.machines or "").split(",")

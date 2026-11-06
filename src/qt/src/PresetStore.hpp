@@ -10,7 +10,7 @@
 
 class SettingsModel;
 
-// Preset catalogue and resolver over the engine's own bundle. The PrusaSlicer
+// Preset catalogue and resolver over the engine's own bundle. The engine
 // 3.0 engine already evaluates the vendor YAML (inherits, variant conditions,
 // nozzle/feeder logic), so this store asks the app's one engine runtime for the
 // bundle's own answers instead of reimplementing the bundle format: the printer

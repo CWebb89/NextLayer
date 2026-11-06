@@ -3,8 +3,8 @@ import QtQuick.Layouts
 import "../theme"
 import "../components"
 
-// The G-code around the move the preview is stopped at, as OrcaSlicer's g-code
-// window shows it: numbered monospace lines, the line that produced the current
+// The G-code around the move the preview is stopped at: numbered monospace lines,
+// the line that produced the current
 // move boxed, and the neighbouring lines for context. It is how a toolpath that
 // looks wrong is traced back to the line that asked for it.
 Card {
@@ -18,7 +18,7 @@ Card {
                                  ? toolpath.gcodeWindow : []
     readonly property int rowHeight: Math.round(Type.sizeCaption * 1.45)
 
-    // As many lines as fit, always keeping the current line in the middle: Orca's
+    // As many lines as fit, always keeping the current line in the middle: the
     // window shrinks the surrounding context rather than clipping the card.
     readonly property int fitRows: Math.max(3, Math.floor((root.maxHeight - Metrics.panelPadding * 2
                                                            - root.rowHeight * 2) / root.rowHeight))

@@ -322,9 +322,9 @@ Orca's *Calibration Guide* entry (a wiki link) and the AMS-specific flows.
 
 ## Printer catalog
 
-`tools/orca-catalog/generate.py` turns the OrcaSlicer vendor profiles into a
+`tools/printer-catalog/generate.py` turns the OrcaSlicer vendor profiles into a
 next-layer bundle: **67 vendors, 450 printers**, written to
-`upstream/resources/presets/orca-catalog/` (a build artifact, regenerated, not
+`upstream/resources/presets/vendor-catalog/` (a build artifact, regenerated, not
 tracked). Pick one from the Printer dropdown — the list is searchable — and the
 engine resolves it like any other preset.
 
@@ -361,7 +361,7 @@ duplicate name resolved differently from run to run.
 
 ## Orca config converter
 
-`tools/orca-convert/convert.py` turns OrcaSlicer profiles (flat JSON, `inherits`
+`tools/preset-convert/convert.py` turns OrcaSlicer profiles (flat JSON, `inherits`
 chains) into next-layer config JSON over the PrusaSlicer 3.0 engine. It is a
 keymap plus value transforms, not a settings reimplementation.
 

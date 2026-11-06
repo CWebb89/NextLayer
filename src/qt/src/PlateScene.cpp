@@ -292,7 +292,7 @@ void PlateScene::rebuild()
     TriangleMesh selection;
 
     // Every plate is drawn, not just the active one: a project with three plates
-    // shows three beds, the way Orca's project view does. Each plate's objects
+    // shows three beds in the project view. Each plate's objects
     // are shifted by that plate's offset in the scene.
     for (const int id : m_document->ids()) {
         const PlateDocument::Object* object = m_document->object(id);

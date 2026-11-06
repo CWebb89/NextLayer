@@ -4,7 +4,7 @@ import QtQuick.Layouts
 import "../theme"
 import "../components"
 
-// Legend for the sliced preview, shaped like OrcaSlicer's: a view-type picker
+// Legend for the sliced preview: a view-type picker
 // over either one row per extrusion role (line type mode) or one row per colour
 // band of the active value range (speed, flow, height, layer time...), then the
 // travel/retraction/seam options, then the totals the engine reports for the
@@ -44,7 +44,7 @@ Card {
         return value < 1000 ? Math.round(value) + "mm" : (value / 1000).toFixed(2) + "m"
     }
 
-    // Orca's header: the view-type picker with a code-style icon, and a chevron
+    // The header: the view-type picker with a code-style icon, and a chevron
     // that folds the whole panel away so the toolpath is not covered by it.
     Column {
         id: stack

@@ -2,7 +2,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import "../theme"
 
-// The preview's move slider, laid out like OrcaSlicer's second slider: it scrubs
+// The preview's move slider, the second of the two: it scrubs
 // the moves inside the current layer, so a print can be walked forward one
 // extrusion at a time instead of one layer at a time. The tick marks are the
 // layer's own moves and the label reads the move index within it.

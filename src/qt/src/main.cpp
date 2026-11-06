@@ -407,9 +407,9 @@ struct PrinterSetup
 };
 
 // The plate mesh a printer model ships with. Voron machines are not in the
-// engine's vendor manifest (it is a PrusaSlicer tree), so their asset ships with
-// the app from the same OrcaSlicer profile the machine settings come from. Prusa
-// beds come from the engine's own vendor assets, keyed by the `printer_model`
+// engine's vendor manifest, so their asset ships with the app from the same
+// profile the machine settings come from. Beds the engine does ship come from
+// its own vendor assets, keyed by the `printer_model`
 // config value (the vendor's base model plus any tool/nozzle variant). Artwork is
 // deliberately absent: the plate is drawn as a solid colour with the grid over it.
 QString bedStlForPrinter(const QString& model)
@@ -701,7 +701,7 @@ int main(int argc, char* argv[])
     QGuiApplication::setApplicationName(QStringLiteral("next-layer"));
 
     QCommandLineParser parser;
-    parser.setApplicationDescription("next-layer: slicer frontend over the PrusaSlicer 3.0 engine");
+    parser.setApplicationDescription("next-layer: a slicer for tool changers");
     parser.addPositionalArgument("model", "STL model to open (optional: the window opens with an empty bed)");
     const QCommandLineOption qml_option("qml", "QML entry point.", "path");
     const QCommandLineOption smoke_option("smoke", "Render one frame, report coverage, exit.");

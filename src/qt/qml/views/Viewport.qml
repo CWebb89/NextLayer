@@ -14,7 +14,7 @@ Item {
     /// reframes the camera and swaps the loaded G-code, which the viewport cannot
     /// do on its own.
     signal plateSelected(int index)
-    /// The plate's own button row, mirroring Orca's per-plate icons.
+    /// The plate's own button row, mirroring the per-plate icons.
     signal plateAddRequested()
     signal plateRemoveRequested(int index)
     signal plateLockRequested(int index)
@@ -106,16 +106,16 @@ Item {
 
     readonly property real minZoom: 0.15
     // The camera fits the model, not the plate, so a small model needs a wide
-    // zoom-out range before the whole bed is in frame. Orca lets you pull back
-    // well past the plate and so does this.
+    // zoom-out range before the whole bed is in frame. The camera pulls back
+    // well past the plate, and so does this.
     readonly property real maxZoom: Math.max(6.0, root.bedFitZoom * 2.2)
     readonly property real fillFraction: 0.7
     readonly property real fieldOfView: root.fieldOfViewSetting
 
     // Orbit around the plate, not around the model. With the pivot on the
     // model, dragging it re-centres the camera and the object appears to hold
-    // still while the bed slides underneath; Orca and PrusaSlicer keep the plate
-    // fixed and let the object travel across it. Height still comes from the
+    // still while the bed slides underneath; the plate stays fixed here and the
+    // object travels across it. Height still comes from the
     // model, so it sits centred instead of hanging below the frame.
     // The plate offset is in printer coordinates; the camera orbits in the
     // scene's Y-up frame, so the Y half of the offset becomes -Z.
@@ -157,7 +157,7 @@ Item {
     readonly property vector3d bedSize: Qt.vector3d(root.bedMax.x - root.bedMin.x,
                                                      root.bedMax.y - root.bedMin.y, 0)
 
-    // Orca hides the filled bed and leaves the grid when the camera drops below
+    // The filled bed is hidden and only the grid left when the camera drops below
     // the plate (`Bed3D::render_system` only draws the plate when `!bottom`), so a
     // view from underneath reads as a wireframe rather than a black wall.
     readonly property bool lookingFromBelow: root.pitch > 0
@@ -167,9 +167,8 @@ Item {
         ? bedPlateGeometry.boundsMin.z - 0.03
         : -4.03
 
-    // Distance fits the model, the pivot stays on the plate: that is what Orca
-    // and PrusaSlicer do, and it keeps the object filling the viewport without
-    // the camera following it around the bed.
+    // Distance fits the model, the pivot stays on the plate: that keeps the
+    // object filling the viewport without the camera following it around the bed.
     readonly property real boundingRadius: Host.modelRadius > 0 ? Host.modelRadius : 100
 
     readonly property real fittedDistance: {
@@ -191,14 +190,14 @@ Item {
 
     function resetView() {
         root.setView("iso")
-        // Framed on the plate, not on the model, which is what Orca shows after an
-        // import: the plate's own chrome -- its name and icon column -- lives at the
+        // Framed on the plate, not on the model, which is what an import should
+        // show: the plate's own chrome -- its name and icon column -- lives at the
         // plate's edges, and a model-framed camera puts all of it off-screen.
         root.zoom = Math.max(root.minZoom, Math.min(root.maxZoom, root.bedFitZoom))
         root.panOffset = Qt.vector3d(0, 0, 0)
     }
 
-    // Orca's camera toolbar: the six orthogonal directions plus the isometric
+    // The camera toolbar: the six orthogonal directions plus the isometric
     // default. Every preset looks at the same point the orbit does, so switching
     // views never recentres the plate.
     // Pitch is the orbit node's X rotation and the camera sits on +Z of it, so a
@@ -206,8 +205,8 @@ Item {
     // underneath. These two were swapped, which is why "Top view" rendered a
     // black frame -- the camera was below an opaque bed looking up.
     readonly property var viewPresets: ({
-        // Orca's default orientation: `Camera::set_default_orientation` puts the
-        // camera 45 degrees above the bed and 45 around it. The shallower 18 degrees
+        // The default orientation: the camera sits 45 degrees above the bed and
+        // 45 around it. The shallower 18 degrees this used to be flattened the
         // this used to be flattened the plate's own chrome -- the name and the icon
         // column lie in the bed plane, so a low camera turns them into a smear.
         "iso": [45, -45],
@@ -240,10 +239,10 @@ Item {
     readonly property real clipNear: Math.max(0.02, root.cameraDistance * 0.004)
     readonly property real clipFar: root.cameraDistance * 8 + root.bedRadius * 8 + 500
 
-    // Distance that frames the whole build plate, which is the framing Orca opens
-    // in and what the "fit plate" button restores.
+    // Distance that frames the whole build plate, which is the framing the app
+    // opens in and what the "fit plate" button restores.
     // The icon column hangs off the plate's right edge, so the plate's own fit has
-    // to include it -- Orca frames the plate the same way, and without the apron the
+    // to include it -- the plate is framed the same way, and without the apron the
     // column lands off-screen and the plate's chrome is nowhere to be seen.
     readonly property real plateApron: plateChrome.iconSize + plateChrome.gapLeft
     readonly property real bedRadius: {
@@ -409,7 +408,7 @@ Item {
         // A key light above and behind the viewer, a dimmer fill from the lower
         // right, both fixed to the camera so no face falls into a dead shadow, plus
         // ambient. The key light casts: on a slicer bed the cast shadow is the only
-        // cue that says how far an overhang reaches, which is why Orca's flat
+        // cue that says how far an overhang reaches, which is why a flat
         // two-light rig is not enough here.
         Node {
             id: orbit
@@ -557,7 +556,7 @@ Item {
             }
 
             // Every other plate, drawn as a whole bed -- slab plus the same grid as
-            // the active one -- at the position the document gives it. Orca's
+            // the active one -- at the position the document gives it. The
             // multi-plate view: a plate you can see is a plate you can click.
             Repeater3D {
                 objectName: "otherPlateNode"
@@ -574,7 +573,7 @@ Item {
 
                     // A plate you are not on is context, not content: its fill
                     // drops to the background and its grid goes faint, the same
-                    // relationship Orca gives inactive plates in a multi-bed project.
+                    // relationship inactive plates get in a multi-bed project.
                     readonly property bool dimmed: !otherPlate.modelData.active
 
                     Model {
@@ -620,7 +619,7 @@ Item {
             // The plate. A printer that ships a `bed_model` gets its real mesh,
             // which is what makes the bed read as an object from underneath:
             // sides, bevel and all. The top is parked 0.03 mm below the bed plane
-            // (Orca's GROUND_Z) so a model resting on z = 0 cannot z-fight it.
+            // (the engine's GROUND_Z) so a model resting on z = 0 cannot z-fight it.
             Model {
                 visible: Host.bedPlateLoaded && root.showBedPlate && !root.lookingFromBelow
                 geometry: bedPlateGeometry
@@ -671,7 +670,7 @@ Item {
             // solid colour with a grid, and a stretched logo plus a radial vignette
             // read as blotches on the bed.
 
-            // Orca's grid: 10 mm hairlines, every fifth heavier, drawn over the
+            // The bed grid: 10 mm hairlines, every fifth heavier, drawn over the
             // plate. The shader keeps each line one pixel wide however far the
             // camera zooms, where the old quad mesh thickened into bands.
             Model {
@@ -695,8 +694,8 @@ Item {
                 }
             }
 
-            // PrusaSlicer's origin axes, which Orca inherits: red X, green Y,
-            // blue Z standing at the print origin, so the bed's front-left
+            // Origin axes: red X, green Y, blue Z standing at the print origin,
+            // so the bed's front-left
             // corner says where zero is however the camera turns. Printer
             // coordinates and printer Z-up, like everything else in the scene.
             Node {
@@ -875,7 +874,7 @@ Item {
         function onBoundsChanged() { root.dragOffset = Qt.vector3d(0, 0, 0) }
     }
 
-    // Orca's camera cluster: a projection toggle, the six axis views plus the
+    // The camera cluster: a projection toggle, the six axis views plus the
     // isometric default, and a fit-to-plate button. Its own card in the corner so
     // the camera controls live with the viewport rather than in the settings chrome.
     Rectangle {
@@ -1146,13 +1145,14 @@ Item {
         }
     }
 
-    // Orca's plate chrome, ported from `PartPlate::calc_vertex_for_number`,
-    // `calc_vertex_for_icons` and `calc_vertex_for_plate_name_edit_icon`. Orca builds
-    // these as geometry lying in the plate's own plane and raycasts the clicks; the
+    // The plate chrome, ported from `PartPlate::calc_vertex_for_number`,
+    // `calc_vertex_for_icons` and `calc_vertex_for_plate_name_edit_icon`. The engine
+    // builds these as geometry lying in the plate's own plane and raycasts the
+    // clicks; these are decals instead, but the
     // look that matters is that they are *on the bed*, foreshortening with it as the
     // camera tilts, so they are drawn here as decals: a rectangle in printer
     // coordinates, its four corners projected through the camera, and a projective
-    // matrix that maps the item onto the resulting quad. Orca's constants, in mm:
+    // matrix that maps the item onto the resulting quad. The constants, in mm:
     // 16 for an icon, 9 for the pencil, 3 of gap to the left, 3 from the top and 5
     // between icons.
     Item {
@@ -1162,8 +1162,8 @@ Item {
         visible: root.mode !== "preview"
 
         // `PartPlate::icon_scale_factor()`: min(bed depth / 200, bed width * 0.2 / 22),
-        // which for a 350 mm bed is 1.75 -- Orca's 16 mm icon becomes 28 mm on the bed
-        // and its 9 mm name height about 16 mm. Everything below scales with it.
+        // which for a 350 mm bed is 1.75 -- a 16 mm icon becomes 28 mm on the bed
+        // and the 9 mm name height about 16 mm. Everything below scales with it.
         readonly property real iconScale: Math.max(
             0.7,
             Math.min((root.bedMax.y - root.bedMin.y) / 200,
@@ -1268,7 +1268,7 @@ Item {
                 }
 
                 // The plate's name sits along the back edge, starting at its left
-                // corner, in Orca's 9 mm name height. The decal's local box takes the
+                // corner, in the 9 mm name height. The decal's local box takes the
                 // name's own aspect so the text is not stretched by the projection:
                 // a square box on a 40 x 16 mm quad would shear the glyphs.
                 readonly property real nameHeight: 9 * plateChrome.iconScale
@@ -1299,8 +1299,8 @@ Item {
                     font.pixelSize: 100
                 }
 
-                // Orca draws the number at the front-right corner, only once a project
-                // has more than one plate.
+                // The number sits at the front-right corner, drawn only once a
+                // project has more than one plate.
                 readonly property var numberMatrix: plateItem.decal(
                     root.bedMax.x - plateChrome.iconSize - plateChrome.gapLeft * 2,
                     root.bedMin.y + plateChrome.gapLeft * 2,
@@ -1329,8 +1329,8 @@ Item {
                       enabled: true, danger: false, action: "add" }
                 ]
 
-                // Name, on the bed: Orca renders the plate name into a texture and
-                // lays it along the back edge; this is the same decal, drawn as text.
+                // Name, on the bed: the plate name is rendered into a texture and
+                // laid along the back edge; this is the same decal, drawn as text.
                 Item {
                     id: nameDecal
 
@@ -1402,7 +1402,7 @@ Item {
                     HoverHandler { id: pencilHover }
                 }
 
-                // The button column: Orca's six icons hanging down from the back-right
+                // The button column: six icons hanging down from the back-right
                 // corner, each a 16 mm square standing on the bed.
                 Repeater {
                     model: plateItem.actions

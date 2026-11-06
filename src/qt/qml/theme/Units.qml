@@ -3,7 +3,7 @@ import QtQuick
 
 // Display units. The engine, every preset on disk and every project file are
 // millimetres -- this is a presentation choice applied at the editor boundary,
-// the same place PrusaSlicer converts, so a value never changes meaning when
+// the same place the engine converts, so a value never changes meaning when
 // the user switches system. Lengths are the only quantity with a unit here;
 // percentages, angles, temperatures and speeds pass through untouched.
 QtObject {

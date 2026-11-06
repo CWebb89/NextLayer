@@ -6,7 +6,7 @@ import NextLayer 1.0
 import "../theme"
 import "../components"
 
-// The per-picker "extra settings" view Orca shows when the gear next to a
+// The per-picker "extra settings" view behind the gear next to a
 // preset dropdown is clicked: the whole resolved config for one tab, grouped and
 // read-only. Editing stays in the main panel; this is the at-a-glance view of
 // what a preset actually contains. A plain overlay rectangle rather than a
@@ -214,8 +214,8 @@ Rectangle {
 
         // Preset management for the tab this popup belongs to. Saving writes
         // only the values changed in the panel and inherits the preset the
-        // panel was seeded from, which is how PrusaSlicer and Orca store user
-        // presets; a printer is added as a whole machine instead.
+        // panel was seeded from, which is how user presets are stored; a printer
+        // is added as a whole machine instead.
         RowLayout {
             Layout.fillWidth: true
             spacing: Metrics.sm

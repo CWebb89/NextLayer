@@ -221,7 +221,7 @@ bool GcodeView::Impl::load(Slic3r::App::libvgcode::FdmViewerInputData&& input)
     m_viewer->load(std::move(input), Slic3r::App::Scene::Transform::Identity());
     m_viewer->set_view_type(Slic3r::App::libvgcode::ViewType::FeatureType);
     // The engine defaults the tool marker on, which draws a translucent cylinder
-    // standing on the bed under the current position. Orca shows it only when
+    // standing on the bed under the current position. It is shown only when
     // asked, and on a plate it reads as a stray blob beside the print.
     if (m_viewer->is_option_visible(Slic3r::Biz::libpgcode::OptionType::ToolMarker))
         m_viewer->toggle_option_visibility(Slic3r::Biz::libpgcode::OptionType::ToolMarker);

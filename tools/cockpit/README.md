@@ -65,4 +65,4 @@ its window during start-up and a fullscreen toggle remaps it.
 
 - `next-layer-cut.drive` — slice, switch to preview, drag the layer slider down
   and capture the cut.
-- `orca-open.drive` — open a model in Orca and capture the prepare view.
+- `reference-open.drive` — open a model in Orca and capture the prepare view.

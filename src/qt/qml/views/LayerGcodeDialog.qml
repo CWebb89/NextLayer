@@ -3,7 +3,7 @@ import QtQuick.Controls
 import "../theme"
 import "../components"
 
-// The layer-slider right-click, as Orca and PrusaSlicer have it: attach a custom
+// The layer-slider right-click: attach a custom
 // G-code snippet, a pause or a tool change to one height of the print. The
 // engine emits it at that layer on the next slice, so the dialog says so.
 Popup {
