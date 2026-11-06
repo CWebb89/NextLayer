@@ -355,6 +355,11 @@ def printer_values(data, machine_name, vendor, nozzle_float, allowed, enums,
     # Absolute E distances make this build export nothing at all, and relative E
     # is what Klipper and current Marlin expect anyway; the engine's own default.
     values["use_relative_e_distances"] = True
+    # An extruder offset is written in the engine's own `0x0` spelling even though its
+    # reader reports a type mismatch for it on every load: the value is required for a
+    # multi-extruder machine to slice at all (dropping it fails with "error 5
+    # extruder_offset"), and the bundle loader rejects the nested-list spelling that
+    # would avoid the warning. A warning beats a tool changer that cannot slice.
     for key in POINT_LIST & set(values):
         values[key] = as_point_list(values[key])
     dropped = set()
