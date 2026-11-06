@@ -146,7 +146,7 @@ Plates on the left, tools next, object actions on the right — one panel.
 | Duplicate | done — the document copies the selected object beside it |
 | Centre on bed | done — the document moves the selected object's centre onto the bed centre |
 | Drop to bed | done — the document lifts/lowers the selected object until its minimum Z sits on the bed |
-| Cut at Z | staged — still runs the engine on the single selected file, so it replaces the plate; the document needs a mesh split. `Plater::CutGizmo` does this properly and comes with the host |
+| Cut at Z | done — see the CAD row: the plate is cut, not replaced |
 | Export G-code | done — writes the sliced file to a chosen path |
 | Object list (name, visibility, X/Y, centre/drop/duplicate/delete) | done — `Ctrl+L` or the list button; acts on the document, so a plate edit is undoable |
 | Undo / redo (`Ctrl+Z`, `Ctrl+Shift+Z`) | done — snapshot stack over the document's objects, transforms and visibility |
@@ -164,7 +164,7 @@ Now part of the same strip.
 | Move (centre at X/Y, or drag the model on the bed) | done |
 | Rotate (X/Y/Z degrees) | done |
 | Scale (uniform) | done |
-| Cut at Z | not done — this engine ships no cut at all: there is no `CutGizmo`, no plane-cut helper and no capped-boolean API on a mesh. `SliceCSGMesh` slices a CSG tree for the slicer, not for the editor. The transform panel still has a stub control that the engine ignores; it should be removed rather than shipped |
+| Cut at Z | done — `Cut.cpp` clips every straddling triangle against the plane and caps both halves with the mesh's own cross-section (`slice_mesh` + `Biz::Algorithms::Tesselate`), so neither half is open. `--mesh-tools-test`: a 20 mm cube cut at 8 mm gives 8 mm and 12 mm parts holding 8000 mm³ between them. The engine's own `CutGizmo`/`CutDialog` exist in the plater host, which is what a future gizmo would drive |
 | Measure (two points, distance, deltas, angle from vertical) | done |
 | Fuzzy skin | done — jumps to Process › Walls & Perimeters |
 | Lay on face | done — click a face; the facet normal is turned down and the object dropped to the bed |
@@ -173,12 +173,12 @@ Now part of the same strip.
 | Colour painting for a tool changer | done — the brush writes a per-facet tool index (`mm_segmentation_facets`, the engine's tool field) and the swatch list is the printer's own tool colours, so the overlay is what the machine will print. **There is no MMU and no single-nozzle colour mixing anywhere in this app**: those options are filtered out of the settings panel and the words do not appear in the UI |
 | Add a shape (box, cylinder, sphere) | done — an object built by the engine's own `its_make_cube`/`make_cylinder`/`make_sphere`, normalised to the app's XY-centred, Z-on-the-bed convention, so every tool and per-object setting works on it. `--shape-test` slices one and measures the filament |
 | Modifier, negative, support-blocker and support-enforcer volumes | done — a volume on the selected object with the engine's own `ModelVolumeType`; the FDM slice path slices each type and booleans it, so a negative volume cuts the toolpath (`--shape-test`: 3899.4 mm → 2823.2 mm of filament, and back to 3899.4 when removed). Drawn translucent by role (red subtracts, amber modifies, purple blocks, green forces) and the object turns into a ghost so an interior volume is visible. The object list nests the volumes with their type and a delete |
-| Text object | absent — this engine tree has no `Biz::Emboss`, no `IFontManager` and no `TextGizmo`: PrusaSlicer 3.0.0-alpha12 predates the emboss feature. Building it means adding a font rasteriser and a mesh boolean, which is a project, not a wire-up |
+| Text object | done — Add ▸ Add text…: a line of glyphs as a solid, through the engine's `Biz::Emboss::text2shapes` plus `Biz::Algorithms::Tesselate`. Fonts come from fontconfig, because the engine's own `get_font_list()` is a no-op off Windows. `--mesh-tools-test`: "next-layer" at 10 mm is 61.5 mm wide, 1.2 mm thick and slices. The outline is baked into the mesh, so the text is geometry afterwards, not a parametric volume |
 | Hollow | done — Object ▸ Hollow… grows an inner wall `n` mm inside the surface through the engine's own voxel hollowing (`sla::hollow_mesh`, which is FDM-agnostic); `--mesh-tools-test`: an 8000 mm³ cube becomes a 3941.6 mm³ shell at 2 mm and keeps its 20 mm height |
 | Variable layer height | done — a band and a height in the object panel, written as a `LayerHeightProfile` on the object; the slice honours it (`--slice-features` proves 125 → 187 layers) |
 | Assemble (split parts) | done, sans gizmo — Merge bakes the selection into one mesh in world coordinates; Split into parts walks the vertex table and gives every connected shell its own object, in place (`--mesh-tools-test`: 1 object → 2) |
 
-| Gizmo handles, drag-rotate/scale, snapping | not started — transforms are numeric panels apart from drag-move. Building them means a picking pass and three axis handles in the Qt Quick 3D scene; the parity ledger lists it as the largest remaining viewport item |
+| Gizmo handles, drag-rotate/scale, snapping | partly done — the Move tool draws three axis arrows at the selection's centre and a drag along one moves the object along that axis (`PlateScene::pickGizmo` / `gizmoAxisPoint`). Rotate and scale handles, and snapping, are not there yet: the numeric panels own those |
 
 ## Camera and selection
 

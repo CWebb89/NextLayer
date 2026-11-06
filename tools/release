@@ -1,0 +1,73 @@
+#!/usr/bin/env fish
+
+# Builds the release artifact and the manifest the updater reads, so publishing a
+# version is one command plus `gh release create`. The layout is the one the
+# updater expects: a tarball holding next-layer-qt and qml/ at its root, and an
+# update.json naming that tarball's sha256.
+#
+#   tools/release 0.2.0 "what changed"
+#
+# Writes dist/next-layer-<version>.tar.gz and dist/update.json. It never uploads:
+# the last thing it prints is the gh command, for a person to run.
+
+set -l root (dirname (status dirname))
+set -l version ""
+set -l notes ""
+
+if test (count $argv) -lt 1
+    echo "usage: tools/release VERSION [NOTES]" >&2
+    exit 2
+end
+set version $argv[1]
+if test (count $argv) -ge 2
+    set notes "$argv[2]"
+end
+
+if not string match -qr '^[0-9]+\.[0-9]+\.[0-9]+$' -- $version
+    echo "tools/release: VERSION must be MAJOR.MINOR.PATCH, not '$version'" >&2
+    exit 2
+end
+
+set -l bin $root/upstream/build/src/slic3r-app-qt/next-layer-qt
+set -l qml $root/upstream/src/slic3r-app-qt/qml
+
+if not test -x $bin
+    echo "tools/release: $bin is missing; build it first" >&2
+    exit 1
+end
+
+set -l dist $root/dist
+set -l stage $dist/next-layer-$version
+set -l archive $dist/next-layer-$version.tar.gz
+
+rm -rf $stage
+mkdir -p $stage
+cp $bin $stage/next-layer-qt
+cp -r $qml $stage/qml
+strip $stage/next-layer-qt 2>/dev/null
+tar -czf $archive -C $stage .
+
+set -l sha (sha256sum $archive | string split ' ')[1]
+set -l size (stat -c %s $archive)
+
+python3 -c "
+import json, sys
+manifest = {
+    'version': sys.argv[1],
+    'notes': sys.argv[2],
+    'url': 'https://github.com/CWebb89/next-layer/releases/download/v' + sys.argv[1] + '/' + sys.argv[3],
+    'sha256': sys.argv[4],
+    'size': int(sys.argv[5]),
+}
+json.dump(manifest, open(sys.argv[6], 'w'), indent=2)
+open(sys.argv[6], 'a').write('\n')
+" $version $notes next-layer-$version.tar.gz $sha $size $dist/update.json
+
+rm -rf $stage
+
+echo "built $archive"
+echo "     $size bytes, sha256 $sha"
+echo "     manifest $dist/update.json"
+echo
+echo "publish:"
+echo "    gh release create v$version $archive dist/update.json --title 'next-layer $version' --notes '$notes'"

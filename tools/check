@@ -524,12 +524,68 @@ end
 
 # Mesh tools gate: statistics have to be measured from the mesh, hollowing has to
 # leave a shell, and split has to find the two shells a merged object holds.
-set -l mesh_out (env $bin --mesh-tools-test /tmp/nl-check-calibration.json 2>&1 | grep -E '^(statistics|hollow|split):')
+set -l mesh_out (env $bin --mesh-tools-test /tmp/nl-check-calibration.json 2>&1 | grep -E '^(statistics|hollow|cut|split|text):')
 set -l mesh_rc $status
 if test $mesh_rc -ne 0
     __bad "mesh tools: "(string join '; ' -- $mesh_out)
 else
     __ok "mesh tools: "(string join '; ' -- $mesh_out)
+end
+
+# Update gate: a release channel is a manifest plus an artifact, and an install
+# has to replace the binary without ever writing into the running one. This
+# serves a stand-in release over localhost: the check must see the new version,
+# a wrong sha256 must be refused, and the install must land the artifact and keep
+# the old binary as .previous.
+set -l upd_home (mktemp -d /tmp/nl-check-update-XXXXXX)
+set -l upd_port 8765
+mkdir -p $upd_home/serve/releases/latest/download $upd_home/prefix/qml $upd_home/tarball/qml
+printf '#!/bin/sh\necho 0.1.0\n' > $upd_home/prefix/next-layer-qt
+chmod +x $upd_home/prefix/next-layer-qt
+printf 'old\n' > $upd_home/prefix/qml/main.qml
+printf '#!/bin/sh\necho 9.9.9\n' > $upd_home/tarball/next-layer-qt
+chmod +x $upd_home/tarball/next-layer-qt
+printf 'new\n' > $upd_home/tarball/qml/main.qml
+tar -czf $upd_home/serve/releases/latest/download/next-layer-9.9.9.tar.gz -C $upd_home/tarball .
+set -l upd_sha (sha256sum $upd_home/serve/releases/latest/download/next-layer-9.9.9.tar.gz | string split ' ')[1]
+python3 -c "
+import json, sys
+json.dump({'version': '9.9.9', 'notes': 'stand-in release', 'sha256': sys.argv[1],
+           'url': 'releases/latest/download/next-layer-9.9.9.tar.gz'},
+          open(sys.argv[2], 'w'))
+" $upd_sha $upd_home/serve/releases/latest/download/update.json
+python3 -m http.server $upd_port --directory $upd_home/serve >/dev/null 2>&1 &
+set -l upd_server $last_pid
+sleep 1
+set -l upd_base http://127.0.0.1:$upd_port
+set -l upd_check (env $bin --update $upd_base 2>&1)
+set -l upd_found (string match -r 'available 9\.9\.9' -- $upd_check)
+env NEXT_LAYER_UPDATE_ROOT=$upd_home/prefix $bin --update $upd_base --update-install >/tmp/nl-check-update-install.out 2>&1
+set -l upd_install_rc $status
+set -l upd_installed (grep -c '9.9.9' $upd_home/prefix/next-layer-qt 2>/dev/null)
+set -l upd_kept (find $upd_home/prefix -maxdepth 1 -name 'next-layer-qt.previous' | wc -l)
+set -l upd_qml (cat $upd_home/prefix/qml/main.qml 2>/dev/null)
+python3 -c "
+import json, sys
+path = sys.argv[1]
+manifest = json.load(open(path))
+manifest['sha256'] = '0' * 64
+json.dump(manifest, open(path, 'w'))
+" $upd_home/serve/releases/latest/download/update.json
+set -l upd_bad (env NEXT_LAYER_UPDATE_ROOT=$upd_home/prefix $bin --update $upd_base --update-install 2>&1)
+set -l upd_bad_rc $status
+set -l upd_refused (string match -r 'sha256' -- $upd_bad)
+kill $upd_server 2>/dev/null
+rm -rf $upd_home
+if test -z "$upd_found"
+    __bad "update: the channel did not offer 9.9.9 to a 0.1.0 build ("(string join ' ' -- $upd_check)")"
+else if test $upd_install_rc -ne 0 -o "$upd_installed" = "0" -o "$upd_kept" != "1" -o "$upd_qml" != "new"
+    set -l upd_tail (tail -n 2 /tmp/nl-check-update-install.out | string join '; ')
+    __bad "update: installing 9.9.9 left the binary '$upd_installed', a backup '$upd_kept' time(s) and qml '$upd_qml' -- $upd_tail"
+else if test $upd_bad_rc -eq 0 -o -z "$upd_refused"
+    __bad 'update: an artifact whose sha256 does not match was accepted'
+else
+    __ok "update: found 9.9.9, installed it over the prefix (old binary kept as .previous, qml replaced) and refused a mismatched sha256"
 end
 
 rm -rf $tools_home
