@@ -223,12 +223,32 @@ def converted(data, kind, allowed, enums, drop=()):
         if allowed and target not in allowed:
             bucket["unsupported"].append(target)
             continue
+        if target in orca.DROP_KEYS:
+            bucket["unsupported"].append(target)
+            continue
         vocabulary = enums.get(target)
         if vocabulary is not None and str(value) not in vocabulary:
             bucket["unsupported"].append(target)
             continue
+        if kind == "print" and _zero_means_default(target, value):
+            bucket["unsupported"].append(target)
+            continue
         values[target] = value
     return values, bucket
+
+
+ZERO_DEFAULT_KEYS = re.compile(r"(^|_)(acceleration|speed|jerk)$|_extrusion_width$")
+
+
+def _zero_means_default(key, value):
+    """Orca writes 0 where it means "use the inherited value".
+
+    Copying that zero through is not neutral in this engine: a zero acceleration
+    reaches the time estimator and the slice dies in std::length_error.
+    """
+    if not isinstance(value, (int, float)) or value != 0:
+        return False
+    return bool(ZERO_DEFAULT_KEYS.search(key))
 
 
 def bed_points(value):

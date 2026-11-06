@@ -96,7 +96,8 @@ end
 
 pushd $root/upstream/src/slic3r-app-qt >/dev/null
 set -l qmlfiles (find qml -name '*.qml')
-set -l lint (qmllint --unqualified disable $qmlfiles 2>&1)
+set -l qml_import (qtpaths6 --query QT_INSTALL_QML 2>/dev/null)
+set -l lint (qmllint --unqualified disable -I $qml_import $qmlfiles 2>&1)
 popd >/dev/null
 set -l warnings (string match --entire --regex '^Warning: ' -- $lint)
 
@@ -673,10 +674,11 @@ else
     if test -f $filament_gcode
         set petg_size (stat -c %s $filament_gcode)
     end
-    set -l petg_bed (grep -m1 -o 'M140 S[0-9]*' $filament_gcode 2>/dev/null)
+    set -l petg_bed (grep -m1 -o 'M1[49]0 S[0-9]*' $filament_gcode 2>/dev/null)
+    set -l petg_bed_c (string replace -r '^M1[49]0 S' 'M140 S' -- "$petg_bed")
     if test $petg_size -lt 100000
         __bad "filament presets: Generic PETG sliced $petg_size bytes"
-    else if test "$petg_bed" != "M140 S80"
+    else if test "$petg_bed_c" != "M140 S80"
         __bad "filament presets: Generic PETG wrote '$petg_bed' instead of a PETG bed temperature"
     else
         __ok "filament presets: $filament_match[2] materials for the Voron bundle, Generic PETG slices $petg_size bytes at 80 C"

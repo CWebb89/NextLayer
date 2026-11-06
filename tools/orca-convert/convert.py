@@ -52,7 +52,7 @@ RENAMES = {
     "top_surface_pattern": ("top_fill_pattern", "enum:fill_pattern"),
     "bottom_surface_pattern": ("bottom_fill_pattern", "enum:fill_pattern"),
     "infill_direction": ("fill_angle", "float"),
-    "infill_combination": ("infill_every_layers", "int"),
+    "infill_combination": ("infill_every_layers", "int_at_least_one"),
     "minimum_sparse_infill_area": ("solid_infill_below_area", "float"),
     "sparse_infill_anchor_max": ("infill_anchor_max", "float"),
     "sparse_infill_anchor": ("infill_anchor", "float"),
@@ -88,8 +88,8 @@ RENAMES = {
     "initial_layer_acceleration": ("first_layer_acceleration", "float"),
     "bridge_infill_acceleration": ("bridge_acceleration", "float"),
     # Supports
-    "enable_support": ("support_material", "enum:support_material_bool"),
-    "support_type": ("support_material", "enum:support_material_type"),
+    "enable_support": ("support_material", "enum:support_material_on"),
+    "support_type": ("support_material_auto", "enum_bool:support_type_auto"),
     "support_style": ("support_material_style", "enum:support_material_style"),
     "support_on_build_plate_only": ("support_material_buildplate_only", "bool"),
     "support_top_z_distance": ("support_material_contact_distance", "float"),
@@ -127,6 +127,10 @@ RENAMES = {
     "nozzle_temperature": ("temperature", "int"),
     "nozzle_temperature_initial_layer": ("first_layer_temperature", "int"),
     "bed_temperature_initial_layer": ("first_layer_bed_temperature", "int"),
+    "hot_plate_temp": ("bed_temperature", "int"),
+    "hot_plate_temp_initial_layer": ("first_layer_bed_temperature", "int"),
+    "textured_plate_temp": ("bed_temperature", "int"),
+    "textured_plate_temp_initial_layer": ("first_layer_bed_temperature", "int"),
     "fan_cooling_layer_time": ("slowdown_below_layer_time", "float"),
     "enable_overhang_speed": ("enable_dynamic_overhang_speeds", "bool"),
     "fan_min_speed": ("min_fan_speed", "int"),
@@ -134,9 +138,11 @@ RENAMES = {
     "slow_down_min_layer_time": ("slowdown_below_layer_time", "float"),
     "filament_shrink": ("filament_shrinkage_compensation_xy", "percent_obj"),
     "filament_shrinkage_compensation_z": ("filament_shrinkage_compensation_z", "float"),
-    "filament_max_volumetric_speed": ("max_volumetric_speed", "float"),
-    "enable_pressure_advance": ("pressure_advance", "bool"),
-    "pressure_advance": ("pressure_advance_value", "float"),
+    "filament_max_volumetric_speed": ("filament_max_volumetric_speed", "float"),
+    # Pressure advance has no numeric home in this engine's filament block: the
+    # name `pressure_advance` there is an enum wrapper, so writing Orca's number
+    # into it is a type error, not a setting. Klipper owns pressure advance on
+    # the machines this matters for, and it is reported as unsupported instead.
     # Printer / machine
     "printable_area": ("bed_shape", "bed_shape"),
     "printable_height": ("max_print_height", "float"),
@@ -173,14 +179,14 @@ RENAMES = {
     "filament_colour": ("filament_colour", None),
     "filament_notes": ("filament_notes", None),
     "notes": ("notes", None),
-    "print_sequence": ("complete_objects", None),
+    "print_sequence": ("complete_objects", "enum_bool:print_sequence"),
     "resolution": ("resolution", "float"),
     "arc_fitting": ("arc_fitting", "bool"),
     "arc_fitting_tolerance": ("gcode_resolution", "float"),
     "first_layer_height": ("first_layer_height", "float"),
     "xy_hole_compensation": ("xy_size_compensation", "float"),
     "xy_contour_compensation": ("xy_size_compensation", "float"),
-    "elefant_foot_compensation": ("first_layer_height", None),
+    "elefant_foot_compensation": ("elefant_foot_compensation", "float"),
     "fuzzy_skin": ("fuzzy_skin", "enum:fuzzy_skin"),
     "fuzzy_skin_point_distance": ("fuzzy_skin_point_dist", "float"),
     "fuzzy_skin_thickness": ("fuzzy_skin_thickness", "float"),
@@ -210,7 +216,14 @@ ENUMS = {
         "line": "rectilinear", "rectilinear": "rectilinear", "monotonic": "monotonic",
         "monotonicline": "monotonic", "rectilinear": "rectilinear", "hilbertcurve": "hilbertcurve",
     },
+    "support_material_on": {"0": "none", "1": "everywhere", "false": "none",
+                          "true": "everywhere", "none": "none"},
     "support_material_bool": {"0": "none", "1": "everywhere", "false": "none", "true": "everywhere"},
+    "support_type_auto": {
+        "normal(auto)": "1", "tree(auto)": "1", "normal": "0", "tree": "0",
+        "normal(manual)": "0", "tree(manual)": "0", "none": "0", "0": "0",
+    },
+    "print_sequence": {"by layer": "0", "by object": "1", "0": "0", "1": "1"},
     "support_material_type": {
         "normal(auto)": "everywhere", "normal(manual)": "everywhere", "normal": "everywhere",
         "tree(auto)": "organic", "tree(manual)": "organic", "tree": "organic",
@@ -224,8 +237,8 @@ ENUMS = {
         "rectilinear": "rectilinear", "rectilinear_grid": "rectilinear_grid",
         "honeycomb": "honeycomb", "default": "rectilinear",
     },
-    "ironing_type": {"no ironing": "none", "top": "top", "topmost": "topmost",
-                     "all solid": "all_solid", "all": "all"},
+    "ironing_type": {"no ironing": None, "top": "top", "topmost": "topmost",
+                     "all solid": "solid", "all": "solid"},
     "fuzzy_skin": {"none": "none", "outside": "external", "all": "all", "external": "external"},
     "draft_shield": {"disabled": "disabled", "limited": "limited", "enabled": "enabled"},
 }
@@ -265,6 +278,11 @@ def transform_value(value, transform):
             x, _, y = str(token).strip().partition("x")
             points.append([float(x), float(y)])
         return points
+    if transform == "int_at_least_one":
+        return max(1, int(float(head_of(value) or 0)))
+    if transform.startswith("enum_bool:"):
+        table = ENUMS.get(transform[10:], {})
+        return str(table.get(str(value), "0")) in ("1", "true", "True", "on")
     if transform.startswith("enum:"):
         table = ENUMS.get(transform[5:], {})
         return table.get(str(value), value)
@@ -371,6 +389,12 @@ META = {
     "is_custom_defined", "version", "renamed_from", "upward_compatible",
     "inherits_prints",
 }
+
+# Keys whose Orca value shape has no engine equivalent: Orca stores one entry per
+# extruder as an object, this engine stores two percentages per extruder for the
+# shrinkage compensation, and feeding it the one-element list aborts the slice in
+# std::length_error. Dropped and reported instead of guessed at.
+DROP_KEYS = {"filament_shrinkage_compensation_xy"}
 
 
 def report(engine_defs):
