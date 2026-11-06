@@ -20,6 +20,7 @@
 #include <Slic3r/Biz/Format/ProjectFileConstants.hpp>
 #include <Slic3r/Biz/Platform/JobManager/JobManager.hpp>
 #include <Slic3r/Biz/Platform/PlatformServices.hpp>
+#include <Slic3r/Biz/Preset/IO/BundlePaths.hpp>
 #include <Slic3r/Biz/ProjectInteractor.hpp>
 #include <Slic3r/Biz/Slicing/SlicingInteractor.hpp>
 #include <Slic3r/Biz/StatusCache.hpp>
@@ -630,6 +631,14 @@ bool SliceRuntime::slicePlate(const QVector<PlateSliceObject>& objects, const QS
     drainMainThread();
     project.remove_project(*projectId);
     return true;
+}
+
+void SliceRuntime::reloadPresets()
+{
+    const std::scoped_lock lock(engineMutex());
+    Runtime& runtime = runtimeLocked();
+    runtime.cli.project_interactor().preset_interactor().load_preset_bundle(
+        Slic3r::Biz::Preset::IO::BundlePaths::make_standard_runtime());
 }
 
 QByteArray SliceRuntime::printerModels()

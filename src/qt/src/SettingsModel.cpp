@@ -914,17 +914,35 @@ QVariantList SettingsModel::points(const QString& name) const
 
 void SettingsModel::setValue(const QString& name, const QVariant& value)
 {
+    applyImported(name, value);
+}
+
+bool SettingsModel::applyImported(const QString& name, const QVariant& value)
+{
     Impl::Entry* entry = m_impl->find(name);
     if (entry == nullptr)
-        return;
+        return false;
+
+    const std::type_info& type = *entry->def->type;
+    QVariant input = value;
+    const bool listType = type == typeid(std::vector<bool>) || type == typeid(std::vector<int>)
+        || type == typeid(std::vector<double>) || type == typeid(std::vector<Percentage>)
+        || type == typeid(std::vector<FloatOrPercentage>) || type == typeid(std::vector<Vec2d>)
+        || type == typeid(std::vector<std::string>);
+    if (listType && input.typeId() != QMetaType::QVariantList) {
+        QVariantList single;
+        single.append(input);
+        input = single;
+    }
 
     const ConfigValue previous = entry->currentValue;
-    if (!assignValue(entry->currentValue, *entry->def, value))
-        return;
+    if (!assignValue(entry->currentValue, *entry->def, input))
+        return false;
 
     entry->modified = !(entry->currentValue == entry->defaultValue);
     if (!(entry->currentValue == previous))
         emit changed();
+    return true;
 }
 
 void SettingsModel::reset(const QString& name)

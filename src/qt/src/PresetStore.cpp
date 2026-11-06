@@ -5,6 +5,7 @@
 
 #include "SliceRuntime.hpp"
 #include "PresetFiles.hpp"
+#include "PresetImport.hpp"
 #include "PresetYaml.hpp"
 #include "SettingsModel.hpp"
 
@@ -18,6 +19,10 @@
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QUuid>
+#include <QUrl>
+
+#include <QCoreApplication>
+#include <QProcess>
 #include <QDir>
 
 #include <functional>
@@ -1006,4 +1011,97 @@ QString PresetStore::createPrinter(const QString& name, double bedWidth, double 
         return QStringLiteral("Could not write the filament preset");
 
     return next_layer::presets::addCustomPrinter(name);
+}
+
+QVariantMap PresetStore::importSlicerPresets(const QString& directory)
+{
+    QVariantMap result;
+    result.insert(QStringLiteral("ok"), false);
+    if (m_settings == nullptr) {
+        result.insert(QStringLiteral("error"), QStringLiteral("No settings to import into"));
+        return result;
+    }
+
+    const next_layer::presetimport::Report report =
+        next_layer::presetimport::importPresets(directory, *m_settings, true);
+    m_settings->clearModified();
+
+    result.insert(QStringLiteral("error"), report.error);
+    result.insert(QStringLiteral("printers"), report.printers);
+    result.insert(QStringLiteral("prints"), report.prints);
+    result.insert(QStringLiteral("filaments"), report.filaments);
+    result.insert(QStringLiteral("refused"), report.refused);
+    result.insert(QStringLiteral("unfitted"), report.unfitted);
+    result.insert(QStringLiteral("dropped"), report.droppedKeys);
+    result.insert(QStringLiteral("count"), report.count());
+    result.insert(QStringLiteral("firstPrinter"),
+                  report.printers.isEmpty() ? QString() : report.printers.first());
+    if (!report.ok())
+        return result;
+
+    // The presets that were just written are on disk; the bundle loaded at start-up
+    // does not have them until it is read again.
+    next_layer::SliceRuntime::instance().reloadPresets();
+
+    if (!refreshPrintersSync()) {
+        result.insert(QStringLiteral("error"), QStringLiteral("Could not list the new presets"));
+        return result;
+    }
+
+    // The list names a machine by its model and the variant that fits it, so the
+    // bare name an import reports is not what the store's selection wants.
+    if (!report.printers.isEmpty()) {
+        // The engine's bundle is read once per process: presets written into a
+        // vendor that is already loaded are invisible until the process starts
+        // again, so a machine that is not in the list now is reported as needing
+        // a restart rather than silently ignored.
+        const QString chosen = pickName(printers(), report.printers.first());
+        bool listed = false;
+        for (const QVariant& value : printers())
+            if (value.toMap().value(QStringLiteral("name")).toString() == chosen
+                && chosen.startsWith(report.printers.first()))
+                listed = true;
+        result.insert(QStringLiteral("firstPrinter"), chosen);
+        result.insert(QStringLiteral("restartNeeded"), !listed);
+    }
+    result.insert(QStringLiteral("ok"), true);
+    return result;
+}
+
+QVariantList PresetStore::slicerSources() const
+{
+    // Qt 6 hands back a URL for the config location, not a path.
+    const QUrl configUrl(QStandardPaths::writableLocation(QStandardPaths::ConfigLocation));
+    const QString config = configUrl.isLocalFile() ? configUrl.toLocalFile()
+                                                   : configUrl.toString();
+    const struct
+    {
+        const char* label;
+        const char* directory;
+    } candidates[] = {
+        {"OrcaSlicer", "/OrcaSlicer"},
+        {"PrusaSlicer", "/PrusaSlicer"},
+        {"SuperSlicer", "/SuperSlicer"},
+        {"BambuStudio", "/BambuStudio"},
+        {"Slic3r", "/Slic3r"},
+    };
+
+    QVariantList sources;
+    for (const auto& candidate : candidates) {
+        const QString path = config + QLatin1String(candidate.directory);
+        if (!QFileInfo(path).isDir())
+            continue;
+        QVariantMap source;
+        source.insert(QStringLiteral("name"), QString::fromLatin1(candidate.label));
+        source.insert(QStringLiteral("path"), path);
+        sources.append(source);
+    }
+    return sources;
+}
+
+void PresetStore::relaunch()
+{
+    QProcess::startDetached(QCoreApplication::applicationFilePath(),
+                            QCoreApplication::arguments().mid(1));
+    QCoreApplication::quit();
 }

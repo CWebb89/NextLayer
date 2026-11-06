@@ -29,6 +29,10 @@ public:
     // plain arrays, so the flat form is what a QML editor can index safely.
     Q_INVOKABLE QVariantList points(const QString& name) const;
     Q_INVOKABLE void setValue(const QString& name, const QVariant& value);
+    /// Applies a value translated from another slicer's preset: a scalar for a
+    /// per-tool setting becomes a one-element list, and a point list arrives as
+    /// [x, y] pairs. False when this setting cannot hold the value.
+    bool applyImported(const QString& name, const QVariant& value);
     Q_INVOKABLE void reset(const QString& name);
     Q_INVOKABLE bool seedFromConfigJson(const QString& json);
     Q_INVOKABLE void resetSubtab(const QString& tab, const QString& subtab);

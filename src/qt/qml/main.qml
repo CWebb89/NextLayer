@@ -897,6 +897,18 @@ Window {
             version: root.appVersion
             onSetupRequested: setupFlow.reopen()
             onSkipRequested: root.setStatus("printer setup is in the rail gear and Ctrl+,")
+            onImported: (printer) => {
+                if (printer.length === 0) {
+                    root.setStatus("imported presets, no printer among them")
+                    return
+                }
+                presetStore.selectPrinter(printer)
+                root.setStatus("imported " + printer)
+            }
+            onRestartRequested: {
+                root.allowClose = true
+                presetStore.relaunch()
+            }
         }
 
         SetupFlow {

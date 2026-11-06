@@ -464,6 +464,48 @@ else
     __ok "user presets: saved, resolved (layer_height 0.25), renamed, deleted and shared -- exported to a file, re-imported as '$preset_imported' then '$preset_imported_again'"
 end
 
+# Import gate: another slicer's presets have to become a bundle this engine
+# loads and slices from. The fixture in oracle/import-fixture is that slicer's
+# shape -- JSON files under user/default/<kind> -- so the gate covers the whole
+# path: translate the keys, write the bundle, resolve the imported triple and
+# slice it. A value that arrives with the wrong shape (a width as 100 instead of
+# 100%) slices to nothing at all, which is what this asserts against.
+set -l import_home (mktemp -d /tmp/nl-check-import-XXXXXX)
+set -l import_out /tmp/nl-check-import.out
+env XDG_DATA_HOME=$import_home $bin $model --import-slicer $root/oracle/import-fixture >$import_out 2>&1
+set -l import_rc $status
+set -l import_printer (string match -r '^  printers:  (.+)$' -- (cat $import_out) | tail -n 1)
+set -l import_print (string match -r '^  prints:    (.+)$' -- (cat $import_out) | tail -n 1)
+set -l import_filament (string match -r '^  filaments: (.+)$' -- (cat $import_out) | tail -n 1)
+set -l import_cfg /tmp/nl-check-import.json
+rm -f $import_cfg /tmp/nl-check-import.gcode
+if test $import_rc -eq 0 -a -n "$import_printer" -a -n "$import_print" -a -n "$import_filament"
+    # The list names a machine by its model and the variant that fits it; the
+    # import reports the model name, so the first listed variant is appended.
+    set -l import_listed (env XDG_DATA_HOME=$import_home $bin $model --dump-presets 2>/dev/null | string match -r "^$import_printer .*" | head -n 1 | string sub -l 42 | string trim)
+    if test -z "$import_listed"
+        set import_listed $import_printer
+    end
+    env XDG_DATA_HOME=$import_home $bin $model --printer $import_listed --process $import_print --filament $import_filament --dump-config $import_cfg >/tmp/nl-check-import-resolve.out 2>&1
+    if test -f $import_cfg
+        env XDG_DATA_HOME=$import_home $bin $model --slice $import_cfg,/tmp/nl-check-import.gcode >/dev/null 2>&1
+    end
+end
+set -l import_layers 0
+if test -f /tmp/nl-check-import.gcode
+    set import_layers (grep -c ';LAYER_CHANGE' /tmp/nl-check-import.gcode)
+end
+rm -rf $import_home
+if test $import_rc -ne 0
+    __bad "preset import: importing failed ("(string match -r 'import: .*' -- (cat $import_out) | head -n 1)")"
+else if test -z "$import_printer" -o -z "$import_print" -o -z "$import_filament"
+    __bad "preset import: the fixture produced printer '$import_printer', print '$import_print', filament '$import_filament'"
+else if test $import_layers -lt 20
+    __bad "preset import: the imported triple sliced to $import_layers layer(s)"
+else
+    __ok "preset import: fixture -> '$import_printer' / '$import_print' / '$import_filament' sliced $import_layers layers"
+end
+
 # Multi-tool gate: a tool changer has to resolve one material per extruder and a
 # painted facet has to reach the engine as that tool. The paint sat in
 # mm_segmentation_facets and the config collapsed every filament entry back to a

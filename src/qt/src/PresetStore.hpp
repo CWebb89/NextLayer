@@ -99,6 +99,24 @@ public:
     Q_INVOKABLE QString createPrinter(const QString& name, double bedWidth,
                                       double bedHeight, double bedDepth);
 
+    /// Reads another slicer's configuration directory -- its own presets and the
+    /// vendor bundles it carries -- and writes the ones this engine can express
+    /// into the user's own bundle under their own names, then lists them. The
+    /// returned map carries `ok`, `error`, the imported names by kind, and what
+    /// was refused or dropped, so the caller can report rather than guess.
+    Q_INVOKABLE QVariantMap importSlicerPresets(const QString& directory);
+
+    /// The configuration directories of other slicers that exist on this machine,
+    /// as {name, path}. Setup offers these instead of a file picker: the folder
+    /// has a well-known name, and a portal dialog is neither testable nor
+    /// guaranteed to exist.
+    Q_INVOKABLE QVariantList slicerSources() const;
+
+    /// Starts the app again and quits this one. The engine reads its preset
+    /// bundle once per process, so presets written into a vendor that is already
+    /// loaded only become selectable on the next start.
+    Q_INVOKABLE void relaunch();
+
     void setSettings(SettingsModel* settings) { m_settings = settings; }
 
     // Synchronous core, also used by the headless knobs. Return false on failure.

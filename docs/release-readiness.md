@@ -70,7 +70,7 @@ Gate:
 - No known data-loss or corrupt-G-code bug open.
 
 **Answer to "when is it ready":** not yet, and the gap is measurable. Code-wise it
-is arguably beta quality today — 24 gates, byte-identical G-code on 12 corpus cases,
+is arguably beta quality today — 25 gates, byte-identical G-code on 12 corpus cases,
 a real print end to end. But one 20 mm cube is one print. The thing that makes a
 slicer shippable is the boring middle: fifty prints across profiles you did not
 write, and every failure triaged. That is 6–10 weekends of testing, not 6–10 of
@@ -143,7 +143,7 @@ must be reproducible from the public history alone.
 
 ## 5. Quality gates to run before any tag
 
-Already automated: `tools/check` (24 gates — build freshness, qmllint baseline,
+Already automated: `tools/check` (25 gates — build freshness, qmllint baseline,
 headless render coverage, oracle byte-identity, updater, printer catalog, filament
 presets). A tag must start from a green run on a clean build, not an incremental
 one.

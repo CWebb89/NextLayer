@@ -40,7 +40,7 @@ the decisions, measured facts, dead ends, and the reasoning behind each.
 One command answers it:
 
 ```sh
-~/dev/next-layer/tools/check            # 23 s: 24 gates
+~/dev/next-layer/tools/check            # 45 s: 25 gates
 ~/dev/next-layer/tools/check --fast     # 8 s: skip the oracle
 ~/dev/next-layer/tools/check --ui       # + a real window, captured and read
 ```
@@ -50,7 +50,8 @@ names the files, so a green run is never against a stale binary. Every gate read
 its verdict out of the tool's output (coverage %, setting count, match count,
 layer count); nothing is inferred from an exit code alone. `--update-qmllint-baseline`
 accepts the current QML warnings as known, and must be followed by reading the
-diff of `tools/qmllint-baseline`.
+diff of `tools/qmllint-baseline`. `docs/testing.md` is the manual walkthrough that
+sits on top of it.
 
 **Reference the real thing before writing UI.** A checkout of a mature reference
 slicer, its source and its profile bundle are recorded in the memory store under

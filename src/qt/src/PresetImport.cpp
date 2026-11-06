@@ -4,7 +4,6 @@
 #include "PresetImport.hpp"
 
 #include "PresetFiles.hpp"
-#include "PresetYaml.hpp"
 #include "SettingsModel.hpp"
 
 #include <QDir>
@@ -159,7 +158,6 @@ const Mapping* mappingTable(size_t& count)
         {"fan_min_speed", "min_fan_speed", Transform::Integer, nullptr},
         {"fan_max_speed", "max_fan_speed", Transform::Integer, nullptr},
         {"slow_down_min_layer_time", "slowdown_below_layer_time", Transform::Real, nullptr},
-        {"filament_shrink", "filament_shrinkage_compensation_xy", Transform::PercentObject, nullptr},
         {"filament_shrinkage_compensation_z", "filament_shrinkage_compensation_z", Transform::Real, nullptr},
         {"filament_max_volumetric_speed", "filament_max_volumetric_speed", Transform::Real, nullptr},
         {"printable_area", "bed_shape", Transform::BedShape, nullptr},
@@ -276,64 +274,16 @@ const QHash<QString, QString>& enumTable(const QString& name)
     return found == tables.constEnd() ? empty : *found;
 }
 
-/// Keys whose value shape this engine has no equivalent for: it stores two
-/// percentages per extruder for the shrinkage compensation, and feeding it the
-/// other slicer's single number aborts the load. Dropped and reported rather
-/// than guessed at.
+/// Keys whose value shape or meaning this engine has no equivalent for, dropped
+/// and reported rather than guessed at. The X/Y shrinkage compensation is
+/// inverted between the two: there 100% means "no compensation", here 0% does,
+/// so importing it scales the part away and the slice comes back empty.
 const QSet<QString>& unmappedKeys()
 {
     static const QSet<QString> keys = {
         QStringLiteral("filament_shrinkage_compensation_xy"),
     };
     return keys;
-}
-
-/// One preset file's YAML scalar for a translated value, in the shapes the
-/// engine's own bundles carry: points as `'0x0'` tokens, per-tool vectors as flow
-/// lists, percentages with their sign. The shapes matter — a bed written as a
-/// list of number pairs is read as no bed at all.
-QString yamlOf(const QVariant& value)
-{
-    if (value.typeId() == QMetaType::QVariantMap) {
-        const QVariantMap map = value.toMap();
-        if (map.value(QStringLiteral("is_percent")).toBool())
-            return QString::number(map.value(QStringLiteral("value")).toDouble(), 'g', 15)
-                 + QLatin1Char('%');
-    }
-    if (value.typeId() == QMetaType::QVariantList) {
-        const QVariantList items = value.toList();
-        QStringList parts;
-        for (const QVariant& item : items) {
-            if (item.typeId() == QMetaType::QVariantList) {
-                const QVariantList pair = item.toList();
-                if (pair.size() == 2)
-                    parts.append(next_layer::yaml::quoted(
-                        QString::number(pair.at(0).toDouble(), 'g', 15) + QLatin1Char('x')
-                        + QString::number(pair.at(1).toDouble(), 'g', 15)));
-                continue;
-            }
-            parts.append(yamlOf(item));
-        }
-        return QLatin1Char('[') + parts.join(QStringLiteral(", ")) + QLatin1Char(']');
-    }
-    if (value.typeId() == QMetaType::QString || value.typeId() == QMetaType::QStringList)
-        return next_layer::yaml::quoted(value.toString());
-    if (value.typeId() == QMetaType::Bool)
-        return value.toBool() ? QStringLiteral("true") : QStringLiteral("false");
-    if (value.typeId() == QMetaType::Int || value.typeId() == QMetaType::LongLong)
-        return QString::number(value.toLongLong());
-    if (value.canConvert<double>())
-        return QString::number(value.toDouble(), 'g', 15);
-    return next_layer::yaml::quoted(value.toString());
-}
-
-QString valuesBlock(const QMap<QString, QVariant>& values)
-{
-    QString text;
-    for (auto it = values.constBegin(); it != values.constEnd(); ++it)
-        text += QStringLiteral("  ") + it.key() + QStringLiteral(": ") + yamlOf(it.value())
-              + QLatin1Char('\n');
-    return text;
 }
 
 /// The leading number of a value that may be a per-extruder list or a
@@ -365,6 +315,26 @@ double headNumber(const QJsonValue& value, bool* valid)
     return ok ? number : 0.0;
 }
 
+/// A width or a speed is written as a bare number or as a percentage of the
+/// nozzle, and the two mean different things to this engine: 100 is a hundred
+/// millimetres wide, 100% is a hundred percent of the nozzle. The sign has to
+/// survive, or a sliced model comes out with no toolpaths at all.
+QVariant numberOrPercent(const QJsonValue& value)
+{
+    QJsonValue scalar = value;
+    if (value.isArray() && !value.toArray().isEmpty())
+        scalar = value.toArray().at(0);
+    QString text = scalar.isString() ? scalar.toString() : QString::number(scalar.toDouble());
+    text = text.split(QLatin1Char(',')).first().trimmed();
+    if (text.endsWith(QLatin1Char('%'))) {
+        QVariantMap object;
+        object.insert(QStringLiteral("value"), text.left(text.size() - 1).toDouble());
+        object.insert(QStringLiteral("is_percent"), true);
+        return object;
+    }
+    return text.toDouble();
+}
+
 bool isTruthy(const QString& text)
 {
     return text == QLatin1String("1") || text == QLatin1String("true")
@@ -391,7 +361,7 @@ QVariant transformValue(const QJsonValue& value, const Mapping& mapping)
     case Transform::Integer:
         return int(std::lround(headNumber(value, nullptr)));
     case Transform::Real:
-        return headNumber(value, nullptr);
+        return numberOrPercent(value);
     case Transform::RealList: {
         QVariantList numbers;
         const QJsonArray items = value.isArray() ? value.toArray() : QJsonArray{value};
@@ -586,6 +556,36 @@ QJsonObject resolvePreset(const QString& kind, const QString& name, const KindIn
     return merged;
 }
 
+/// Settings a preset must not carry even though the model holds a value for
+/// them: `printer_variant` is a string that reads back as a number, which
+/// produces a type mismatch on every evaluation.
+QStringList itemsNotWritten(const QString& block)
+{
+    if (block == QLatin1String("printer"))
+        return {QStringLiteral("printer_variant")};
+    return {};
+}
+
+/// A tab's YAML with the named items removed, list bodies included.
+QString withoutItems(QString yaml, const QString& block)
+{
+    const QStringList names = itemsNotWritten(block);
+    if (names.isEmpty())
+        return yaml;
+    QStringList kept;
+    bool skipping = false;
+    for (const QString& line : yaml.split(QLatin1Char('\n'))) {
+        if (line.startsWith(QLatin1String("  ")) && !line.startsWith(QLatin1String("  -"))) {
+            skipping = false;
+            if (names.contains(line.trimmed().section(QLatin1Char(':'), 0, 0)))
+                skipping = true;
+        }
+        if (!skipping)
+            kept.append(line);
+    }
+    return kept.join(QLatin1Char('\n'));
+}
+
 Report importPresets(const QString& sourceDirectory, SettingsModel& settings, bool write)
 {
     Report report;
@@ -674,7 +674,31 @@ Report importPresets(const QString& sourceDirectory, SettingsModel& settings, bo
                 values.insert(QStringLiteral("printer_vendor"), QStringLiteral("Custom"));
             }
 
-            const QString block = valuesBlock(values);
+            const QString block = kind == QLatin1String("machine")
+                                      ? QStringLiteral("printer")
+                                      : kind == QLatin1String("filament")
+                                            ? QStringLiteral("filament")
+                                            : QStringLiteral("process");
+
+            settings.resetTab(block);
+            int applied = 0;
+            for (auto it = values.constBegin(); it != values.constEnd(); ++it) {
+                if (settings.applyImported(it.key(), it.value()))
+                    ++applied;
+                else
+                    report.unfitted.append(QStringLiteral("%1: %2").arg(sourceName, it.key()));
+            }
+
+            // The engine's own writer produces the block: per-tool vectors as
+            // sequences, percentages with their sign, points as '0x0'. Every value
+            // of the tab goes in, exactly as the set-up flow writes its own bundle:
+            // a preset is a complete description, not a patch over engine defaults.
+            QString yaml = withoutItems(settings.valuesYaml(block, false), block);
+            if (applied == 0 || yaml.isEmpty()) {
+                report.refused.append(QStringLiteral("%1: nothing this engine can hold")
+                                          .arg(sourceName));
+                continue;
+            }
 
             if (kind == QLatin1String("machine")) {
                 if (write) {
@@ -693,7 +717,7 @@ Report importPresets(const QString& sourceDirectory, SettingsModel& settings, bo
                     if (target.isEmpty()
                         || !presets::writeFile(target,
                                presets::document(QStringLiteral("printer"), presetName, QString(),
-                                                 condition, block,
+                                                 condition, yaml,
                                                  QStringLiteral("nl-") + slug))) {
                         report.error = QStringLiteral("Could not write the printer preset");
                         return report;
@@ -709,7 +733,7 @@ Report importPresets(const QString& sourceDirectory, SettingsModel& settings, bo
                 const QString target = vendorDirectory + QStringLiteral("/preset-") + presetKind
                                      + QLatin1Char('-') + slug + QStringLiteral(".yaml");
                 if (!presets::writeFile(target,
-                        presets::document(presetKind, presetName, QString(), QString(), block))) {
+                        presets::document(presetKind, presetName, QString(), QString(), yaml))) {
                     report.error = QStringLiteral("Could not write %1").arg(presetName);
                     return report;
                 }

@@ -102,7 +102,14 @@ to place anything on:
 
 - **Pick your printer** from the catalog of vendor profiles, or
 - **Create your own**: a name and the three bed dimensions is enough, and that
-  printer preset is yours, inherited from nobody.
+  printer preset is yours, inherited from nobody, or
+- **Import my presets**: reads another slicer's configuration directory (the
+  folders for `OrcaSlicer`, `PrusaSlicer`, `SuperSlicer`, `BambuStudio` and
+  `Slic3r` are detected under your config home) and writes the machines,
+  processes and filaments this engine can express into your own bundle, under
+  their own names. Settings with no equivalent are dropped and counted, never
+  guessed at. The engine reads its preset bundle once per start, so the app
+  restarts itself to make them selectable.
 
 Setup stores the machine, the material and the process; the next launch opens
 straight onto the plate you left.
@@ -110,7 +117,7 @@ straight onto the plate you left.
 ## Verifying a change
 
 ```sh
-tools/check          # 24 gates, ~25 s
+tools/check          # 25 gates, ~25 s
 tools/check --fast   # the same minus the slicing oracle
 ```
 
@@ -119,6 +126,10 @@ setting count, a layer count, a byte-identical match — and none infers a pass 
 an exit code. The oracle slices a corpus of models and compares fingerprints
 against recorded baselines, which is what catches a change in the engine's
 behaviour rather than in its return value.
+
+`docs/testing.md` is the walkthrough for testing the application by hand: the
+headless knobs, driving the window with `tools/cockpit`, the preset importer end
+to end, and the checks worth repeating before a release.
 
 Slicing parity on its own:
 

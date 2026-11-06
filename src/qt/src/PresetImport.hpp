@@ -22,6 +22,7 @@ struct Report
     QStringList filaments;
     QStringList refused;
     QStringList droppedKeys;
+    QStringList unfitted;
     QString error;
 
     bool ok() const { return error.isEmpty(); }

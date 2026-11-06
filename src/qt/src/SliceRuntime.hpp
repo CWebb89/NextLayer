@@ -88,6 +88,10 @@ public:
                     const QVector<PlateLayerGcode>& layerGcodes = {});
 
     /// The engine's printer-model list as JSON. Empty when the bundle has none.
+    /// Re-reads every preset bundle from disk. A vendor that gained presets on
+    /// disk is invisible to the loaded bundle until this runs.
+    void reloadPresets();
+
     QByteArray printerModels();
 
     /// The print/tool/filament presets available for one printer, as JSON.

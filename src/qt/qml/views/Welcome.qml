@@ -18,6 +18,11 @@ Item {
 
     signal setupRequested()
     signal skipRequested()
+    signal imported(string printer)
+    signal restartRequested()
+
+    property var importResult: ({})
+    property string importError: ""
 
     Settings {
         id: saved
@@ -51,6 +56,256 @@ Item {
     Keys.onEscapePressed: {
         root.close()
         root.skipRequested()
+    }
+
+    // The other slicers keep their presets in a directory named after the
+    // application under the user's config home. Offering the one that exists
+    // saves a filesystem hunt; the picker still takes any directory.
+    function guessSlicerDirectory() {
+        const dir = StandardPaths.writableLocation(StandardPaths.ConfigLocation).toString()
+        return dir.startsWith("file://") ? dir.substring(7) : dir
+    }
+
+    function runImport(directory) {
+        importError = ""
+        importResult = presetStore.importSlicerPresets(directory)
+        if (!importResult.ok) {
+            importError = importResult.error
+            return
+        }
+        if (importResult.count === 0) {
+            importError = "Nothing in there this engine can express"
+            return
+        }
+        importPanel.visible = true
+    }
+
+    Rectangle {
+        id: sourcePanel
+
+        visible: false
+        anchors.centerIn: parent
+        width: Math.min(parent.width - Metrics.panelMargin * 3, 560)
+        height: sourceList.implicitHeight + Metrics.panelPadding * 3
+        radius: Metrics.radiusLarge
+        color: Colors.surfaceContainerLow
+        border.width: Metrics.borderWidth
+        border.color: Colors.edge
+        z: 10
+
+        Column {
+            id: sourceList
+
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.margins: Metrics.panelPadding
+            spacing: Metrics.sm
+
+            Text {
+                text: "Import presets from"
+                font.family: Type.family
+                font.pixelSize: Type.sizeTitle
+                font.bold: true
+                color: Colors.textPrimary
+            }
+
+            Text {
+                width: parent.width
+                text: "Machines, processes and filaments are read out of the other slicer's own configuration and written into yours, under their own names. Anything this engine has no equivalent for stays behind."
+                wrapMode: Text.WordWrap
+                font.family: Type.family
+                font.pixelSize: Type.sizeCaption
+                color: Colors.textTertiary
+            }
+
+            Repeater {
+                model: presetStore.slicerSources()
+
+                delegate: Item {
+                    id: sourceRow
+
+                    required property var modelData
+
+                    width: sourceList.width
+                    height: Metrics.controlHeight
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: Metrics.radiusSmall
+                        color: sourceMouse.containsMouse ? Colors.hoverFill : "transparent"
+                    }
+
+                    Column {
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.left: parent.left
+                        anchors.leftMargin: Metrics.sm
+
+                        Text {
+                            text: sourceRow.modelData.name
+                            font.family: Type.family
+                            font.pixelSize: Type.sizeSmall
+                            color: Colors.textPrimary
+                        }
+
+                        Text {
+                            text: sourceRow.modelData.path
+                            font.family: Type.family
+                            font.pixelSize: Type.sizeCaption
+                            color: Colors.textMuted
+                        }
+                    }
+
+                    MouseArea {
+                        id: sourceMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            sourcePanel.visible = false
+                            root.runImport(sourceRow.modelData.path)
+                        }
+                    }
+                }
+            }
+
+            Text {
+                visible: presetStore.slicerSources().length === 0
+                width: parent.width
+                text: "None found under " + root.guessSlicerDirectory() + ". Set up a printer instead, or type a folder below."
+                wrapMode: Text.WordWrap
+                font.family: Type.family
+                font.pixelSize: Type.sizeCaption
+                color: Colors.textTertiary
+            }
+
+            Row {
+                width: parent.width
+                spacing: Metrics.sm
+
+                TextField {
+                    id: customPath
+                    width: parent.width - importButton.width - Metrics.sm
+                    height: Metrics.controlHeight
+                    placeholderText: "or the folder itself"
+                    font.family: Type.family
+                    font.pixelSize: Type.sizeSmall
+                    color: Colors.textPrimary
+                    placeholderTextColor: Colors.textMuted
+                    selectByMouse: true
+                }
+
+                Button {
+                    id: importButton
+                    text: "Import"
+                    onClicked: {
+                        sourcePanel.visible = false
+                        root.runImport(customPath.text)
+                    }
+                }
+            }
+
+            Button {
+                text: "Cancel"
+                onClicked: sourcePanel.visible = false
+            }
+        }
+    }
+
+    Rectangle {
+        id: importPanel
+
+        visible: false
+        anchors.centerIn: parent
+        width: Math.min(parent.width - Metrics.panelMargin * 3, 520)
+        height: importSummary.implicitHeight + Metrics.panelPadding * 3
+        radius: Metrics.radiusLarge
+        color: Colors.surfaceContainerLow
+        border.width: Metrics.borderWidth
+        border.color: Colors.edge
+        z: 10
+
+        Column {
+            id: importSummary
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.margins: Metrics.panelPadding
+            spacing: Metrics.sm
+
+            Text {
+                text: "Imported from that slicer"
+                font.family: Type.family
+                font.pixelSize: Type.sizeTitle
+                font.bold: true
+                color: Colors.textPrimary
+            }
+
+            Text {
+                width: parent.width
+                text: (root.importResult.printers ? root.importResult.printers.length : 0) + " printers, "
+                      + (root.importResult.prints ? root.importResult.prints.length : 0) + " processes, "
+                      + (root.importResult.filaments ? root.importResult.filaments.length : 0) + " filaments."
+                wrapMode: Text.WordWrap
+                font.family: Type.family
+                font.pixelSize: Type.sizeSmall
+                color: Colors.textPrimary
+            }
+
+            Text {
+                width: parent.width
+                visible: root.importResult.refused && root.importResult.refused.length > 0
+                text: root.importResult.refused && root.importResult.refused.length > 0
+                      ? "Left out: " + root.importResult.refused.slice(0, 3).join("; ")
+                      : ""
+                wrapMode: Text.WordWrap
+                font.family: Type.family
+                font.pixelSize: Type.sizeCaption
+                color: Colors.textTertiary
+            }
+
+            Text {
+                width: parent.width
+                text: (root.importResult.dropped ? root.importResult.dropped.length : 0)
+                      + " setting(s) were dropped: this engine has no equivalent, and a guessed value is worse than none."
+                wrapMode: Text.WordWrap
+                font.family: Type.family
+                font.pixelSize: Type.sizeCaption
+                color: Colors.textTertiary
+            }
+
+            Text {
+                width: parent.width
+                visible: root.importResult.restartNeeded === true
+                text: "The engine reads its preset bundle once per start, so these machines appear after next-layer restarts."
+                wrapMode: Text.WordWrap
+                font.family: Type.family
+                font.pixelSize: Type.sizeCaption
+                color: Colors.textSecondary
+            }
+
+            Row {
+                spacing: Metrics.sm
+
+                Button {
+                    text: root.importResult.restartNeeded === true ? "Restart next-layer" : "Use these printers"
+                    primary: true
+                    onClicked: {
+                        importPanel.visible = false
+                        root.close()
+                        if (root.importResult.restartNeeded === true)
+                            root.restartRequested()
+                        else
+                            root.imported(root.importResult.firstPrinter)
+                    }
+                }
+
+                Button {
+                    text: "Close"
+                    onClicked: importPanel.visible = false
+                }
+            }
+        }
     }
 
     Rectangle {
@@ -178,7 +433,8 @@ Item {
 
             Item { width: 1; height: Metrics.sm }
 
-            Row {
+            Flow {
+                width: parent.width
                 spacing: Metrics.sm
 
                 Button {
@@ -191,12 +447,27 @@ Item {
                 }
 
                 Button {
+                    text: "Import my presets"
+                    onClicked: sourcePanel.visible = true
+                }
+
+                Button {
                     text: "Skip for now"
                     onClicked: {
                         root.close()
                         root.skipRequested()
                     }
                 }
+            }
+
+            Text {
+                visible: root.importError.length > 0
+                width: parent.width
+                text: root.importError
+                wrapMode: Text.WordWrap
+                font.family: Type.family
+                font.pixelSize: Type.sizeCaption
+                color: Colors.urgent
             }
         }
 

@@ -1286,28 +1286,29 @@ int main(int argc, char* argv[])
                             parts.at(2).toUtf8().constData());
         } else if (parser.isSet(import_slicer_option)) {
             const QString directory = parser.value(import_slicer_option);
-            const next_layer::presetimport::Report report =
-                next_layer::presetimport::importPresets(directory, *settings, true);
-            if (!report.ok()) {
-                std::fprintf(stderr, "import: %s\n", report.error.toUtf8().constData());
+            const QVariantMap report = presets->importSlicerPresets(directory);
+            if (!report.value(QStringLiteral("error")).toString().isEmpty()) {
+                std::fprintf(stderr, "import: %s\n",
+                             report.value(QStringLiteral("error")).toString().toUtf8().constData());
                 return 1;
             }
-            std::printf("imported %d preset(s) from %s\n", report.count(),
-                        directory.toUtf8().constData());
+            const auto names = [&report](const char* key) {
+                return report.value(QLatin1String(key)).toStringList().join(QStringLiteral(", "));
+            };
+            std::printf("imported from %s\n", directory.toUtf8().constData());
             std::printf("  printers:  %s\n",
-                        report.printers.isEmpty() ? "-"
-                            : report.printers.join(QStringLiteral(", ")).toUtf8().constData());
+                        names("printers").isEmpty() ? "-" : names("printers").toUtf8().constData());
             std::printf("  prints:    %s\n",
-                        report.prints.isEmpty() ? "-"
-                            : report.prints.join(QStringLiteral(", ")).toUtf8().constData());
+                        names("prints").isEmpty() ? "-" : names("prints").toUtf8().constData());
             std::printf("  filaments: %s\n",
-                        report.filaments.isEmpty() ? "-"
-                            : report.filaments.join(QStringLiteral(", ")).toUtf8().constData());
-            for (const QString& refusal : report.refused)
+                        names("filaments").isEmpty() ? "-" : names("filaments").toUtf8().constData());
+            for (const QString& refusal : report.value(QStringLiteral("refused")).toStringList())
                 std::printf("  refused %s\n", refusal.toUtf8().constData());
-            if (!report.droppedKeys.isEmpty())
-                std::printf("  %lld key(s) this engine has no setting for were dropped\n",
-                            static_cast<long long>(report.droppedKeys.size()));
+            for (const QString& unfitted : report.value(QStringLiteral("unfitted")).toStringList())
+                std::printf("  unfitted %s\n", unfitted.toUtf8().constData());
+            std::printf("  %lld key(s) this engine has no setting for were dropped\n",
+                        static_cast<long long>(
+                            report.value(QStringLiteral("dropped")).toStringList().size()));
         } else if (parser.isSet(import_preset_option)) {
             const QStringList parts = parser.value(import_preset_option).split(QLatin1Char(','));
             if (parts.size() != 2) {

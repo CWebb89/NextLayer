@@ -1,0 +1,15 @@
+{
+  "type": "filament",
+  "name": "Gate Filament",
+  "filament_type": ["PLA"],
+  "nozzle_temperature": ["210"],
+  "nozzle_temperature_initial_layer": ["215"],
+  "hot_plate_temp": ["60"],
+  "hot_plate_temp_initial_layer": ["60"],
+  "filament_flow_ratio": ["0.98"],
+  "filament_max_volumetric_speed": "12",
+  "fan_min_speed": ["35"],
+  "fan_cooling_layer_time": ["60"],
+  "slow_down_min_layer_time": ["10"],
+  "filament_shrinkage_compensation_z": "0"
+}
