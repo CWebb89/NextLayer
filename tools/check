@@ -491,12 +491,34 @@ set -l cal_cfg /tmp/nl-check-calibration.json
 rm -f $cal_cfg
 $bin --printer 'Anycubic Kobra 2 0.4' --process Standard --filament Generic \
     --dump-config $cal_cfg >/dev/null 2>&1
-set -l cal_out (env $bin --calibration-test $cal_cfg 2>&1 | grep -E '^(temperature|pressure_advance|flow|retraction|calibration):')
+set -l cal_out (env $bin --calibration-test $cal_cfg 2>&1 | grep -E '^(temperature|pressure_advance|flow|flow_pass2|max_flow|vfa|retraction|first_layer|input_shaping|calibration):')
 set -l cal_rc $status
+set -l cal_summary (string match -r 'calibration: ([0-9]+) test\(s\) built and ([0-9]+) sliced' -- $cal_out)
 if test $cal_rc -ne 0
     __bad "calibration: "(string join '; ' -- $cal_out)
+else if test (count $cal_summary) -lt 3
+    __bad "calibration: the summary line is missing from "(string join '; ' -- $cal_out)
+else if test $cal_summary[2] -lt 9
+    __bad "calibration: only $cal_summary[2] of the 9 tests built"
+else if test $cal_summary[3] -lt 6
+    __bad "calibration: only $cal_summary[3] tests reached the slicer"
 else
-    __ok "calibration: "(string match -r 'calibration: .*' -- $cal_out)
+    __ok "calibration: $cal_summary[2] test(s) built, $cal_summary[3] sliced, every band command in the G-code"
+end
+
+# Settings gate: the sidebar has to expose the engine's own config, not a
+# hand-picked subset. Measured, not asserted: the names the tab tree yields are
+# diffed against the keys of a real slice's resolved configuration.
+set -l names_file /tmp/nl-check-names.txt
+$bin --dump-setting-names >$names_file 2>/dev/null
+set -l set_diff (python3 tools/settings-diff.py $cal_cfg $names_file)
+set -l settings_count (string split ' ' -- $set_diff)
+if test (count $settings_count) -lt 3
+    __bad "settings: could not measure the tab tree against the engine's config"
+else if test $settings_count[3] -ne 0
+    __bad "settings: $settings_count[3] engine setting(s) are missing from the sidebar: $settings_count[4]"
+else
+    __ok "settings: $settings_count[2] of $settings_count[1] engine settings are in the sidebar (colour-mixing and the bed mesh path excluded)"
 end
 
 # Print-host gate: the engine's own Moonraker uploader, against a stand-in server

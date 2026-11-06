@@ -153,7 +153,7 @@ Plates on the left, tools next, object actions on the right — one panel.
 | Arrange | needs-engine — `arrange_and_wait` is internal to the CLI app, not a flag; imports are shelf-packed instead. `Plater::ArrangeGizmo` and the `slic3r-biz-arrange` kernels are wx-free |
 | Auto-orient | needs-engine — no CLI flag; the orienter is in the same arrange library |
 | Multi-select | staged — one selection at a time; the document holds N objects but the tools act on the selected one |
-| Engine-level plates (one project, many beds, one slice) | needs-engine — `Domain::Bed`/`BedContainer` exist, no plater command. A hosted `PlaterRenderModule` brings the bed tabs with it |
+| Engine-level plates (one project, many beds, one slice) | done — plates belong to the document (`plateCount`, names, locks), the bar carries add / clone / lock / delete beside the selector, and the viewport draws a full bed per plate at its own offset. A lock makes the plate read-only: adding, moving, deleting, painting and clearing are refused with a message. Plates, names and locks travel in `.nextproj` |
 
 ## Tool rail
 
@@ -265,7 +265,7 @@ Now part of the same strip.
 | Object right-click menu | done — right-click a row in the object list: per-object settings, duplicate, delete, isolate, show all, centre, drop, auto-orient, lay on face, and modifier / negative / blocker / enforcer volumes |
 | Send to printer (Klipper/Moonraker, OctoPrint, PrusaLink…) | done — File ▸ Send to printer…: host, type, API key, Test, Send, Send and print. The upload goes through the engine's own `PrintHostMoonraker` / `OctoPrint` / `PrusaLink` / `Duet` implementations; `tools/check` proves it against a stand-in Moonraker, marker-verified |
 | Multi-filament / multicolour | done, for tool changers — one material per extruder is resolved (`--filaments A,B`), each tool has its own picker in the preset editor, an object prints with a chosen tool (T chip in the object list) and a painted facet prints with the tool it carries. `tools/check` slices a two-tool plate where painting tool 2 adds a tool change and the second colour. MMU single-nozzle mixing stays out by design |
-| Calibration suite | done — File ▸ Calibration…: temperature tower, pressure advance tower, flow test and retraction test. Each is built from the engine's primitives plus the plate's own layer G-code (`M104` / `SET_PRESSURE_ADVANCE` / `M221` per band), so it slices, previews and sends like any plate; `tools/check` proves the band commands reach the G-code |
+| Calibration suite | done — File ▸ Calibration…: temperature tower, pressure-advance tower, flow pass 1, flow pass 2, max volumetric speed, retraction pair, first-layer squish patches, VFA rings and an input-shaping tower (`SHAPER_CALIBRATE`). Each is built from the engine's primitives plus the plate's own layer G-code (`M104` / `SET_PRESSURE_ADVANCE` / `M221` / `M220` per band), so it slices, previews and sends like any plate; `tools/check` proves every band command reaches the G-code |
 
 ## Project and scene
 
