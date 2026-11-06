@@ -1,7 +1,7 @@
-# Orca printer catalog
+# Printer catalog
 
 Generates a printer bundle — one preset per vendor machine — from the profiles
-shipped in the OrcaSlicer checkout at `~/dev/reference/OrcaSlicer/resources/profiles`.
+shipped in the reference checkout at `<reference checkout>/resources/profiles`.
 The output is written into `upstream/resources/presets/vendor-catalog/`, which the
 app already loads through `PresetStore::bundleRoots()`. Because it sits inside
 `upstream/`, the bundle is a build artifact: git does not track it, and a fresh
@@ -13,7 +13,7 @@ python3 tools/printer-catalog/generate.py --vendors Voron  # one vendor
 python3 tools/printer-catalog/generate.py --out /tmp/try   # somewhere else
 ```
 
-Requires the OrcaSlicer checkout. `tools/check` fails loudly if the catalog is
+Requires the reference checkout. `tools/check` fails loudly if the catalog is
 missing from the build tree (it counts the printers `--dump-presets` reports and
 slices one of them), so a fresh clone cannot pass while shipping 21 printers. The
 gate resolves presets under a throwaway `XDG_DATA_HOME`: the app prefers
@@ -23,13 +23,13 @@ build tree from both the gate and `validate.py` without a word.
 ## What one printer preset is
 
 A `PresetBundle` printer plus one preset process and one preset filament, because
-the engine resolves a bundle as a package. Machine values come from the Orca
-machine profile; process and filament values are borrowed from the PrusaResearch
-templates in `templates/`, since Orca's own process settings use vocabularies the
+the engine resolves a bundle as a package. Machine values come from the reference
+machine profile; process and filament values are borrowed from the engine's
+templates in `templates/`, since the reference's own process settings use vocabularies the
 engine does not share (see the parity ledger's converter section).
 
 The keymap and the value-to-enum guards live in `../preset-convert/convert.py` and
-are imported, not duplicated: an Orca key reaches the engine only if the engine
+are imported, not duplicated: a reference key reaches the engine only if the engine
 has that option, and a value reaches it only if the option's enum accepts it.
 
 ## Deliberate losses, and why
@@ -38,7 +38,7 @@ Every dropped key is counted in the run report. Three rules produce them:
 
 - **No engine counterpart.** 3,792 keys across the catalog, overwhelmingly
   Bambu/AMS, belt-printer and chamber-specific settings.
-- **G-code templates the engine cannot parse.** Orca G-code uses `[...]` names
+- **G-code templates the engine cannot parse.** Reference G-code uses `[...]` names
   that do not exist here (`initial_no_support_extruder`, `plate_name`,
   `first_layer_print_min_0`), or placeholders that map cleanly and are renamed
   instead (`bed_temperature_initial_layer_single` → `first_layer_bed_temperature`).
@@ -79,7 +79,7 @@ the build tree, so it cannot go stale.
 
 It sweeps the machines this bundle declares, read from each `vendor.yaml`'s
 `printer_families` labels plus the vendor's tool name, not from `--dump-presets`.
-The app's list also holds the engine's built-in PrusaResearch machines, whose
+The app's list also holds the engine's built-in vendor machines, whose
 print profiles have their own names; sweeping those measures the built-in bundle
 and reports failures the catalog cannot fix.
 

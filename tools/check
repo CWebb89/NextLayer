@@ -614,7 +614,7 @@ end
 
 rm -rf $tools_home
 # The catalog gate: the shipped vendor catalog has to load, and one printer from
-# it -- not one of our own Prusa presets -- has to slice end to end. A preset that
+# it -- not one of our own presets -- has to slice end to end. A preset that
 # resolves but exports nothing looks identical to a good one in --dump-presets.
 # The preset home is isolated so this measures the bundle in the build tree: the
 # app prefers ~/.local/share/next-layer/presets, and a stale copy left there

@@ -1,25 +1,25 @@
-# Orca preset import
+# Preset import
 
-next-layer runs the PrusaSlicer engine, whose own preset bundle carries Prusa
+next-layer runs an open-source slicing engine, whose own preset bundle carries one vendor
 machines and nothing else. A Voron, a RatRig or a Trident therefore does not
-exist unless it is imported — and a slice without one falls back to a Prusa bed
+exist unless it is imported — and a slice without one falls back to a default bed
 and a generic filament, which is exactly how a 20 mm cube once went out on a
 350 mm Voron at 230 °C against a 220 mm plate.
 
-This tool imports **your own** OrcaSlicer presets:
+This tool imports **your own** reference-slicer presets:
 
 ```sh
-tools/preset-import/import.py                                     # Voron, from ~/.config/OrcaSlicer
+tools/preset-import/import.py                                     # Voron, from ~/.config/<the reference slicer>
 tools/preset-import/import.py --list                              # what it would take
 tools/preset-import/import.py --vendor Voron --nozzle 0.4 --dry-run
 tools/preset-import/import.py --out DIR --bundle-id vendor-catalog
 ```
 
-It resolves each of your user presets through the Orca installation you actually
+It resolves each of your user presets through the installation you actually
 run (`system/` vendor bundles plus your `user/default/` overrides), translates
 the settings with `tools/preset-convert`, and writes the result into the
 `vendor-catalog` bundle next-layer already reads. Preset names are kept, so the
-printer, process and filament you pick by name in Orca are the names that appear
+printer, process and filament you pick by name there are the names that appear
 in next-layer.
 
 ## What it does to a preset
@@ -37,7 +37,7 @@ in next-layer.
   `.yaml.disabled` and named in the output, so the bundle only publishes presets
   that work.
 
-## Things this engine cannot take from Orca
+## Things this engine cannot take from the reference profiles
 
 Reported by the tool, not silently dropped:
 
@@ -46,9 +46,9 @@ Reported by the tool, not silently dropped:
   the calibration tests write `SET_PRESSURE_ADVANCE` themselves.
 - **Chamber temperature** control, AMS/flush behaviour and other
   Bambu-specific settings.
-- **Shrinkage compensation** per axis, whose Orca shape (one object per
+- **Shrinkage compensation** per axis, whose reference shape (one object per
   extruder) aborts the slice in `std::length_error` when copied through.
-- Zero-valued speeds, accelerations and widths: Orca writes `0` to mean "use the
+- Zero-valued speeds, accelerations and widths: the reference writes `0` to mean "use the
   inherited value", and a literal zero reaches the time estimator and kills the
   slice.
 

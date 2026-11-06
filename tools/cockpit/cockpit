@@ -285,7 +285,7 @@ def sessions() -> dict[str, dict]:
 def window_of(state: dict) -> dict:
     """The session's window, re-resolved by class on its workspace.
 
-    Addresses change: Orca replaces its window during start-up, and a fullscreen
+    Addresses change: a reference app replaces its window during start-up, and a fullscreen
     toggle can remap it. The class on the session workspace is the stable key.
     """
     on_workspace = [client for client in clients() if client["workspace"]["id"] == state["ws"]]

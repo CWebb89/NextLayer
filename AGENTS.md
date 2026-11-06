@@ -1,8 +1,8 @@
 # next-layer
 
-A 3D printer slicer of our own, built on the PrusaSlicer 3.0 slicing engine used
-as a **library**. We write the interface and the application; the engine does
-the geometry and G-code.
+A 3D printer slicer of our own, built on an open-source slicing engine used as a
+**library**. We write the interface and the application; the engine does
+the geometry and G-code. `THIRD-PARTY.md` names the engine and its licence.
 
 Deeper context lives outside this repo, in the agent memory store:
 `~/.pi/agent/projects-memory/next-layer/MEMORY.md` — read it first. It carries
@@ -52,19 +52,20 @@ layer count); nothing is inferred from an exit code alone. `--update-qmllint-bas
 accepts the current QML warnings as known, and must be followed by reading the
 diff of `tools/qmllint-baseline`.
 
-**Reference the real thing before writing UI.** OrcaSlicer is checked out at
-`~/dev/reference/OrcaSlicer`; read its `src/slic3r/GUI` (GLCanvas3D, GCodeViewer,
-IMSlider, the ImGui panels) and its `resources/profiles` when a control, a
-measurement or a workflow is in question. Match Orca or PrusaSlicer behaviour,
-naming and layout, adapting their code where it fits and writing new code only
-where theirs cannot be reused. The parity ledger this is measured against is
+**Reference the real thing before writing UI.** A checkout of a mature reference
+slicer, its source and its profile bundle are recorded in the memory store under
+"Reference checkouts"; read its settings UI, its G-code viewer and its plate
+chrome when a control, a measurement or a workflow is in question. Match that
+behaviour, naming and layout, adapting its code where it fits and writing new
+code only where it cannot be reused. The ledger this is measured against is
 `docs/features.md`.
 
 **See the change, don't guess at it.** `tools/cockpit/cockpit` launches an app
 alone on an unused Hyprland workspace and drives it with real pointer and
 keyboard input (`start`, `shot`, `ocr`, `click-text`, `drag`, `key`, `stop`). Use
-it for anything visual: slice through the UI, drag the sliders, open Orca beside
-it, and compare the captures. `tools/cockpit/README.md` has the details.
+it for anything visual: slice through the UI, drag the sliders, open a reference
+slicer beside it, and compare the captures. `tools/cockpit/README.md` has the
+details.
 
 Slicing parity (the important one):
 
@@ -91,7 +92,7 @@ keeps them honest, and `tools/check` runs it.
 
 The UI's own headless knobs (`--dump-tabs`, `--dump-subtab`, `--settings-tab`,
 `--panel-left`, `--transform`) are documented in
-`src/qt/README.md`. `docs/features.md` is the Orca/Prusa
+`src/qt/README.md`. `docs/features.md` is the
 feature ledger: every tab, tool and setting marked done / staged / needs-engine,
 so "do we have it yet" is a lookup rather than a guess.
 

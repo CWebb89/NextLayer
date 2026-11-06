@@ -1,5 +1,5 @@
-# Open a model in Orca and capture the prepare view. Coordinates are window
-# pixels; Orca's toolbar is at the top, its plate in the middle.
+# Open a model in the reference slicer and capture the prepare view. Coordinates are window
+# pixels; the reference's toolbar is at the top, its plate in the middle.
 #   cockpit start orca --command ~/.local/bin/orca-slicer --model oracle/models/cube_20.stl --wait 60
 #   cockpit run tools/cockpit/scripts/reference-open.drive
 

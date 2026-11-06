@@ -1,9 +1,10 @@
 # Calibration meshes
 
-The calibration tests print the same models OrcaSlicer prints, because "looks like
-Orca's tower" only holds if it is Orca's tower. Those models live in Orca's own
-resources as Draco-compressed meshes (`resources/calib/**.drc`), which this engine
-cannot read, so they are exported once and committed here as STL.
+The calibration tests print the same models a reference slicer prints, because
+"looks like the reference tower" only holds if it is that tower. Those models live
+in that project's own resources as Draco-compressed meshes
+(`resources/calib/**.drc`), which this engine cannot read, so they are exported
+once and committed here as STL.
 
 | File | From | Used by |
 |---|---|---|
@@ -14,15 +15,9 @@ cannot read, so they are exported once and committed here as STL.
 
 ## Regenerating
 
-Orca's CLI decodes its own DRC files, so the export needs a checkout or an
-installed Orca:
-
-```sh
-orca-slicer /opt/orca-slicer/resources/calib/temperature_tower/temperature_tower.drc \
-    --export-stl --outputdir /tmp/calib
-python3 tools/calib-meshes/decimate.py /tmp/calib/stl/obj_1_temperature_tower.drc.stl \
-    src/qt/resources/calib/temperature_tower.stl 0.3
-```
+The DRC format is decoded by the reference slicer's own CLI, which is not part of
+this repository, so regenerating these meshes needs that toolchain installed
+alongside: export each `.drc` to STL, then reduce it with `decimate.py`.
 
 `decimate.py` is vertex clustering: the exporter writes the full-resolution mesh
 (212k triangles for the tower), and a printer does not need that. The cell size is
@@ -32,7 +27,7 @@ plenty.
 
 ## The tower's own contract
 
-The temperature tower is cut, not generated. Orca's geometry contract, from
+The temperature tower is cut, not generated. The geometry contract, from
 `Plater::calib_temp`:
 
 - block `n` spans `[n * 10, (n + 1) * 10]` mm of the asset and prints at
@@ -46,5 +41,5 @@ band printable at all.
 
 ## Licence
 
-These meshes come from OrcaSlicer (AGPL-3.0), as does the engine this application
-links; `upstream/` already carries PrusaSlicer under the same licence.
+These meshes come from another AGPL-3.0 project; `THIRD-PARTY.md` carries the
+attribution, alongside the engine this application links.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Decimate a binary STL by vertex clustering, keeping the silhouette.
 
-The calibration meshes Orca ships are Draco-compressed; Orca's own CLI exports
+The calibration meshes That project ships are Draco-compressed; the reference's own CLI exports
 them as STL at full resolution (the temperature tower is 212k triangles). This
 collapses vertices onto a grid instead, which is enough for a test print's
 geometry and keeps the file in the repository at a sane size.

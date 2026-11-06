@@ -127,8 +127,8 @@ engine inherit a preset from itself.
 ## Preset editor
 
 The gear beside each preset dropdown opens `views/PresetEditorDialog.qml`, the
-counterpart of Orca's parameters dialog: the whole resolved configuration of that
-preset kind in one window, with its own toolbar. Print / Filament / Printer tabs,
+counterpart of the engine's parameters dialog: the whole resolved configuration of
+that preset kind in one window, with its own toolbar. Print / Filament / Printer tabs,
 a preset combo, revert-everything, Save, Save as, Rename, Delete (two clicks:
 the first turns the button into a confirmation), an Add printer form on the
 printer tab, and a search box that filters across every tab. Edits apply to the
@@ -136,7 +136,7 @@ live settings at once; Save writes the changed values into the preset file and
 reloads, which clears the modified markers.
 
 Save on an engine preset is refused with a reason instead of silently saving a
-copy, matching Orca. The printer tab cannot save a preset: a second printer
+copy. The printer tab cannot save a preset: a second printer
 preset on one hardware config shows up as a duplicate profile name, so a new
 machine goes through Add printer.
 
@@ -305,8 +305,8 @@ YAML. One worker thread at a time; the engine is never driven from two.
   strip of the engine's option groups, then two-column rows (label left, editor
   in a fixed right column). Cross-tab search, per-group and per-tab reset. The
   tab tree comes from `settingsModel.tabList()`; nothing here hardcodes a setting.
-- `views/ViewportToolbar.qml` — the single strip over the viewport, laid out like
-  Orca's: plate tabs, the object actions, the manipulation tools, then the
+- `views/ViewportToolbar.qml` — the single strip over the viewport: plate tabs,
+  the object actions, the manipulation tools, then the
   "Slice plate" and "Export G-code" pills. Icons are Material Symbols through
   `components/Icon.qml`. `main.qml` owns the plate list (`plates`,
   `activePlate`), the tool list (`tools`) and the action list
@@ -340,12 +340,12 @@ YAML. One worker thread at a time; the engine is never driven from two.
 - Bed artwork is not ours, and neither is the plate mesh. `Host.bedTextureUrl`
   is the printer's `bed_texture` (its logo, and for some printers its own grid)
   and `bedPlateGeometry` is its `bed_model` STL, both rasterised/loaded once.
-  Voron machines are not in the engine's vendor manifest — it is a PrusaSlicer
-  tree — so their assets live in `assets/bed/` and are copied from the OrcaSlicer
-  profiles the machine settings also come from. `main.cpp` maps printer model to
-  asset, so adding a machine means one entry in `bedAssetsForModel`.
+  Voron machines are not in the engine's vendor manifest, so their assets live in
+  `assets/bed/` and are copied from the profiles the machine settings also come
+  from. `main.cpp` maps printer model to asset, so adding a machine means one
+  entry in `bedAssetsForModel`.
 - The plate mesh is centred on the bed with its top face on z = 0 and drawn
-  0.03 mm down (Orca's GROUND_Z) so a model resting on z = 0 cannot z-fight it.
+  0.03 mm down (the engine's `GROUND_Z`) so a model resting on z = 0 cannot z-fight it.
   `cullMode: NoCulling` keeps the underside visible, which is what makes the bed
   read as an object when you orbit below it.
 - The grid is generated (`src/BedGrid.cpp`), not textured: 10 mm lines with every
@@ -354,20 +354,20 @@ YAML. One worker thread at a time; the engine is never driven from two.
   has no line width, so the lines are thin quads sized to land on roughly one
   pixel at the zoom where the whole plate is in view.
 - The radial vignette behind the artwork is baked once to
-  `<data>/cache/vignette.png` (Orca mixes 0.365 centre to 0.235 corners in its
-  `printbed` shader; Qt Quick 3D has no radial-gradient material) and multiplied
-  by `viewportPlateSide`. Delete the cache file to regenerate.
+  `<data>/cache/vignette.png` (0.365 centre to 0.235 corners, the engine's
+  `printbed` shader constants; Qt Quick 3D has no radial-gradient material) and
+  multiplied by `viewportPlateSide`. Delete the cache file to regenerate.
 - The axis triad sits at the print origin, projected from printer (0,0,0) through
   `View3D.mapFrom3DScene` every frame, and hides when the origin leaves the
   viewport.
 - Viewport tones (`viewportBackground`, `viewportPlate`, `viewportPlateSide` in
-  `theme/Colors.qml`) reproduce Orca's three-tone separation — background 0.329,
-  plate 0.2666, plate side 0.133 luminance in its dark theme — on the active
-  matugen hue. The lights are Orca's two, ported from its `gouraud` shader:
+  `theme/Colors.qml`) reproduce a three-tone separation — background 0.329,
+  plate 0.2666, plate side 0.133 luminance — on the active matugen hue. The
+  lights are two, ported from the engine's `gouraud` shader:
   key at eye-space `(-0.4575, 0.4575, 0.7625)` at 0.48, fill at
   `(0.6985, 0.1397, 0.6985)` at 0.18, ambient 0.3. No shadow map and no SSAO:
-  Orca ships both off by default, and the shadow pass was our largest per-frame
-  cost.
+  the engine ships both off by default, and the shadow pass was our largest
+  per-frame cost.
 - The vertical layer slider is `components/LayerSlider.qml` (right edge of the
   viewport) and the move slider is `components/MovesSlider.qml` (bottom bar).
   Both are single-mouse-area controls whose pressed handle is the nearer of the

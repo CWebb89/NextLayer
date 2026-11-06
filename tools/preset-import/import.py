@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""Import a user's own OrcaSlicer presets into a next-layer vendor bundle.
+"""Import a user's own reference-slicer presets into a next-layer vendor bundle.
 
-Orca keeps a user's edits as thin overrides that inherit a vendor profile
+That project keeps a user's edits as thin overrides that inherit a vendor profile
 (``"inherits": "Voron 2.4 350 0.4 nozzle"``). next-layer resolves presets by
-name out of a vendor bundle, and the engine's own PrusaResearch bundle has no
+name out of a vendor bundle, and the engine's own vendor bundle has no
 Voron in it at all -- which is how a print went out with a 220 mm bed profile
 on a 350 mm machine.
 
-So importing is three steps: resolve each user preset against the Orca
+So importing is three steps: resolve each user preset against the reference
 installation the user actually runs (system bundles plus their own overrides),
 translate it with ``tools/preset-convert``, and write a bundle whose presets carry
 the user's own names. A preset that cannot be translated cleanly is reported,
 and one that cannot slice is removed rather than shipped.
 
 Usage:
-    import.py                                       # Voron, from ~/.config/OrcaSlicer
+    import.py                                       # Voron, from ~/.config/<the reference slicer>
     import.py --vendor Voron --out DIR --dry-run
     import.py --list                                # user presets and their bases
 """

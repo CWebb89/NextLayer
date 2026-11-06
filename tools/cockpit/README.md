@@ -2,7 +2,7 @@
 
 Drives a GUI app on its own Hyprland workspace, so a viewport or a control can be
 looked at and clicked instead of reasoned about. Built for driving next-layer and
-OrcaSlicer side by side against the same model.
+a reference slicer side by side against the same model.
 
 ```
 cockpit start next-layer --model oracle/models/cube_20.stl
@@ -29,8 +29,8 @@ with its position in the same space — the fastest way to find a control.
 | capture | `shot onws <ws> out.png`, so only the app's workspace is captured and the agent's terminal is never in frame |
 | labels | `find-text` / `click-text` OCR the capture with tesseract, matching a run of words on one line so `Slice plate` is found even though OCR returns two words |
 
-Windows are re-resolved by class on the session workspace, because Orca replaces
-its window during start-up and a fullscreen toggle remaps it.
+Windows are re-resolved by class on the session workspace, because a reference
+app replaces its window during start-up and a fullscreen toggle remaps it.
 
 ## Commands
 
@@ -49,11 +49,12 @@ its window during start-up and a fullscreen toggle remaps it.
 
 ## Notes
 
-- next-layer's dark theme OCRs exactly with the plain pass; Orca's toolbar needs
-  the inverted enlargement, so `find-text` tries both and prefers the first that
-  matches. Orca still garbles some small labels (`Slice plate` → `siceplate`);
-  when a label will not resolve, read the position off a screenshot with
-  `cockpit shot` + `cockpit ocr` and click coordinates directly.
+- next-layer's dark theme OCRs exactly with the plain pass; a reference app's
+  toolbar needs the inverted enlargement, so `find-text` tries both and prefers
+  the first that matches. That app still garbles some small labels
+  (`Slice plate` → `siceplate`); when a label will not resolve, read the position
+  off a screenshot with `cockpit shot` + `cockpit ocr` and click coordinates
+  directly.
 - Everything runs through the compositor, so it is the same input path a person
   would take. There is no test-only hook in either application.
 - The session file survives between commands, so the app keeps running while
@@ -65,4 +66,5 @@ its window during start-up and a fullscreen toggle remaps it.
 
 - `next-layer-cut.drive` — slice, switch to preview, drag the layer slider down
   and capture the cut.
-- `reference-open.drive` — open a model in Orca and capture the prepare view.
+- `reference-open.drive` — open a model in the reference slicer and capture the
+  prepare view.

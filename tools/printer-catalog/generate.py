@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Build next-layer printer bundles from an OrcaSlicer profile checkout.
+"""Build next-layer printer bundles from a reference profile checkout.
 
-Orca ships one directory per vendor (``resources/profiles/<Vendor>/``) holding
+That project ships one directory per vendor (``resources/profiles/<Vendor>/``) holding
 machine, process and filament JSON files plus an index (``<Vendor>.json``) that
 lists them. next-layer discovers printers from vendor bundles: a repo directory
 under a bundle root, one directory per vendor inside it, and that vendor's
 ``vendor.yaml`` describing its printer families plus one preset file per printer.
 
-This tool writes such a bundle from Orca's profiles. Machine keys are translated
+This tool writes such a bundle from the reference's profiles. Machine keys are translated
 to the engine's vocabulary by ``tools/preset-convert``; anything that cannot be
 translated is dropped and reported rather than invented.
 
 Usage:
-    generate.py --from ~/dev/reference/OrcaSlicer/resources/profiles \\
+    generate.py --from <reference checkout>/resources/profiles \\
                 --out ../../upstream/resources/presets/vendor-catalog \\
                 --vendors Creality,Elegoo,Voron
 
@@ -42,19 +42,19 @@ NOZZLE = "0.4"
 # "Voron 2.4 350 0.4" resolved into this catalog, whose Voron entry carries one
 # generic filament instead of the nine the app's own bundle lists, and the
 # filament gate failed. Renaming the display name alone does not prevent it.
-# The engine ships its own PrusaResearch bundle, and preset resolution matches a
+# The engine ships its own vendor bundle, and preset resolution matches a
 # hardware config by display name and then takes the first hit. Hardware config
 # ids are fresh UUIDs on every load, so the map that orders them is re-shuffled
 # each run: two bundles publishing the same name make resolution pick a
 # different machine run to run (measured 5 failures in 12 identical
-# invocations for "Prusa MK4 0.4"). Prusa machines come from that built-in
+# invocations for the same printer name). Those machines come from that built-in
 # bundle already, so the catalog does not publish them a second time.
 SKIPPED_VENDORS = {"Prusa"}
 
 # Display names that would shadow a machine next-layer's own fixtures ship. The
-# custom Voron 2.4 350 bundle is the default machine, so Orca's profiles for the
+# custom Voron 2.4 350 bundle is the default machine, so the reference's profiles for the
 # same printer are kept but named apart.
-NAME_OVERRIDES = {"Voron 2.4 350": "Voron 2.4 350 (Orca)"}
+NAME_OVERRIDES = {"Voron 2.4 350": "Voron 2.4 350 (imported)"}
 KINDS = ("printer", "print", "filament")
 SETTINGS_SECTION = {"printer": "printer_settings", "print": "print_settings",
                     "filament": "filament_settings"}
@@ -113,7 +113,7 @@ def engine_config(binary, model, action):
 def borrowed_templates(directory):
     """The engine's own process, material and tool presets, as written by the app.
 
-    Orca's process presets do not survive the trip: their extrusion widths and
+    the reference's process presets do not survive the trip: their extrusion widths and
     heights collide with engine options that were never equivalent, and the
     slice aborts in new_from_config_width. Until that conversion is done
     properly, a generated vendor borrows these, so a printer from the catalog
@@ -247,7 +247,7 @@ ZERO_DEFAULT_KEYS = re.compile(r"(^|_)(acceleration|speed|jerk)$|_extrusion_widt
 
 
 def _zero_means_default(key, value):
-    """Orca writes 0 where it means "use the inherited value".
+    """the reference writes 0 where it means "use the inherited value".
 
     Copying that zero through is not neutral in this engine: a zero acceleration
     reaches the time estimator and the slice dies in std::length_error.
@@ -534,7 +534,7 @@ def build_vendor(source_root, vendor_dir, vendor, out_root, nozzle, nozzle_float
     (directory / "vendor.yaml").write_text(
         vendor_manifest(vendor, vendor, machines, nozzle))
     (out_root / (vendor + ".idx")).write_text(
-        "min_slic3r_version = 3.0.0-alpha0\n1.0.0 Generated from OrcaSlicer profiles\n")
+        "min_slic3r_version = 3.0.0-alpha0\n1.0.0 Generated from reference slicer profiles\n")
     for machine in machines:
         (directory / ("preset-printer-" + machine["slug"] + ".yaml")).write_text(
             preset_document("printer", machine["name"], machine["values"],

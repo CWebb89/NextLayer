@@ -62,7 +62,7 @@ def catalog_names(bundle: Path, nozzle: str) -> list[str]:
     Every generated vendor declares its machines as printer_families labels and
     exactly one tool, and the engine composes a config name as the family label
     plus the tool name. Filtering the app's dump instead would mix in the
-    engine's built-in Prusa machines, which carry their own print-profile names.
+    engine's built-in vendor machines, which carry their own print-profile names.
     """
     names = []
     for path in sorted(bundle.glob("*/vendor.yaml")):

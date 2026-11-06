@@ -62,8 +62,9 @@ grown since the last tag.
 Gate:
 - Two months and ~50 real prints on at least two of your printers with no
   unexplained slice or crash.
-- The four calibration tests that still print generated geometry wired to Orca's
-  meshes, so every calibration path is the one you have already tested.
+- The four calibration tests that still print generated geometry wired to the
+  imported calibration meshes, so every calibration path is the one you have
+  already tested.
 - A second person has sliced and printed from a binary you shipped, following
   only the README.
 - No known data-loss or corrupt-G-code bug open.

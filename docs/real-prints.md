@@ -20,7 +20,7 @@ sent to the printer from the Device tab, printed to completion.
 | Model | `oracle/models/cube_20.stl`, 20 × 20 × 20 mm |
 | G-code | `voron-cube20-next-layer.gcode`, 214 407 bytes |
 | SHA-256 | `011024b74ce782ce2e9213de14bb45fbb4718d2122fc5524363a2176a980b7a4` |
-| Slicer header | `PrusaSlicer 3.0.0-alpha12` (the engine this app links) |
+| Slicer header | the engine's version string (attribution in `THIRD-PARTY.md`) |
 | Layer height | 0.20 mm |
 | Temperatures | nozzle 230 °C, bed 60 °C |
 | Moonraker job | `0003E1`, status `completed` |
@@ -54,15 +54,16 @@ is the failure this page exists to catch:
   filament wants, and the bed at 60 °C rather than the 55 °C textured PEI asks
   for. The part printed; it was not printed *well*.
 
-The cause was the engine's own preset bundle. PrusaSlicer ships PrusaResearch
-only, so no Voron exists unless one is imported — see
+The cause was the engine's own preset bundle: it ships one printer vendor only,
+so no Voron exists unless one is imported — see
 `tools/preset-import/README.md` and the section below.
 
 ### After the fix
 
-`tools/preset-import` now imports the user's own OrcaSlicer printer, process and
-filament presets into the Orca bundle next-layer ships, translating Orca's
-setting names to this engine's. With the same model, printer and `2.4 PLA`:
+`tools/preset-import` now imports a user's own printer, process and filament
+presets from a reference slicer's config directory into the catalog bundle
+next-layer ships, translating that slicer's setting names to this engine's. With
+the same model, printer and `2.4 PLA`:
 
 ```sh
 B=upstream/build/src/next-layer-qt/next-layer-qt

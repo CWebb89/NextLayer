@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Convert OrcaSlicer profiles to next-layer (PrusaSlicer 3.0) config JSON.
+"""Convert reference slicer profiles to next-layer (engine) config JSON.
 
-Orca profiles are flat JSON keyed by setting id (``wall_loops``, ``bottom_shell_layers``),
-with an ``inherits`` chain the files already resolve. next-layer runs the PrusaSlicer
-3.0 engine, whose FDM config keys use Prusa naming (``perimeters``, ``bottom_solid_layers``).
+reference profiles are flat JSON keyed by setting id (``wall_loops``, ``bottom_shell_layers``),
+with an ``inherits`` chain the files already resolve. next-layer runs an open-source slicing engine,
+whose FDM config keys use that project's naming (``perimeters``, ``bottom_solid_layers``).
 
 Three buckets:
 
 * exact   -- the key means the same thing in both slicers (``brim_width``, ``seam_position``).
 * renamed -- same setting, different name (``wall_loops`` -> ``perimeters``); value
              transforms (percent, enum, bed shape) are applied where the format differs.
-* unsupported -- an Orca feature the 3.0 engine has no setting for (AMS, belt printers,
+* unsupported -- reference feature the 3.0 engine has no setting for (AMS, belt printers,
              chamber temperature control, Bambu-specific, ...). Reported, not fabricated.
 
 Usage:
@@ -24,8 +24,8 @@ import re
 import sys
 from pathlib import Path
 
-# Orca key -> (next-layer key, value transform). Transforms:
-#   "percent"  strip a trailing % (Orca "15%" -> 15.0 as a bare number)
+# reference key -> (next-layer key, value transform). Transforms:
+#   "percent"  strip a trailing %  (the reference "15%" -> 15.0 as a bare number)
 #   "percent_obj"  -> {"value": 15.0, "is_percent": true} for fill_density & friends
 #   "int"      coerce to int
 #   "float"    coerce to float
@@ -140,7 +140,7 @@ RENAMES = {
     "filament_shrinkage_compensation_z": ("filament_shrinkage_compensation_z", "float"),
     "filament_max_volumetric_speed": ("filament_max_volumetric_speed", "float"),
     # Pressure advance has no numeric home in this engine's filament block: the
-    # name `pressure_advance` there is an enum wrapper, so writing Orca's number
+    # name `pressure_advance` there is an enum wrapper, so writing the reference's number
     # into it is a type error, not a setting. Klipper owns pressure advance on
     # the machines this matters for, and it is reported as unsupported instead.
     # Printer / machine
@@ -245,7 +245,7 @@ ENUMS = {
 
 
 def head_of(value):
-    """First number of a value that may be comma-joined (Orca's per-extruder form)."""
+    """First number of a value that may be comma-joined (the reference's per-extruder form)."""
     scalar = value[0] if isinstance(value, list) and value else value
     return str(scalar).split(",")[0].strip().rstrip("%").replace(",", "")
 
@@ -322,7 +322,7 @@ def resolve_inherits(path, cache=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("files", nargs="*", help="Orca profile JSON files (machine/process/filament)")
+    parser.add_argument("files", nargs="*", help="reference profile JSON files (machine/process/filament)")
     parser.add_argument("--out", help="write converted config JSON here")
     parser.add_argument("--report", action="store_true", help="print the keymap coverage table and exit")
     parser.add_argument("--engine-defs", help="optional: file listing next-layer setting names for exact-match detection")
@@ -390,7 +390,7 @@ META = {
     "inherits_prints",
 }
 
-# Keys whose Orca value shape has no engine equivalent: Orca stores one entry per
+# Keys whose reference value shape has no engine equivalent: the reference stores one entry per
 # extruder as an object, this engine stores two percentages per extruder for the
 # shrinkage compensation, and feeding it the one-element list aborts the slice in
 # std::length_error. Dropped and reported instead of guessed at.
@@ -401,7 +401,7 @@ def report(engine_defs):
     nl = engine_names(engine_defs)
     identity = [k for k, (t, _) in RENAMES.items() if k == t]
     renamed = [k for k, (t, _) in RENAMES.items() if k != t]
-    print(f"next-layer (Prusa 3.0) engine FDM settings: {len(nl)}")
+    print(f"next-layer engine FDM settings: {len(nl)}")
     print(f"rename map entries: {len(RENAMES)}")
     print(f"  exact-name passthroughs: {len(identity)}")
     print(f"  renamed (different name): {len(renamed)}")
