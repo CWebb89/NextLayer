@@ -150,9 +150,9 @@ Plates on the left, tools next, object actions on the right — one panel.
 | Export G-code | done — writes the sliced file to a chosen path |
 | Object list (name, visibility, X/Y, centre/drop/duplicate/delete) | done — `Ctrl+L` or the list button; acts on the document, so a plate edit is undoable |
 | Undo / redo (`Ctrl+Z`, `Ctrl+Shift+Z`) | done — snapshot stack over the document's objects, transforms and visibility |
-| Arrange | needs-engine — `arrange_and_wait` is internal to the CLI app, not a flag; imports are shelf-packed instead. `Plater::ArrangeGizmo` and the `slic3r-biz-arrange` kernels are wx-free |
-| Auto-orient | needs-engine — no CLI flag; the orienter is in the same arrange library |
-| Multi-select | staged — one selection at a time; the document holds N objects but the tools act on the selected one |
+| Arrange | done — the engine's own NFP packer (`Biz::Arrange`), applied in the document and undoable; `tools/check` packs two overlapping objects apart |
+| Auto-orient | done — every distinct face normal is tried, the pose scoring best on printed height plus overhanging area wins (`tools/check`: 33.32 -> 27.43 mm) |
+| Multi-select | done — Ctrl-click, Shift-click, Ctrl+A and a drag that moves the whole selection |
 | Engine-level plates (one project, many beds, one slice) | done — plates belong to the document (`plateCount`, names, locks), the bar carries add / clone / lock / delete beside the selector, and the viewport draws a full bed per plate at its own offset. A lock makes the plate read-only: adding, moving, deleting, painting and clearing are refused with a message. Plates, names and locks travel in `.nextproj` |
 
 ## Tool rail
@@ -265,7 +265,45 @@ Now part of the same strip.
 | Object right-click menu | done — right-click a row in the object list: per-object settings, duplicate, delete, isolate, show all, centre, drop, auto-orient, lay on face, and modifier / negative / blocker / enforcer volumes |
 | Send to printer (Klipper/Moonraker, OctoPrint, PrusaLink…) | done — File ▸ Send to printer…: host, type, API key, Test, Send, Send and print. The upload goes through the engine's own `PrintHostMoonraker` / `OctoPrint` / `PrusaLink` / `Duet` implementations; `tools/check` proves it against a stand-in Moonraker, marker-verified |
 | Multi-filament / multicolour | done, for tool changers — one material per extruder is resolved (`--filaments A,B`), each tool has its own picker in the preset editor, an object prints with a chosen tool (T chip in the object list) and a painted facet prints with the tool it carries. `tools/check` slices a two-tool plate where painting tool 2 adds a tool change and the second colour. MMU single-nozzle mixing stays out by design |
-| Calibration suite | done — File ▸ Calibration…: temperature tower, pressure-advance tower, flow pass 1, flow pass 2, max volumetric speed, retraction pair, first-layer squish patches, VFA rings and an input-shaping tower (`SHAPER_CALIBRATE`). Each is built from the engine's primitives plus the plate's own layer G-code (`M104` / `SET_PRESSURE_ADVANCE` / `M221` / `M220` per band), so it slices, previews and sends like any plate; `tools/check` proves every band command reaches the G-code |
+| Calibration suite | done — File ▸ Calibration…: ten tests, each with Orca's own parameter page, then Build. See "Calibration" below for the per-test contract |
+
+## Calibration
+
+Orca's menu is nine entries, each opening a dialog that shapes the plate before it
+is built (`calib_dlg.cpp`, 1891 lines, one class per test). next-layer picks the
+test in a list and edits its parameters in the same dialog -- one fewer modal, the
+same parameters, and the same nine tests plus a squish ladder.
+
+Every test is built from the engine's primitives plus the plate's own layer
+G-code, so it slices, previews and sends like any plate. The band command is
+chosen by the printer's own `gcode_flavor`, because `SET_PRESSURE_ADVANCE` on a
+Marlin machine is an error and `M900` on Klipper stops the print.
+
+| Test | Orca's parameters | Ours |
+| --- | --- | --- |
+| Temperature tower | filament type (sets the range), start / end / step, model | done — same ranges (PLA 230-190, ABS 260-230, PETG 250-220, PCTG, TPU, PA-CF, PET-CF, Custom), auto-scale for the nozzle |
+| Pressure advance | extruder type (DDE / Bowden), method (tower / line / pattern), start / end / step, print numbers | tower: done. **Line and pattern are not built** -- see below |
+| Flow ratio | pass 1 (coarse) / pass 2 (fine) / YOLO, top-surface pattern | done — coarse 90-110 %, fine 98-102 %, very fine 99-101 %; patch size |
+| Max volumetric speed | start / end / step in mm³/s | done — converted per band to a feed override from the line width, layer height and base speed |
+| Retraction | start / end / step in mm | done — two towers 60 mm apart, one band per length |
+| VFA | start / end / step in mm/s, auto-adjust, model | done — feed override per ring; auto-adjust is the base-speed parameter |
+| Cornering | model (Ringing / Fast / SCV-V2), start / end | done — `SET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY` on Klipper, `M205 J` on Marlin, `M566` on RepRap |
+| Input shaping: frequency | model, shaper type, X / Y frequency start and end, damping | done — `SET_INPUT_SHAPER` per band, five Klipper shaper types |
+| Input shaping: damping | model, shaper type, frequency X / Y, damping start and end | done |
+| First layer squish | Orca has no such test; PrusaSlicer's first-layer calibration is a single line | done — six patches, each at its own `SET_GCODE_OFFSET Z`, so the ladder is a real Z test rather than six identical patches |
+| Numbers printed on the plate | always on for PA and the towers | done — the value is extruded as geometry (the app's own text object) in a row in front of the tower, so a band is identifiable in the preview and on the bed |
+| Save the measured value | Orca's four-step wizard ends by writing the value into a preset and re-slicing | partly — "Apply to `<setting>`" writes the measurement into the live settings (temperature, pressure advance, flow ratio, max volumetric flow, retract length), where it shows as modified in the panel and rides the next preset save. The wizard's own coarse-then-fine re-run is not automated |
+
+**What is still missing here.** Orca's PA-line and PA-pattern tests are a
+*g-code generator*, not a plate: `CalibPressureAdvance::generate_test` writes one
+layer's worth of lines with a `SET_PRESSURE_ADVANCE` between each, bypassing the
+slicer's layers entirely. This app's only channel into a running print is the
+engine's `CustomGCode::Info`, which injects at layer changes. A per-object band
+therefore needs one layer range per value, which is the tower. Line and pattern
+stay unbuilt until the app can emit G-code of its own.
+
+Calibration counts as coverage of Orca's own menu; what it does not cover is
+Orca's *Calibration Guide* entry (a wiki link) and the AMS-specific flows.
 
 ## Project and scene
 
@@ -277,7 +315,7 @@ Now part of the same strip.
 | Object position survives slicing | done — an import is centred once, then slices run with dont_arrange; before this the engine's arrange re-centred every slice and moves were discarded |
 | Icon set | Material Symbols Outlined, matching Orca's outline style |
 | Several objects on one plate | done — the document holds N objects; a slice bakes them into one STL of separate shells and the engine prints every island |
-| Per-object settings | staged — the merge is geometry only, so object configs are not applied yet; `Domain::ModelObject` carries them and the shared plater's object settings page edits them, so this lands with either step 3 or the host |
+| Per-object settings | done — 136 print settings are overridable per object; they reach the slicer through the plate path (`--slice-features`: a 0.30 mm per-object layer height gives 84 layers instead of 125) |
 | Save/load project (`.3mf` with settings and objects) | needs-engine — `store_3mf(const std::string&, const Domain::Project&)` and `load_3mf` exist, but building a `Domain::Project` needs a live `ProjectInteractor`; doing that beside the worker-thread `CLI::run` slice would put two engine runtimes in one process |
 | Undo / redo | done — `Ctrl+Z` / `Ctrl+Shift+Z` over add, delete, duplicate, transform and visibility |
 | Sequential printing | staged — settings exist, no scene arrangement |
@@ -397,6 +435,38 @@ The trade, stated plainly: the render module owns the GL surface and the scene, 
 ribbon preview built so far would be superseded for plater and preview duty. What
 survives that trade is the half that made next-layer viable — `SliceRuntime`,
 `PresetStore`, `SettingsModel`, the oracle, the cockpit and this ledger.
+
+## The gap, in one place
+
+Everything above, sorted by what is actually missing rather than by tab. Counted
+2026-11-06 against OrcaSlicer's `MainFrame`/`calib_dlg`/`Plater` and PrusaSlicer
+3.0's plater.
+
+| Missing | Why it is missing | Cost |
+| --- | --- | --- |
+| Preset visibility modes (Simple / Advanced / Expert) | the engine's `ConfigItemDef` has no mode field, so every setting is always shown; 17 legacy/identity settings already sit in per-tab "Advanced" sub-tabs | a curated list per mode; the settings model would filter, the panel needs no change |
+| Compare two presets side by side | the app diffs the live config against the *current* preset (`Ctrl+Shift+D`), not one preset against another | a dialog over `PresetStore`'s two resolved configs |
+| Multi-extruder per-slot editing | the settings model collapses filament values to slot 0, which matches a single-tool machine; multi-tool slicing itself works | a slot switcher in the Filament tab |
+| Per-filament colour picker | `gui_type: color` is edited as text | one editor case |
+| Bed shape editor (drag polygon, SVG/STL background) | `bed_shape` is edited as points; the plater's editor is not exposed | a canvas over the point list |
+| Rotation and scale gizmo handles, snapping | the Move tool draws axis arrows; rotate/scale stay numeric | the gizmo half of the render-module host |
+| Sequential printing | the settings exist, nothing arranges objects for it | arrange with a clearance pass |
+| `.3mf` project | `store_3mf`/`load_3mf` exist but need a live `ProjectInteractor` beside the worker-thread slice | the plater host, again |
+| PA line and PA pattern calibration | they are a G-code generator in Orca, not a plate; the app's only channel into a print is per-layer custom G-code | an in-layer G-code writer |
+| Calibration wizard: save to preset, then re-run fine | "Apply to setting" writes the live value; the re-slice step is manual | a second pass over the same test |
+| Travel / retraction as legend categories, G-code colour schemes | they are lines in the toolpath, not legend rows | preview legend model |
+| SVG embossing | text is built through `Biz::Emboss::text2shapes`; SVG needs a contour source | an SVG importer into the same emboss path |
+| Cut with connectors and dowels | `cutAtZ` caps both halves (`slice_mesh` + `Tesselate`); no plugs | cut dialog options |
+| Height-range modifier volumes | per-object layer-height bands exist; per-Z modifier volumes do not | pick + placement in the object panel |
+| Smooth variable-layer-height profile editor | bands (bottom/top/height) only, no adaptive curve | profile editor over `LayerHeightProfile` |
+| Fuzzy-skin *painting* | the setting exists and is exposed (Process ▸ Walls & Perimeters) | a fifth brush kind in the paint tool |
+| Vendor process and filament profiles in the catalog | borrowed from PrusaResearch templates, not the vendor's own | the converter's keymap, per vendor |
+| Vendor G-code template salvage | a template naming an unknown option is dropped whole (9 of 432 machines write no G-code) | line-level salvage |
+| Cloud, network accounts, AMS/MMU, SLA | out of scope by design, stated in the UI | — |
+
+Deliberately not on that list: the tool rail's gizmos, the bed tabs, arrange,
+paint and cut *as features* -- they are built. What is missing from them is the
+render-module host described below, which would carry the gizmo half.
 
 ## What "done" means here
 

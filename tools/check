@@ -491,19 +491,17 @@ set -l cal_cfg /tmp/nl-check-calibration.json
 rm -f $cal_cfg
 $bin --printer 'Anycubic Kobra 2 0.4' --process Standard --filament Generic \
     --dump-config $cal_cfg >/dev/null 2>&1
-set -l cal_out (env $bin --calibration-test $cal_cfg 2>&1 | grep -E '^(temperature|pressure_advance|flow|flow_pass2|max_flow|vfa|retraction|first_layer|input_shaping|calibration):')
+set -l cal_out (env $bin --calibration-test $cal_cfg 2>&1 | grep -E '^(temperature|pressure_advance|flow|max_flow|vfa|cornering|input_shaping_freq|input_shaping_damp|retraction|first_layer|calibration):')
 set -l cal_rc $status
-set -l cal_summary (string match -r 'calibration: ([0-9]+) test\(s\) built and ([0-9]+) sliced' -- $cal_out)
+set -l cal_summary (string match -r 'calibration: ([0-9]+) test\(s\) built and sliced' -- $cal_out)
 if test $cal_rc -ne 0
     __bad "calibration: "(string join '; ' -- $cal_out)
-else if test (count $cal_summary) -lt 3
+else if test (count $cal_summary) -lt 2
     __bad "calibration: the summary line is missing from "(string join '; ' -- $cal_out)
-else if test $cal_summary[2] -lt 9
-    __bad "calibration: only $cal_summary[2] of the 9 tests built"
-else if test $cal_summary[3] -lt 6
-    __bad "calibration: only $cal_summary[3] tests reached the slicer"
+else if test $cal_summary[2] -lt 10
+    __bad "calibration: only $cal_summary[2] of the 10 tests built"
 else
-    __ok "calibration: $cal_summary[2] test(s) built, $cal_summary[3] sliced, every band command in the G-code"
+    __ok "calibration: $cal_summary[2] test(s) built and sliced, every band command in the G-code"
 end
 
 # Settings gate: the sidebar has to expose the engine's own config, not a
