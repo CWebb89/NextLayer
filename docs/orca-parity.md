@@ -58,7 +58,7 @@ The tab tree is the engine's own taxonomy (`ConfigItemDef::Category` and
 | Walls & Perimeters | 22 | done |
 | Infill | 15 | done |
 | Bed adhesion | 13 | done |
-| Supports | 30 | done |
+| Supports | 30 | done — grid/snug/**organic (tree)** style from `support_material_style`, with the tree branch diameter, angle, double-wall and distance options exposed alongside it (confirmed in a real slice's `--dump-config`) |
 | Speed | 25 | done |
 | Motion & Dynamics | 22 | done |
 | Extrusion & Retraction | 19 | done |
@@ -333,7 +333,7 @@ keymap plus value transforms, not a settings reimplementation.
 | Orca distinct setting keys | 912 | union of every shipped profile |
 | Exact-name match | 138 | same key, same meaning |
 | Renamed by keymap | 117 | e.g. `wall_loops` → `perimeters`, `bottom_shell_layers` → `bottom_solid_layers` |
-| Unsupported (no engine counterpart) | ~657 | AMS, belt printer, chamber control, Bambu-specific, `tree_support_*`, jerk-per-axis |
+| Unsupported (no engine counterpart) | ~657 | AMS, belt printer, chamber control, Bambu-specific, Orca's `tree_support_*` names (the engine's own organic supports are `support_tree_*` and are exposed), jerk-per-axis |
 
 Run `convert.py --report` for the current keymap and a list of renamed targets
 missing from the engine. Run `convert.py <machine.json> <process.json> … --out

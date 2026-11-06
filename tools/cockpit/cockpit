@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import difflib
 import fcntl
+import glob
 import json
 import os
 import shlex
@@ -171,7 +172,25 @@ class Input:
         ) + struct.pack("64i", *([0] * 64)) * 4
         os.write(self.fd, device)
         fcntl.ioctl(self.fd, UI_DEV_CREATE)
-        time.sleep(0.06)
+        # libinput drops events from a device it has not finished opening yet: a
+        # device created and clicked 60 ms later lost the press roughly half the
+        # time, which reads as "the app ignored my click". Wait for the udev/libinput
+        # handshake instead of guessing a frame time.
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline and not self._ready():
+            time.sleep(0.02)
+        time.sleep(0.05)
+
+    def _ready(self) -> bool:
+        """True once the kernel has published this device's node."""
+        for path in glob.glob("/sys/class/input/event*/device/name"):
+            try:
+                with open(path, encoding="utf-8") as handle:
+                    if handle.read().strip() == "cockpit-input":
+                        return True
+            except OSError:
+                continue
+        return False
 
     def _emit(self, kind: int, code: int, value: int) -> None:
         os.write(self.fd, struct.pack("llHHi", 0, 0, kind, code, value))
