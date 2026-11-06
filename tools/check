@@ -439,6 +439,68 @@ else
     __ok "user presets: saved, resolved (layer_height 0.25), renamed and deleted a preset for a catalog printer"
 end
 
+# Multi-tool gate: a tool changer has to resolve one material per extruder and a
+# painted facet has to reach the engine as that tool. The paint sat in
+# mm_segmentation_facets and the config collapsed every filament entry back to a
+# single slot, so a "multicolour" plate used to print in one colour.
+set -l mt_cfg /tmp/nl-check-multitool.json
+rm -f $mt_cfg
+$bin --printer 'Prusa XL 2T 0.4, 0.4' --process '0.20mm' \
+    --filament 'AmazonBasics PLA@XL 0.4' \
+    --filaments 'AmazonBasics PLA@XL 0.4,Eolas Prints PETG@XL 0.4' \
+    --dump-config $mt_cfg >/tmp/nl-check-multitool.out 2>&1
+if not test -f $mt_cfg
+    __bad "multi-tool: the two-filament config was not written ("(string match -r 'presets: .*' -- (cat /tmp/nl-check-multitool.out) | head -n 1)")"
+else if not grep -qE '"temperature": ?\[225, ?240\]' $mt_cfg
+    __bad 'multi-tool: the resolved config collapsed the two filaments into one slot'
+else
+    set -l mt_out (env $bin --multi-tool-test $mt_cfg 2>&1 | grep -E '^(two-tool|painted|multi-tool)')
+    set -l mt_rc $status
+    if test $mt_rc -ne 0
+        __bad "multi-tool: "(string join '; ' -- $mt_out)
+    else
+        __ok "multi-tool: "(string match -r 'multi-tool: .*' -- $mt_out)
+    end
+end
+
+# Calibration gate: every test builds a plate and the towers actually change
+# something between bands. The change is the plate's own layer G-code, so a
+# marker that never reaches the G-code is a calibration tower that prints flat.
+set -l cal_cfg /tmp/nl-check-calibration.json
+rm -f $cal_cfg
+$bin --printer 'Anycubic Kobra 2 0.4' --process Standard --filament Generic \
+    --dump-config $cal_cfg >/dev/null 2>&1
+set -l cal_out (env $bin --calibration-test $cal_cfg 2>&1 | grep -E '^(temperature|pressure_advance|flow|retraction|calibration):')
+set -l cal_rc $status
+if test $cal_rc -ne 0
+    __bad "calibration: "(string join '; ' -- $cal_out)
+else
+    __ok "calibration: "(string match -r 'calibration: .*' -- $cal_out)
+end
+
+# Print-host gate: the engine's own Moonraker uploader, against a stand-in server
+# on localhost. It proves the connection test, the upload and that the bytes that
+# arrive are the G-code -- without touching a printer on the network.
+printf '; next-layer calibration marker\nG28\nG1 X10 Y10 E5\n' > /tmp/nl-check-host.gcode
+set -l host_port (python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()')
+set -l host_out (timeout 90 python3 tools/fake-moonraker.py $host_port $bin /tmp/nl-check-host.gcode 2>&1)
+set -l host_rc $status
+if test $host_rc -ne 0
+    __bad "print host: "(string join '; ' -- (string match -r 'print host: .*' -- $host_out))
+else
+    __ok "print host: "(string match -r 'print host: uploaded .*' -- $host_out)
+end
+
+# Per-volume settings gate: a modifier changes what the object becomes, and its
+# own overrides have to reach the engine's volume-settings box.
+set -l vol_out (env $bin --volume-settings-test /tmp/nl-check-calibration.json 2>&1 | grep -E '^(volume settings|box )')
+set -l vol_rc $status
+if test $vol_rc -ne 0
+    __bad "volume settings: "(string join '; ' -- $vol_out)
+else
+    __ok "volume settings: "(string match -r 'volume settings: .*' -- $vol_out)
+end
+
 rm -rf $tools_home
 # The catalog gate: the shipped vendor catalog has to load, and one printer from
 # it -- not one of our own Prusa presets -- has to slice end to end. A preset that

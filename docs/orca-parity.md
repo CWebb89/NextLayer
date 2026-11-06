@@ -254,10 +254,10 @@ Now part of the same strip.
 | Multiple plates | done — the tab strip adds, renames, duplicates, clears and deletes plates, and every plate is drawn in the scene as its own bed with its objects, so a new plate appears where it will print |
 | Plate options | done — the chevron on the active plate tab: rename, duplicate, clear, delete |
 | Custom G-code per layer | done — right-click the layer slider: custom G-code, a pause (M601) or a tool change at that Z. Markers draw as ticks on the slider, are saved in the project, and the engine's own `CustomGCode::Info` emits them at their layer (`tools/check` proves the marker lands once, in the right layer) |
-| Object right-click menu | not started — object actions are the toolbar, the object list footer and the File menu |
-| Send to printer (Klipper/Moonraker, OctoPrint, PrusaLink…) | not started — the engine ships the whole `Biz::PrintHost` family including `PrintHostMoonraker` and a `create_print_host()` factory; wiring it is a settings surface for the host and a `perform()` call on the G-code |
-| Multi-filament / multicolour | not started — one filament is resolved per slice (`material_profile_presets` takes one name), so a tool-changing printer slices in one colour. The engine supports N materials and per-object/per-volume `extruder`, so this is a settings-and-plumbing job, not an engine one. MMU single-nozzle mixing stays out by design |
-| Calibration suite (flow, pressure advance, retraction…) | not started — Orca's calibration menu has no counterpart here |
+| Object right-click menu | done — right-click a row in the object list: per-object settings, duplicate, delete, isolate, show all, centre, drop, auto-orient, lay on face, and modifier / negative / blocker / enforcer volumes |
+| Send to printer (Klipper/Moonraker, OctoPrint, PrusaLink…) | done — File ▸ Send to printer…: host, type, API key, Test, Send, Send and print. The upload goes through the engine's own `PrintHostMoonraker` / `OctoPrint` / `PrusaLink` / `Duet` implementations; `tools/check` proves it against a stand-in Moonraker, marker-verified |
+| Multi-filament / multicolour | done, for tool changers — one material per extruder is resolved (`--filaments A,B`), each tool has its own picker in the preset editor, an object prints with a chosen tool (T chip in the object list) and a painted facet prints with the tool it carries. `tools/check` slices a two-tool plate where painting tool 2 adds a tool change and the second colour. MMU single-nozzle mixing stays out by design |
+| Calibration suite | done — File ▸ Calibration…: temperature tower, pressure advance tower, flow test and retraction test. Each is built from the engine's primitives plus the plate's own layer G-code (`M104` / `SET_PRESSURE_ADVANCE` / `M221` per band), so it slices, previews and sends like any plate; `tools/check` proves the band commands reach the G-code |
 
 ## Project and scene
 
