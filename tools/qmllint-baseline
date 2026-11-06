@@ -5,5 +5,6 @@
 no-file::import
 qml/theme/Metrics.qml::import
 qml/theme/Type.qml::import
+qml/theme/Units.qml::import
 qml/views/FooterBar.qml::import
 qml/views/PreviewLegend.qml::Quick.layout-positioning

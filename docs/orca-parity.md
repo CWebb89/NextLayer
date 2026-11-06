@@ -19,6 +19,13 @@ Counted 2026-11-05: `slic3r-shared/src/Slic3r/App/Plater/` holds **77** `.cpp` f
 and exactly **one** of them mentions the wx `GLCanvas3D`. Every tool in the rail
 below lives there, in a wx-free library, on an ImGui + `slic3r-render` device.
 
+**Scope: FFF only.** next-layer is a filament-printer application. The engine
+carries a whole resin (SLA) pipeline -- `SLAPrint`, `Hollowing`, `SupportTree`,
+exposure and lift settings -- and none of it is exposed here, deliberately: SLA is
+not a market this app serves, so resin profiles, drain holes and the resin
+settings tab are *n/a* rather than missing. Hollow is the one piece reused, and
+only as a mesh operation: growing an inner wall is useful for FFF parts too.
+
 ## Settings — tabs and sub-tabs
 
 The tab tree is the engine's own taxonomy (`ConfigItemDef::Category` and
@@ -157,7 +164,7 @@ Now part of the same strip.
 | Move (centre at X/Y, or drag the model on the bed) | done |
 | Rotate (X/Y/Z degrees) | done |
 | Scale (uniform) | done |
-| Cut at Z | done |
+| Cut at Z | not done — this engine ships no cut at all: there is no `CutGizmo`, no plane-cut helper and no capped-boolean API on a mesh. `SliceCSGMesh` slices a CSG tree for the slicer, not for the editor. The transform panel still has a stub control that the engine ignores; it should be removed rather than shipped |
 | Measure (two points, distance, deltas, angle from vertical) | done |
 | Fuzzy skin | done — jumps to Process › Walls & Perimeters |
 | Lay on face | done — click a face; the facet normal is turned down and the object dropped to the bed |
@@ -166,11 +173,12 @@ Now part of the same strip.
 | Colour painting for a tool changer | done — the brush writes a per-facet tool index (`mm_segmentation_facets`, the engine's tool field) and the swatch list is the printer's own tool colours, so the overlay is what the machine will print. **There is no MMU and no single-nozzle colour mixing anywhere in this app**: those options are filtered out of the settings panel and the words do not appear in the UI |
 | Add a shape (box, cylinder, sphere) | done — an object built by the engine's own `its_make_cube`/`make_cylinder`/`make_sphere`, normalised to the app's XY-centred, Z-on-the-bed convention, so every tool and per-object setting works on it. `--shape-test` slices one and measures the filament |
 | Modifier, negative, support-blocker and support-enforcer volumes | done — a volume on the selected object with the engine's own `ModelVolumeType`; the FDM slice path slices each type and booleans it, so a negative volume cuts the toolpath (`--shape-test`: 3899.4 mm → 2823.2 mm of filament, and back to 3899.4 when removed). Drawn translucent by role (red subtracts, amber modifies, purple blocks, green forces) and the object turns into a ghost so an interior volume is visible. The object list nests the volumes with their type and a delete |
-| Text object | needs-host — `Plater::TextGizmo` + `TextDialog`, `Biz::Emboss` and `IFontManager` |
+| Text object | absent — this engine tree has no `Biz::Emboss`, no `IFontManager` and no `TextGizmo`: PrusaSlicer 3.0.0-alpha12 predates the emboss feature. Building it means adding a font rasteriser and a mesh boolean, which is a project, not a wire-up |
+| Hollow | done — Object ▸ Hollow… grows an inner wall `n` mm inside the surface through the engine's own voxel hollowing (`sla::hollow_mesh`, which is FDM-agnostic); `--mesh-tools-test`: an 8000 mm³ cube becomes a 3941.6 mm³ shell at 2 mm and keeps its 20 mm height |
 | Variable layer height | done — a band and a height in the object panel, written as a `LayerHeightProfile` on the object; the slice honours it (`--slice-features` proves 125 → 187 layers) |
-| Assemble (split parts) | needs-host — `Plater::CutGizmo`'s part tree, or `SimplifyGizmo` for the mesh-reduction half |
+| Assemble (split parts) | done, sans gizmo — Merge bakes the selection into one mesh in world coordinates; Split into parts walks the vertex table and gives every connected shell its own object, in place (`--mesh-tools-test`: 1 object → 2) |
 
-| Gizmo handles, drag-rotate/scale, snapping | not started — transforms are numeric panels apart from drag-move |
+| Gizmo handles, drag-rotate/scale, snapping | not started — transforms are numeric panels apart from drag-move. Building them means a picking pass and three axis handles in the Qt Quick 3D scene; the parity ledger lists it as the largest remaining viewport item |
 
 ## Camera and selection
 
@@ -187,7 +195,7 @@ Now part of the same strip.
 | Layer step from the keyboard (Up / Down) | done |
 | Click to select an object (accent tint) | done — picking walks every visible object's triangles, nearest hit wins, the document's selection follows |
 | Drag the selected object on the bed with the Move tool | done — commits `setPosition` on the document, so it is undoable and does not touch the file; the drag only arms with the Move tool, so a rotate never moves the plate under you |
-| Object list / per-object context menu | done — object list docked bottom-right; a context menu is still Orca-only |
+| Object list / per-object context menu | done — object list docked bottom-right, and right-clicking a row opens the object menu |
 | Multi-select | done — Ctrl-click toggles, Shift-click extends from the anchor, Ctrl+A selects the plate, and a drag with the Move tool moves every selected object by the same delta, undoably |
 | Ray picking for selection and measure | done — Möller–Trumbore over the mesh in printer coordinates; View3D.pick() returns nothing in this app |
 | Place on face | done — click a face with the tool armed; the facet's normal is turned to point down and the object is dropped onto the bed |
@@ -248,9 +256,9 @@ Now part of the same strip.
 | Preferences | done — Ctrl+, |
 | First run | done — a welcome screen (what next-layer is, what it does not do, and the three steps to a slice) leading into the printer setup wizard; "Skip for now" is remembered instead of reopening on every launch |
 | Object rename | done — double-click the name in the object list |
-| Statistics | done — the footer carries the engine's own estimate: printing time, filament in grams, layers, moves, slice time |
+| Statistics | done — the footer carries the engine's own estimate (printing time, filament in grams, layers, moves, slice time), and Object ▸ Statistics… measures the selected mesh: volume, surface area, facets, size, bounding box, and the mass at the current filament's density |
 | Unsaved-changes guard | done — closing the window with an unsaved plate asks, with save / discard / cancel |
-| Units | staged — the preference is stored but the fields still display millimetres |
+| Units | done — every length field shows the user's system and converts back on write, so a preset on disk is always millimetres; the preference is read at startup, not only when Preferences is opened |
 | Multiple plates | done — the tab strip adds, renames, duplicates, clears and deletes plates, and every plate is drawn in the scene as its own bed with its objects, so a new plate appears where it will print |
 | Plate options | done — the chevron on the active plate tab: rename, duplicate, clear, delete |
 | Custom G-code per layer | done — right-click the layer slider: custom G-code, a pause (M601) or a tool change at that Z. Markers draw as ticks on the slider, are saved in the project, and the engine's own `CustomGCode::Info` emits them at their layer (`tools/check` proves the marker lands once, in the right layer) |
