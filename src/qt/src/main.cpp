@@ -386,6 +386,35 @@ void prepareDataDir()
             QFile::copy(src, dst);
         }
     }
+
+    // The engine's bundle carries a sample vendor whose six printer presets name
+    // their id differently from the hardware config they belong to
+    // (`nl-myklipper` against `NL_custom-myklipper`), so none of them ever
+    // resolves: every start logs "No printer presets available for configuration
+    // MyKlipper" once per sample and the machines are not selectable. The engine
+    // copies that vendor into the local bundle on first load, so the way to keep
+    // it out is a vendor description of our own: the copy step skips a vendor
+    // that already has one. next-layer ships its own custom bundle and has no use
+    // for samples.
+    const QString samples = data + "/presets/local/vendor-catalog/Custom";
+    QDir sampleDir(samples);
+    const QString sampleYaml = samples + "/vendor.yaml";
+    bool sampleVendor = false;
+    if (QFile file(sampleYaml); file.exists() && file.open(QIODevice::ReadOnly)) {
+        const QString text = QString::fromUtf8(file.readAll());
+        sampleVendor = text.contains(QLatin1String("NL_custom-"));
+    }
+    if (sampleVendor || !QFileInfo::exists(sampleYaml)) {
+        QDir().mkpath(samples);
+        for (const QFileInfo& entry : sampleDir.entryInfoList({QStringLiteral("preset-printer-custom-*.yaml")},
+                                                               QDir::Files))
+            QFile::remove(entry.filePath());
+        QFile stub(sampleYaml);
+        if (stub.open(QIODevice::WriteOnly | QIODevice::Truncate))
+            stub.write("kind: vendor\nid: 'Custom'\nname: 'Custom'\nversion: 1.0.0\n"
+                       "features:\n  printer: {}\n  tool: {}\n  feeder: {}\n  sheet: {}\n"
+                       "printer_families: []\n");
+    }
 }
 
 void initEngine()
@@ -1306,9 +1335,18 @@ int main(int argc, char* argv[])
                 std::printf("  refused %s\n", refusal.toUtf8().constData());
             for (const QString& unfitted : report.value(QStringLiteral("unfitted")).toStringList())
                 std::printf("  unfitted %s\n", unfitted.toUtf8().constData());
+            const QStringList elsewhere = report.value(QStringLiteral("elsewhere")).toStringList();
+            if (!elsewhere.isEmpty())
+                std::printf("  %lld setting(s) belong to another profile on this engine: %s\n",
+                            static_cast<long long>(elsewhere.size()),
+                            elsewhere.join(QStringLiteral(", ")).toUtf8().constData());
+            const QStringList dropped = report.value(QStringLiteral("dropped")).toStringList();
             std::printf("  %lld key(s) this engine has no setting for were dropped\n",
-                        static_cast<long long>(
-                            report.value(QStringLiteral("dropped")).toStringList().size()));
+                        static_cast<long long>(dropped.size()));
+            if (qEnvironmentVariableIsSet("NEXT_LAYER_DEBUG_PRESETS")) {
+                for (const QString& key : dropped)
+                    std::printf("    dropped %s\n", key.toUtf8().constData());
+            }
         } else if (parser.isSet(import_preset_option)) {
             const QStringList parts = parser.value(import_preset_option).split(QLatin1Char(','));
             if (parts.size() != 2) {

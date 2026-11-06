@@ -266,6 +266,19 @@ Item {
 
             Text {
                 width: parent.width
+                visible: root.importResult.elsewhere && root.importResult.elsewhere.length > 0
+                text: root.importResult.elsewhere && root.importResult.elsewhere.length > 0
+                      ? root.importResult.elsewhere.length
+                        + " of them live in another profile on this engine (retraction is per filament here), so they stay with the machine's own settings."
+                      : ""
+                wrapMode: Text.WordWrap
+                font.family: Type.family
+                font.pixelSize: Type.sizeCaption
+                color: Colors.textTertiary
+            }
+
+            Text {
+                width: parent.width
                 text: (root.importResult.dropped ? root.importResult.dropped.length : 0)
                       + " setting(s) were dropped: this engine has no equivalent, and a guessed value is worse than none."
                 wrapMode: Text.WordWrap

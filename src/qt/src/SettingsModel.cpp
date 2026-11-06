@@ -316,10 +316,33 @@ bool percentageParts(const QVariant& input, double& value, bool& isPercent)
     return ok;
 }
 
-bool assignValue(ConfigValue& current, const ConfigItemDef& def, const QVariant& input)
+bool assignValue(ConfigValue& current, const ConfigItemDef& def, const QVariant& incoming)
 {
+    // Slicers that write one value per extruder express even a single-nozzle
+    // machine as a one-element list. For a setting that holds one value, the list
+    // is that value; handing the list to the string case wrote an empty filament
+    // type, which the engine then treated as no filament at all.
+    QVariant input = incoming;
+    const std::type_info& type = *def.type;
+    const bool holdsList = type == typeid(std::vector<bool>) || type == typeid(std::vector<int>)
+        || type == typeid(std::vector<double>) || type == typeid(std::vector<Percentage>)
+        || type == typeid(std::vector<FloatOrPercentage>) || type == typeid(std::vector<Vec2d>)
+        || type == typeid(std::vector<std::string>);
+    if (!holdsList && input.typeId() == QMetaType::QVariantList && !input.toList().isEmpty())
+        input = input.toList().first();
+
     if (*def.type == typeid(bool)) {
-        current = ConfigValue{input.toBool()};
+        // The other slicers write booleans as "1"/"0" as often as true/false, and
+        // a raw string handed to QVariant::toBool would not always survive that.
+        const QVariant::Type type = input.typeId() == QMetaType::QString
+                                        ? QVariant::String : QVariant::Bool;
+        if (type == QVariant::String) {
+            const QString text = input.toString().trimmed().toLower();
+            current = ConfigValue{!(text.isEmpty() || text == QLatin1String("0")
+                                    || text == QLatin1String("false"))};
+        } else {
+            current = ConfigValue{input.toBool()};
+        }
         return true;
     }
 
@@ -1076,6 +1099,25 @@ QString SettingsModel::blockOf(const QString& name) const
         if (entry.name == name)
             return entry.tabKey;
     return QString();
+}
+
+bool SettingsModel::canHoldIn(const QString& name, const QString& block) const
+{
+    for (const Impl::Entry& entry : m_impl->entries) {
+        if (entry.name != name)
+            continue;
+        if (entry.tabKey == block)
+            return true;
+        // Retraction, for one, is a process setting this engine lets a filament
+        // override; a filament preset may carry it even though the process block
+        // is where it is defined.
+        for (const ConfigLocation& location : entry.def->overrides_in)
+            if (const auto* fdm = std::get_if<FDMConfigLocation>(&location);
+                fdm != nullptr && tabKeyFor(*fdm) == block)
+                return true;
+        return false;
+    }
+    return false;
 }
 
 QString SettingsModel::nameDump() const

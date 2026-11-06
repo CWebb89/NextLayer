@@ -21,6 +21,10 @@ struct Report
     QStringList prints;
     QStringList filaments;
     QStringList refused;
+    /// Keys this engine has, but in a different kind of preset than the one being
+    /// written: a machine's retraction settings are per-filament here, so they do
+    /// not belong in a printer preset and are not lost settings either.
+    QStringList elsewhere;
     QStringList droppedKeys;
     QStringList unfitted;
     QString error;

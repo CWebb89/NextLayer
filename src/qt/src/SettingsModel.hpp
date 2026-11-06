@@ -24,6 +24,9 @@ public:
     /// The block a setting belongs to: "printer", "print" or "filament"; empty
     /// when this engine has no such setting.
     Q_INVOKABLE QString blockOf(const QString& name) const;
+    /// True when the setting can be written into that block: it lives there, or
+    /// the engine lets that block override it (a filament overriding retraction).
+    Q_INVOKABLE bool canHoldIn(const QString& name, const QString& block) const;
     // A point-list setting flattened to [x0, y0, x1, y1, ...]. A nested
     // QVariantList reaches QML as an array-like object whose elements are not
     // plain arrays, so the flat form is what a QML editor can index safely.

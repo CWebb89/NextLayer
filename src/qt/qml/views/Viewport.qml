@@ -40,6 +40,13 @@ Item {
     property var measurePoints: []
 
     property bool moveEnabled: false
+
+    /// A selected object can be dragged across the bed without first arming the
+    /// move tool. Selecting it is the intent; reaching for a tool afterwards to
+    /// do the obvious next thing is not. The move tool still exists, for the axis
+    /// handles and for dragging an unselected object.
+    readonly property bool dragSelectedEnabled: root.mode === "model"
+        && !root.measureActive && !root.paintActive && !root.layOnFaceActive
     property bool layOnFaceActive: false
     property bool paintActive: false
     property int paintObjectId: 0
@@ -958,7 +965,8 @@ Item {
         cursorShape: root.measureActive || root.paintActive || root.layOnFaceActive
                    ? Qt.CrossCursor
                    : input.dragging ? Qt.ClosedHandCursor
-                   : root.moveEnabled && input.containsMouse ? Qt.SizeAllCursor
+                   : (root.moveEnabled || (root.dragSelectedEnabled && plateDocument.selectedCount > 0))
+                     && input.containsMouse ? Qt.SizeAllCursor
                    : (pressed && input.panning) ? Qt.ClosedHandCursor
                    : Qt.ArrowCursor
 
@@ -972,6 +980,7 @@ Item {
         property real dragPlaneZ: 0
         property int gizmoAxis: -1
         property var gizmoStart: null
+        property vector3d gizmoDelta: Qt.vector3d(0, 0, 0)
 
         onPressed: (mouse) => {
             input.forceActiveFocus()
@@ -1030,7 +1039,9 @@ Item {
                     plateDocument.selectObject(id, true)
                 else if (!plateDocument.isSelected(id))
                     plateDocument.selectObject(id)
-                if (!root.moveEnabled || !plateDocument.isSelected(id))
+                if (!plateDocument.isSelected(id))
+                    return
+                if (!root.moveEnabled && !root.dragSelectedEnabled)
                     return
                 input.dragging = true
                 input.dragPlaneZ = hit.z
@@ -1043,8 +1054,13 @@ Item {
 
         onReleased: (mouse) => {
             if (input.gizmoAxis >= 0) {
+                const moved = input.gizmoDelta
                 input.gizmoAxis = -1
                 input.gizmoStart = null
+                input.gizmoDelta = Qt.vector3d(0, 0, 0)
+                root.dragOffset = Qt.vector3d(0, 0, 0)
+                if (Math.abs(moved.x) + Math.abs(moved.y) + Math.abs(moved.z) > 0.0005)
+                    plateDocument.moveSelection(moved.x, moved.y, moved.z)
             }
 
             if (root.paintActive && input.pressed) {
@@ -1083,7 +1099,13 @@ Item {
                     const point = plateScene.gizmoAxisPoint(input.gizmoAxis, ray[0], ray[1])
                     const delta = root.vSub(point, input.gizmoStart)
                     if (Math.abs(delta.x) + Math.abs(delta.y) + Math.abs(delta.z) > 0.0005) {
-                        plateDocument.moveSelection(delta.x, delta.y, delta.z)
+                        // Preview only: committing here ran an undo step and a plate
+                        // rebuild for every mouse report, which is what made dragging
+                        // a handle crawl on a busy plate. The move lands on release.
+                        input.gizmoDelta = root.vAdd(input.gizmoDelta, delta)
+                        root.dragOffset = Qt.vector3d(input.gizmoDelta.x,
+                                                      input.gizmoDelta.y,
+                                                      input.gizmoDelta.z)
                         input.gizmoStart = point
                     }
                 }

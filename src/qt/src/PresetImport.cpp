@@ -33,12 +33,28 @@ const QSet<QString>& metaKeys()
         QStringLiteral("is_custom_defined"), QStringLiteral("version"),
         QStringLiteral("renamed_from"), QStringLiteral("upward_compatible"),
         QStringLiteral("inherits_prints"),
+        // Preset wiring rather than settings: which profile a machine defaults to,
+        // what the preset is called in that slicer, which variant it belongs to,
+        // and the host and filename conventions, which this app has its own of.
+        QStringLiteral("default_filament_profile"), QStringLiteral("default_print_profile"),
+        QStringLiteral("filament_settings_id"), QStringLiteral("print_settings_id"),
+        QStringLiteral("printer_settings_id"), QStringLiteral("filament_id"),
+        QStringLiteral("filament_extruder_variant"), QStringLiteral("print_extruder_variant"),
+        QStringLiteral("printer_extruder_variant"), QStringLiteral("printer_extruder_id"),
+        QStringLiteral("print_extruder_id"), QStringLiteral("host_type"),
+        QStringLiteral("print_host"), QStringLiteral("printer_agent"),
+        QStringLiteral("filename_format"), QStringLiteral("extruder_colour"),
+        QStringLiteral("filament_vendor"), QStringLiteral("nozzle_type"),
     };
     return keys;
 }
 
 enum class Transform {
     Rename,
+    /// The value goes over as it is: a JSON number as a number, a list as a
+    /// list, a string as a string, and the engine's own setting decides what it
+    /// means. A key this engine has under the same name needs no table entry.
+    Auto,
     Percent,
     PercentObject,
     Integer,
@@ -115,7 +131,6 @@ const Mapping* mappingTable(size_t& count)
         {"initial_layer_acceleration", "first_layer_acceleration", Transform::Real, nullptr},
         {"bridge_infill_acceleration", "bridge_acceleration", Transform::Real, nullptr},
         {"enable_support", "support_material", Transform::Enum, "support_material_on"},
-        {"support_type", "support_material_auto", Transform::EnumBoolean, "support_type_auto"},
         {"support_style", "support_material_style", Transform::Enum, "support_material_style"},
         {"support_on_build_plate_only", "support_material_buildplate_only", Transform::Boolean, nullptr},
         {"support_top_z_distance", "support_material_contact_distance", Transform::Real, nullptr},
@@ -160,6 +175,17 @@ const Mapping* mappingTable(size_t& count)
         {"slow_down_min_layer_time", "slowdown_below_layer_time", Transform::Real, nullptr},
         {"filament_shrinkage_compensation_z", "filament_shrinkage_compensation_z", Transform::Real, nullptr},
         {"filament_max_volumetric_speed", "filament_max_volumetric_speed", Transform::Real, nullptr},
+        // A filament preset carries its own retraction, which is where this engine
+        // keeps it too: the same names as the machine-level keys above, prefixed.
+        {"filament_retraction_length", "retract_length", Transform::Real, nullptr},
+        {"filament_retraction_speed", "retract_speed", Transform::Real, nullptr},
+        {"filament_retraction_minimum_travel", "retract_before_travel", Transform::Real, nullptr},
+        {"filament_retract_before_wipe", "retract_before_wipe", Transform::Real, nullptr},
+        {"filament_retract_restart_extra", "retract_restart_extra", Transform::Real, nullptr},
+        {"filament_retract_when_changing_layer", "retract_layer_change", Transform::Boolean, nullptr},
+        {"filament_z_hop", "retract_lift", Transform::Real, nullptr},
+        {"filament_wipe", "wipe", Transform::Boolean, nullptr},
+        {"initial_layer_print_height", "first_layer_height", Transform::Real, nullptr},
         {"printable_area", "bed_shape", Transform::BedShape, nullptr},
         {"printable_height", "max_print_height", Transform::Real, nullptr},
         {"machine_max_speed_x", "machine_max_feedrate_x", Transform::RealList, nullptr},
@@ -174,8 +200,6 @@ const Mapping* mappingTable(size_t& count)
         {"machine_max_jerk_y", "machine_max_jerk_y", Transform::RealList, nullptr},
         {"machine_max_jerk_z", "machine_max_jerk_z", Transform::RealList, nullptr},
         {"machine_max_jerk_e", "machine_max_jerk_e", Transform::RealList, nullptr},
-        {"default_filament_profile", "default_filament_profile", Transform::Rename, nullptr},
-        {"default_print_profile", "default_print_profile", Transform::Rename, nullptr},
         {"gcode_flavor", "gcode_flavor", Transform::Rename, nullptr},
         {"before_layer_change_gcode", "before_layer_gcode", Transform::Rename, nullptr},
         {"layer_change_gcode", "layer_gcode", Transform::Rename, nullptr},
@@ -189,7 +213,6 @@ const Mapping* mappingTable(size_t& count)
         {"extruder_clearance_height_to_rod", "extruder_clearance_height", Transform::Real, nullptr},
         {"extruder_clearance_height_to_lid", "extruder_clearance_height", Transform::Real, nullptr},
         {"extruder_clearance_radius", "extruder_clearance_radius", Transform::Real, nullptr},
-        {"extruder_colour", "extruder_colour", Transform::Rename, nullptr},
         {"extruder_offset", "extruder_offset", Transform::Rename, nullptr},
         {"thumbnails", "thumbnails", Transform::Rename, nullptr},
         {"filament_colour", "filament_colour", Transform::Rename, nullptr},
@@ -219,8 +242,6 @@ const Mapping* mappingTable(size_t& count)
         {"single_extruder_multi_material", "single_extruder_multi_material", Transform::Boolean, nullptr},
         {"single_extruder_multi_material_priming", "single_extruder_multi_material_priming", Transform::Boolean, nullptr},
         {"flush_into_objects", "wipe_into_objects", Transform::Boolean, nullptr},
-        {"flush_into_infill", "wipe_into_infill", Transform::Boolean, nullptr},
-        {"reduce_infill_retraction", "wipe_into_infill", Transform::Boolean, nullptr},
         {"wall_infill_order", "infill_first", Transform::Boolean, nullptr},
     };
     count = sizeof(table) / sizeof(table[0]);
@@ -349,11 +370,35 @@ QVariant percentObject(double number)
     return object;
 }
 
+/// The other slicer's value handed over unchanged, for a key this engine has
+/// under the same name: the engine's setting holds the type and does the coercing.
+QVariant transformAuto(const QJsonValue& value)
+{
+    if (!value.isArray())
+        return value.toVariant();
+    QVariantList items;
+    for (const QJsonValue& item : value.toArray())
+        items.append(item.toVariant());
+    return items;
+}
+
 QVariant transformValue(const QJsonValue& value, const Mapping& mapping)
 {
     switch (mapping.transform) {
     case Transform::Rename:
         return value.toVariant();
+    case Transform::Auto: {
+        // The engine's setting holds the type; the value only has to survive the
+        // trip. A number stays a number, a list a list, a percentage sign stays
+        // on the string it came in on.
+        if (value.isArray()) {
+            QVariantList items;
+            for (const QJsonValue& item : value.toArray())
+                items.append(item.toVariant());
+            return items;
+        }
+        return value.toVariant();
+    }
     case Transform::Percent:
         return headNumber(value, nullptr);
     case Transform::PercentObject:
@@ -602,6 +647,7 @@ Report importPresets(const QString& sourceDirectory, SettingsModel& settings, bo
 
     const QString vendorDirectory = presets::customVendorDirectory();
     QSet<QString> dropped;
+    QStringList elsewhere;
 
     for (const QString& kind : presetKinds()) {
         const QStringList paths = userPresetPaths(sourceDirectory, kind);
@@ -622,21 +668,34 @@ Report importPresets(const QString& sourceDirectory, SettingsModel& settings, bo
                 if (metaKeys().contains(key) || key.startsWith(QLatin1String("compatible_")))
                     continue;
                 const Mapping* mapping = findMapping(key);
-                if (mapping == nullptr || unmappedKeys().contains(key)) {
+                if (unmappedKeys().contains(key)) {
                     dropped.insert(key);
                     continue;
                 }
-                const QString target = QString::fromLatin1(mapping->target);
+
+                // A key with no table entry is not automatically lost: most of the
+                // other slicer's names are this engine's names too, and the engine
+                // already knows what type each one holds. Only a key it does not
+                // have at all is dropped, and that is reported.
+                const QString target = mapping != nullptr
+                    ? QString::fromLatin1(mapping->target) : key;
                 const QString block = settings.blockOf(target);
-                if (block.isEmpty() || block != (kind == QLatin1String("machine")
-                                                 ? QStringLiteral("printer")
-                                                 : kind == QLatin1String("filament")
-                                                   ? QStringLiteral("filament")
-                                                   : QStringLiteral("process"))) {
+                const QString wanted = kind == QLatin1String("machine")
+                                           ? QStringLiteral("printer")
+                                           : kind == QLatin1String("filament")
+                                                 ? QStringLiteral("filament")
+                                                 : QStringLiteral("process");
+                if (block.isEmpty()) {
                     dropped.insert(key);
                     continue;
                 }
-                const QVariant transformed = transformValue(it.value(), *mapping);
+                if (!settings.canHoldIn(target, wanted)) {
+                    elsewhere.append(key);
+                    continue;
+                }
+                const QVariant transformed = mapping != nullptr
+                    ? transformValue(it.value(), *mapping)
+                    : transformAuto(it.value());
                 if (transformed.typeId() == QMetaType::QString && transformed.toString().isEmpty())
                     continue;
                 values.insert(target, transformed);
@@ -743,6 +802,9 @@ Report importPresets(const QString& sourceDirectory, SettingsModel& settings, bo
         }
     }
 
+    elsewhere.sort();
+    elsewhere.erase(std::unique(elsewhere.begin(), elsewhere.end()), elsewhere.end());
+    report.elsewhere = elsewhere;
     report.droppedKeys = QStringList(dropped.constBegin(), dropped.constEnd());
     std::sort(report.droppedKeys.begin(), report.droppedKeys.end());
     return report;

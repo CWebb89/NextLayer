@@ -1032,6 +1032,7 @@ QVariantMap PresetStore::importSlicerPresets(const QString& directory)
     result.insert(QStringLiteral("filaments"), report.filaments);
     result.insert(QStringLiteral("refused"), report.refused);
     result.insert(QStringLiteral("unfitted"), report.unfitted);
+    result.insert(QStringLiteral("elsewhere"), report.elsewhere);
     result.insert(QStringLiteral("dropped"), report.droppedKeys);
     result.insert(QStringLiteral("count"), report.count());
     result.insert(QStringLiteral("firstPrinter"),

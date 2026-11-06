@@ -3,6 +3,10 @@
 
 #include "PlateScene.hpp"
 
+#include <QElapsedTimer>
+
+#include <cstdio>
+
 #include <Slic3r/Biz/Algorithms/TriangleMesh.hpp>
 
 #include "Paint.hpp"
@@ -291,6 +295,8 @@ bool PlateScene::hasSelection() const
 
 void PlateScene::rebuild()
 {
+    QElapsedTimer timer;
+    timer.start();
     TriangleMesh plate;
     TriangleMesh selection;
 
@@ -451,6 +457,11 @@ void PlateScene::rebuild()
             painted.transform(object->trafo.get_matrix());
     }
     m_paint->setColoredMesh(painted, paintedColors);
+
+    if (qEnvironmentVariableIsSet("NEXT_LAYER_DEBUG_PRESETS"))
+        std::fprintf(stderr, "rebuild: %lld ms, %lld objects\n",
+                     static_cast<long long>(timer.elapsed()),
+                     static_cast<long long>(m_document->ids().size()));
 
     emit geometryChanged();
 }
