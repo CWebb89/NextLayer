@@ -1047,6 +1047,19 @@ QVariantList SettingsModel::modifiedValues(const QString& tab) const
     return list;
 }
 
+/// The block a setting belongs to: "printer", "print" or "filament", empty for
+/// a name this engine does not have. An import needs this because another
+/// slicer's machine profile carries settings this one keeps in the filament
+/// block (retraction, for one), and writing those into a printer preset makes
+/// the engine reject it.
+QString SettingsModel::blockOf(const QString& name) const
+{
+    for (const Impl::Entry& entry : m_impl->entries)
+        if (entry.name == name)
+            return entry.tabKey;
+    return QString();
+}
+
 QString SettingsModel::nameDump() const
 {
     QStringList names;

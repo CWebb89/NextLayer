@@ -9,6 +9,7 @@
 #include "MeshGeometry.hpp"
 #include "Palette.hpp"
 #include "PreviewData.hpp"
+#include "PresetImport.hpp"
 #include "PresetStore.hpp"
 #include "Calibration.hpp"
 #include "PrinterLink.hpp"
@@ -803,6 +804,9 @@ int main(int argc, char* argv[])
     const QCommandLineOption import_preset_option("import-preset",
         "Read a shared preset file into the user presets: KIND,PATH. Prints the name it "
         "landed under.", "kind,path");
+    const QCommandLineOption import_slicer_option("import-slicer",
+        "Read another slicer's presets out of its configuration directory and write the "
+        "ones this engine can express into the user's own bundle. ", "dir");
     parser.addOptions({qml_option, smoke_option, shot_option, slice_option, preview_option, dump_config_option,
                        dump_tabs_option, dump_names_option, dump_subtab_option, transform_option, hide_feature_option,
                        view_type_option, hide_option_option,
@@ -815,7 +819,8 @@ int main(int argc, char* argv[])
                        update_install_option, multi_tool_option, print_host_test_option, print_host_start_option, volume_settings_option, calibration_test_option, shape_test_option, keep_gcode_option, scene_selftest_option, preview_stats_option, vgcode_shot_option,
                        dump_presets_option, dump_presets_json_option, dump_fonts_option, dump_object_settings_option, preset_printer_option, preset_process_option, preset_filament_option, preset_filaments_option,
                        set_option, add_printer_option, save_preset_option, rename_preset_option,
-                       delete_preset_option, export_preset_option, import_preset_option});
+                       delete_preset_option, export_preset_option, import_preset_option,
+                       import_slicer_option});
     parser.process(app);
 
     const QStringList files = parser.positionalArguments();
@@ -1166,7 +1171,8 @@ int main(int argc, char* argv[])
 
     const bool preset_action = parser.isSet(add_printer_option) || parser.isSet(save_preset_option)
                             || parser.isSet(rename_preset_option) || parser.isSet(delete_preset_option)
-                            || parser.isSet(export_preset_option) || parser.isSet(import_preset_option);
+                            || parser.isSet(export_preset_option) || parser.isSet(import_preset_option)
+                            || parser.isSet(import_slicer_option);
 
     // --set applies to whatever the settings model currently holds, so the
     // preset actions below and the plain resolve/dump path both honour it.
@@ -1278,6 +1284,30 @@ int main(int argc, char* argv[])
             if (error.isEmpty())
                 std::printf("exported %s to %s\n", parts.at(1).toUtf8().constData(),
                             parts.at(2).toUtf8().constData());
+        } else if (parser.isSet(import_slicer_option)) {
+            const QString directory = parser.value(import_slicer_option);
+            const next_layer::presetimport::Report report =
+                next_layer::presetimport::importPresets(directory, *settings, true);
+            if (!report.ok()) {
+                std::fprintf(stderr, "import: %s\n", report.error.toUtf8().constData());
+                return 1;
+            }
+            std::printf("imported %d preset(s) from %s\n", report.count(),
+                        directory.toUtf8().constData());
+            std::printf("  printers:  %s\n",
+                        report.printers.isEmpty() ? "-"
+                            : report.printers.join(QStringLiteral(", ")).toUtf8().constData());
+            std::printf("  prints:    %s\n",
+                        report.prints.isEmpty() ? "-"
+                            : report.prints.join(QStringLiteral(", ")).toUtf8().constData());
+            std::printf("  filaments: %s\n",
+                        report.filaments.isEmpty() ? "-"
+                            : report.filaments.join(QStringLiteral(", ")).toUtf8().constData());
+            for (const QString& refusal : report.refused)
+                std::printf("  refused %s\n", refusal.toUtf8().constData());
+            if (!report.droppedKeys.isEmpty())
+                std::printf("  %lld key(s) this engine has no setting for were dropped\n",
+                            static_cast<long long>(report.droppedKeys.size()));
         } else if (parser.isSet(import_preset_option)) {
             const QStringList parts = parser.value(import_preset_option).split(QLatin1Char(','));
             if (parts.size() != 2) {

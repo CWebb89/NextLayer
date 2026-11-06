@@ -29,6 +29,9 @@ add_executable(next-layer-qt
     src/PrinterLink.hpp
     src/PresetStore.cpp
     src/PresetStore.hpp
+    src/PresetImport.cpp
+    src/PresetImport.hpp
+    src/PresetFiles.hpp
     src/PresetYaml.hpp
     src/TransformController.cpp
     src/TransformController.hpp

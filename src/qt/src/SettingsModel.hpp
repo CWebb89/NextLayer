@@ -21,6 +21,9 @@ public:
     Q_INVOKABLE QVariantList tabList() const;
     Q_INVOKABLE QVariantList groups(const QString& tab, const QString& subtab, const QString& filter) const;
     Q_INVOKABLE QVariant value(const QString& name) const;
+    /// The block a setting belongs to: "printer", "print" or "filament"; empty
+    /// when this engine has no such setting.
+    Q_INVOKABLE QString blockOf(const QString& name) const;
     // A point-list setting flattened to [x0, y0, x1, y1, ...]. A nested
     // QVariantList reaches QML as an array-like object whose elements are not
     // plain arrays, so the flat form is what a QML editor can index safely.

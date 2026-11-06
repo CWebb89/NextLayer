@@ -4,6 +4,7 @@
 #include "PresetStore.hpp"
 
 #include "SliceRuntime.hpp"
+#include "PresetFiles.hpp"
 #include "PresetYaml.hpp"
 #include "SettingsModel.hpp"
 
@@ -23,13 +24,9 @@
 
 namespace {
 
-constexpr const char* kCustomRepo = "next-layer-custom";
-constexpr const char* kCustomVendor = "Custom";
-
 QString presetsRoot()
 {
-    const QString base = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
-    return base + QStringLiteral("/next-layer/presets");
+    return next_layer::presets::root();
 }
 
 QStringList bundleRoots()
@@ -38,23 +35,9 @@ QStringList bundleRoots()
             QString::fromLatin1(NEXT_LAYER_RESOURCES_DIR) + QStringLiteral("/presets")};
 }
 
-QString slugOf(const QString& name)
-{
-    QString slug;
-    for (const QChar character : name.toLower()) {
-        if (character.isLetterOrNumber())
-            slug += character;
-        else if (!slug.isEmpty() && !slug.endsWith(QLatin1Char('-')))
-            slug += QLatin1Char('-');
-    }
-    while (slug.endsWith(QLatin1Char('-')))
-        slug.chop(1);
-    return slug;
-}
-
 QString freshId()
 {
-    return QUuid::createUuid().toString(QUuid::WithoutBraces);
+    return next_layer::presets::freshId();
 }
 
 // One entry per hardware configuration: `name` is what the engine resolves by
@@ -166,27 +149,12 @@ QString presetDocument(const QString& kind, const QString& name, const QString& 
                        const QString& condition, const QString& valuesYaml,
                        const QString& id = QString())
 {
-    QString document = QStringLiteral("kind: ") + kind
-                     + QStringLiteral("\nid: ") + (id.isEmpty() ? freshId() : id)
-                     + QStringLiteral("\nname: ") + next_layer::yaml::quoted(name)
-                     + QLatin1Char('\n');
-    if (!condition.isEmpty())
-        document += QStringLiteral("condition: ") + condition + QLatin1Char('\n');
-    if (!parent.isEmpty())
-        document += QStringLiteral("inherits:\n- ") + next_layer::yaml::quoted(parent)
-                  + QLatin1Char('\n');
-    if (!valuesYaml.trimmed().isEmpty())
-        document += QStringLiteral("values:\n") + valuesYaml;
-    return document;
+    return next_layer::presets::document(kind, name, parent, condition, valuesYaml, id);
 }
 
 bool writeFile(const QString& path, const QString& contents)
 {
-    QDir().mkpath(QFileInfo(path).absolutePath());
-    QFile file(path);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
-        return false;
-    return file.write(contents.toUtf8()) >= 0;
+    return next_layer::presets::writeFile(path, contents);
 }
 
 QString presetIdIn(const QString& path)
@@ -981,39 +949,15 @@ QString PresetStore::createPrinter(const QString& name, double bedWidth, double 
     if (bedWidth <= 0.0 || bedHeight <= 0.0 || bedDepth <= 0.0)
         return QStringLiteral("The bed size and height must be positive");
 
-    const QString dir = presetsRoot() + QStringLiteral("/local/") + QLatin1String(kCustomRepo)
-                      + QLatin1Char('/') + QLatin1String(kCustomVendor);
-    const QString manifestPath = dir + QStringLiteral("/printers.json");
-
-    QJsonArray manifest;
-    if (QFileInfo::exists(manifestPath)) {
-        QFile file(manifestPath);
-        if (file.open(QIODevice::ReadOnly))
-            manifest = QJsonDocument::fromJson(file.readAll()).object()
-                .value(QStringLiteral("printers")).toArray();
-    }
-
-    QStringList slugs;
-    bool known = false;
+    const QString dir = next_layer::presets::customVendorDirectory();
     QString slug;
-    for (const QJsonValue& value : manifest) {
-        const QJsonObject entry = value.toObject();
-        if (entry.value(QStringLiteral("name")).toString() == name) {
-            known = true;
-            slug = entry.value(QStringLiteral("slug")).toString();
-        }
-        slugs.append(entry.value(QStringLiteral("slug")).toString());
-    }
-
-    if (!known) {
-        slug = slugOf(name);
-        if (slug.isEmpty())
-            return QStringLiteral("The name needs at least one letter or digit");
-        const QString baseSlug = slug;
-        int suffix = 2;
-        while (slugs.contains(slug))
-            slug = baseSlug + QLatin1Char('-') + QString::number(suffix++);
-    }
+    for (const next_layer::presets::CustomPrinter& printer : next_layer::presets::customPrinters())
+        if (printer.name == name)
+            slug = printer.slug;
+    if (slug.isEmpty())
+        slug = next_layer::presets::slugOf(name);
+    if (slug.isEmpty())
+        return QStringLiteral("The name needs at least one letter or digit");
 
     const QVariantList bed = {
         QVariantList{0.0, 0.0}, QVariantList{bedWidth, 0.0},
@@ -1061,49 +1005,5 @@ QString PresetStore::createPrinter(const QString& name, double bedWidth, double 
                      m_settings->valuesYaml(QStringLiteral("filament"), false)))
         return QStringLiteral("Could not write the filament preset");
 
-    QJsonObject entry;
-    entry.insert(QStringLiteral("name"), name);
-    entry.insert(QStringLiteral("slug"), slug);
-    if (!known)
-        manifest.append(entry);
-
-    QJsonObject root;
-    root.insert(QStringLiteral("printers"), manifest);
-    if (!writeFile(manifestPath, QString::fromUtf8(QJsonDocument(root).toJson(QJsonDocument::Indented))))
-        return QStringLiteral("Could not write the printer manifest");
-
-    QString vendorYaml = QStringLiteral(
-        "kind: vendor\nid: Custom\nname: Custom\nversion: 1.0.0\n"
-        "features:\n  printer: {}\n  tool: {}\n  feeder: {}\n  sheet: {}\nprinter_families:\n");
-    for (const QJsonValue& value : manifest) {
-        const QJsonObject printer = value.toObject();
-        vendorYaml += QStringLiteral("- label: ") + next_layer::yaml::quoted(printer.value(QStringLiteral("name")).toString())
-                   + QStringLiteral("\n  base_model: NL_") + printer.value(QStringLiteral("slug")).toString()
-                   + QLatin1Char('\n');
-    }
-    vendorYaml += QStringLiteral(
-        "---\nkind: tool\ntechnology: FFF\nid: '0.4'\nname: '0.4'\n"
-        "features:\n  nozzle_diameter:\n    default: 0.4\n"
-        "---\nkind: sheet\nid: pei_smooth\nname: PEI Smooth\ntype: pei_smooth\n");
-
-    for (const QJsonValue& value : manifest) {
-        const QJsonObject printer = value.toObject();
-        const QString printerName = next_layer::yaml::quoted(printer.value(QStringLiteral("name")).toString());
-        const QString printerSlug = printer.value(QStringLiteral("slug")).toString();
-        vendorYaml += QStringLiteral("---\nkind: printer\ntechnology: FFF\nname: ") + printerName
-                   + QStringLiteral("\nid: NL_") + printerSlug
-                   + QStringLiteral("\nmodel:\n  base_model: NL_") + printerSlug
-                   + QStringLiteral("\n  model: NL_") + printerSlug
-                   + QStringLiteral("_MODEL\ntool_count: 1\nfeatures: {}\n")
-                   + QStringLiteral("---\nkind: printer_config\nid: nl-") + printerSlug
-                   + QStringLiteral("\nname: ") + printerName
-                   + QStringLiteral("\nprinter: NL_") + printerSlug
-                   + QStringLiteral("\nlegacy_printer_model:\n- ") + printerName
-                   + QStringLiteral("\ntool_count: 1\ntools:\n- tool: '0.4'\nsheet: pei_smooth\n");
-    }
-
-    if (!writeFile(dir + QStringLiteral("/vendor.yaml"), vendorYaml))
-        return QStringLiteral("Could not write the vendor bundle");
-
-    return {};
+    return next_layer::presets::addCustomPrinter(name);
 }
