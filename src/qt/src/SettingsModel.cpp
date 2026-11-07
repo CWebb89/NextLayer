@@ -472,6 +472,68 @@ QString enumLabel(const QString& name, const EnumValueDef& definition)
     return QString::fromStdString(definition.str_ui);
 }
 
+QVariantList choicesFor(const QString& name, const ConfigValue& value);
+
+/// One tree generator, several shapes. The engine exposes a single organic
+/// support style whose branch angle, branch diameter, tip diameter and top
+/// density are settings; the four tree styles this app offers are parameter
+/// sets over that generator, so a user picks a shape and every number it stands
+/// for stays visible and editable in the same sub-tab.
+struct TreeKnob
+{
+    const char* name;
+    double value;
+};
+
+struct TreeProfile
+{
+    const char* key;
+    const char* label;
+    TreeKnob knobs[8];
+};
+
+const TreeProfile kTreeProfiles[] = {
+    {"organic", "Tree", {}},
+    {"tree_slim",
+     "Tree slim",
+     {{"support_tree_branch_diameter", 1.2},
+         {"support_tree_branch_diameter_angle", 2.0},
+         {"support_tree_tip_diameter", 0.5},
+         {"support_tree_top_rate", 20.0},
+         {"support_tree_angle", 45.0},
+         {"support_tree_angle_slow", 30.0},
+         {"support_tree_branch_distance", 1.5},
+         {}}},
+    {"tree_strong",
+     "Tree strong",
+     {{"support_tree_branch_diameter", 3.5},
+         {"support_tree_branch_diameter_angle", 10.0},
+         {"support_tree_tip_diameter", 1.4},
+         {"support_tree_top_rate", 35.0},
+         {"support_tree_angle", 30.0},
+         {"support_tree_angle_slow", 20.0},
+         {"support_tree_branch_distance", 0.8},
+         {}}},
+    {"tree_hybrid",
+     "Tree hybrid",
+     {{"support_tree_branch_diameter", 2.5},
+         {"support_tree_branch_diameter_angle", 6.0},
+         {"support_tree_tip_diameter", 0.6},
+         {"support_tree_top_rate", 30.0},
+         {"support_tree_angle", 35.0},
+         {"support_tree_angle_slow", 25.0},
+         {"support_tree_branch_distance", 2.5},
+         {}}},
+};
+
+const TreeProfile* treeProfileFor(const QString& key)
+{
+    for (const TreeProfile& profile : kTreeProfiles)
+        if (key == QLatin1String(profile.key))
+            return &profile;
+    return nullptr;
+}
+
 QVariantList choicesFor(const QString& name, const ConfigValue& value)
 {
     QVariantList choices;
@@ -488,6 +550,17 @@ QVariantList choicesFor(const QString& name, const ConfigValue& value)
             QVariantMap choice;
             choice.insert(QStringLiteral("value"), QString::fromStdString(definition.str_serialized));
             choice.insert(QStringLiteral("label"), enumLabel(name, definition));
+            choices.append(choice);
+        }
+    }
+
+    if (name == QLatin1String("support_material_style")) {
+        for (const TreeProfile& profile : kTreeProfiles) {
+            if (QLatin1String(profile.key) == QLatin1String("organic"))
+                continue;
+            QVariantMap choice;
+            choice.insert(QStringLiteral("value"), QString::fromLatin1(profile.key));
+            choice.insert(QStringLiteral("label"), QString::fromLatin1(profile.label));
             choices.append(choice);
         }
     }
@@ -783,7 +856,75 @@ struct SettingsModel::Impl
         );
         item.insert(QStringLiteral("multiline"), entry.multiline);
         item.insert(QStringLiteral("fullWidth"), entry.fullWidth);
+        if (entry.name == QLatin1String("support_material_style")) {
+            const QString profile = treeProfileInUse();
+            if (!profile.isEmpty())
+                item.insert(QStringLiteral("value"), profile);
+        }
         return item;
+    }
+
+    bool assignEntry(Entry& entry, const QVariant& input, bool& changed)
+    {
+        const ConfigValue previous = entry.currentValue;
+        if (!assignValue(entry.currentValue, *entry.def, input))
+            return false;
+        entry.modified = !(entry.currentValue == entry.defaultValue);
+        if (!(entry.currentValue == previous))
+            changed = true;
+        return true;
+    }
+
+    double knobValue(const Entry& entry) const
+    {
+        return entry.currentValue.visit([](const auto& value) { return variantFrom(value); }).toDouble();
+    }
+
+    /// The tree style the current numbers correspond to: the engine's style has
+    /// to be organic, and every knob of a profile has to match, so a profile
+    /// reads as itself after a preset reloads and never as itself after the user
+    /// has edited one of its numbers.
+    QString treeProfileInUse() const
+    {
+        const Entry* style = find(QStringLiteral("support_material_style"));
+        if (style == nullptr || !style->currentValue.holds_alternative<EnumWrapper>())
+            return QString();
+        if (style->currentValue.get<EnumWrapper>().get_string() != "organic")
+            return QString();
+
+        for (const TreeProfile& profile : kTreeProfiles) {
+            if (QLatin1String(profile.key) == QLatin1String("organic"))
+                continue;
+            bool matches = true;
+            for (const TreeKnob* knob = profile.knobs; knob->name != nullptr; ++knob) {
+                const Entry* entry = find(QString::fromLatin1(knob->name));
+                if (entry == nullptr || qAbs(knobValue(*entry) - knob->value) > 1e-6) {
+                    matches = false;
+                    break;
+                }
+            }
+            if (matches)
+                return QString::fromLatin1(profile.key);
+        }
+
+        return QString();
+    }
+
+    bool applyTreeProfile(const QString& key, bool& changed)
+    {
+        const TreeProfile* profile = treeProfileFor(key);
+        if (profile == nullptr)
+            return false;
+        Entry* style = find(QStringLiteral("support_material_style"));
+        if (style == nullptr)
+            return false;
+
+        bool applied = assignEntry(*style, QStringLiteral("organic"), changed);
+        for (const TreeKnob* knob = profile->knobs; knob->name != nullptr; ++knob) {
+            Entry* entry = find(QString::fromLatin1(knob->name));
+            applied = entry != nullptr && assignEntry(*entry, knob->value, changed) && applied;
+        }
+        return applied;
     }
 };
 
@@ -958,6 +1099,17 @@ bool SettingsModel::applyImported(const QString& name, const QVariant& value)
     Impl::Entry* entry = m_impl->find(name);
     if (entry == nullptr)
         return false;
+
+    if (entry->name == QLatin1String("support_material_style")) {
+        const QString requested = value.toString();
+        if (requested != QLatin1String("organic") && treeProfileFor(requested) != nullptr) {
+            bool changed = false;
+            const bool applied = m_impl->applyTreeProfile(requested, changed);
+            if (changed)
+                emit this->changed();
+            return applied;
+        }
+    }
 
     const std::type_info& type = *entry->def->type;
     QVariant input = value;

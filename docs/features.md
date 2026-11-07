@@ -58,7 +58,7 @@ The tab tree is the engine's own taxonomy (`ConfigItemDef::Category` and
 | Walls & Perimeters | 22 | done |
 | Infill | 15 | done |
 | Bed adhesion | 13 | done |
-| Supports | 30 | done — grid/snug/**organic (tree)** style from `support_material_style`, with the tree branch diameter, angle, double-wall and distance options exposed alongside it (confirmed in a real slice's `--dump-config`) |
+| Supports | 30 | done — grid/snug/**tree** style from `support_material_style`, four tree shapes (Tree, Tree slim, Tree strong, Tree hybrid) as parameter profiles over the engine's one organic generator, with the tree branch diameter, angle, double-wall and distance options exposed alongside them and editable after a shape is picked (confirmed in a real slice's `--dump-config`) |
 | Speed | 25 | done |
 | Motion & Dynamics | 22 | done |
 | Extrusion & Retraction | 19 | done |

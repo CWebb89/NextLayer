@@ -497,10 +497,16 @@ end
 set -l import_layers 0
 set -l import_arcs 0
 set -l import_support 0
+set -l import_branch 0
 if test -f /tmp/nl-check-import.gcode
     set import_layers (grep -c ';LAYER_CHANGE' /tmp/nl-check-import.gcode)
     set import_arcs (grep -cE '^G[23] ' /tmp/nl-check-import.gcode)
     set import_support (grep -c ';TYPE:Support material' /tmp/nl-check-import-overhang.gcode)
+end
+# The fixture asks for the tree hybrid style, which this app expresses as the
+# engine's organic style plus that profile's branch numbers: 2.5 mm branches.
+if test -f $import_cfg
+    set import_branch (grep -c '"support_tree_branch_diameter":2.5' $import_cfg)
 end
 rm -rf $import_home
 if test $import_rc -ne 0
@@ -513,8 +519,10 @@ else if test $import_arcs -lt 1
     __bad "preset import: arc fitting was imported but the G-code has no arc move"
 else if test $import_support -lt 1
     __bad "preset import: tree supports were imported but no support material was extruded"
+else if test $import_branch -eq 0
+    __bad "preset import: the tree hybrid style was imported but its 2.5 mm branch diameter did not arrive"
 else
-    __ok "preset import: fixture -> '$import_printer' / '$import_print' / '$import_filament' sliced $import_layers layers, $import_arcs arc moves, $import_support support lines"
+    __ok "preset import: fixture -> '$import_printer' / '$import_print' / '$import_filament' sliced $import_layers layers, $import_arcs arc moves, $import_support support lines, tree hybrid branches"
 end
 
 # Multi-tool gate: a tool changer has to resolve one material per extruder and a
