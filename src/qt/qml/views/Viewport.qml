@@ -492,6 +492,25 @@ Item {
                 }
             }
 
+            // Plates that are not active, dimmed: the plate being worked on is the
+            // one that reads as active, and only it is sliced. Same geometry path
+            // as the plate above, one draw call, a wash of the surface colour over
+            // it so the beds still read as beds.
+            Model {
+                id: otherPlateNode
+                objectName: "otherPlateNode"
+                geometry: plateScene.otherPlateGeometry
+                visible: plateScene.hasOtherPlates && root.mode !== "preview"
+
+                materials: PrincipledMaterial {
+                    baseColor: Colors.surfaceVariantText
+                    roughness: 0.7
+                    metalness: 0.0
+                    opacity: 0.34
+                    alphaMode: PrincipledMaterial.Blend
+                }
+            }
+
             // The selected object is its own mesh, drawn with the accent tint.
             // Same triangles, one draw call, no depth fight with the plate.
             Model {
@@ -1090,6 +1109,20 @@ Item {
             const travelled = Math.abs(mouse.x - input.pressX) + Math.abs(mouse.y - input.pressY)
             if (travelled < 4)
                 root.addMeasurePoint(mouse.x, mouse.y)
+        }
+
+        onDoubleClicked: (mouse) => {
+            // Double clicking a plate makes it the active one, which is how a
+            // multi-plate project is navigated with the mouse: the plate under the
+            // pointer is the one being asked for, and the camera then goes there.
+            if (mouse.button !== Qt.LeftButton || root.mode !== "model")
+                return
+            const point = root.planePoint(mouse.x, mouse.y, 0)
+            if (point === null)
+                return
+            const plate = plateDocument.plateAt(point)
+            if (plate >= 0 && plate !== plateDocument.activePlate)
+                root.plateSelected(plate)
         }
 
         onPositionChanged: (mouse) => {

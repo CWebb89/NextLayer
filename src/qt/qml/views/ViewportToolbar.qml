@@ -58,10 +58,14 @@ Item {
     signal plateLockToggled(int index)
     signal plateCloned(int index)
     signal plateMenuRequested(int index, real x, real y)
+    /// The plate selector was opened: the window owns the list, because a menu at
+    /// the top of the strip has to be drawn over the whole window.
+    signal plateListRequested(real x, real y)
     signal actionTriggered(string id)
     signal addRequested()
     signal toolTriggered(string id)
     signal sliceRequested()
+    signal sliceAllRequested()
 
     implicitHeight: Metrics.rowHeight + Metrics.md * 2
 
@@ -80,105 +84,68 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         spacing: Metrics.xxs
 
-        Repeater {
-            model: root.plates
+        // One control for the whole plate list. A project can hold fourteen plates
+        // and a strip of fourteen chips pushed everything else off the bar, so the
+        // plates live behind a selector that names where you are and opens the list.
+        Rectangle {
+            id: plateSelector
 
-            delegate: Item {
-                id: plateChip
+            readonly property var current: root.activePlate >= 0
+                                                && root.activePlate < root.plates.length
+                                            ? root.plates[root.activePlate] : null
 
-                required property var modelData
-                required property int index
+            width: selectorRow.implicitWidth + Metrics.md * 2
+            height: Metrics.rowHeight
+            radius: Metrics.radiusSmall
+            color: selectorMouse.containsMouse ? Colors.hoverFill : Colors.selectedFill
 
-                readonly property bool current: root.activePlate === index
+            Row {
+                id: selectorRow
+                anchors.centerIn: parent
+                spacing: Metrics.xs
 
-                width: plateChipInner.implicitWidth + (plateChip.current ? Metrics.md * 3 + 10
-                                                                          : Metrics.md * 2)
-                height: Metrics.rowHeight
-
-                Rectangle {
-                    anchors.fill: parent
-                    radius: Metrics.radiusSmall
-                    color: plateChip.current ? Colors.selectedFill
-                         : plateMouse.containsMouse ? Colors.hoverFill : "transparent"
-                }
-
-                Row {
-                    id: plateChipInner
-                    anchors.centerIn: parent
-                    spacing: Metrics.xs
-
-                    Icon {
-                        visible: plateChip.modelData.locked
-                        width: Type.sizeCaption
-                        height: Type.sizeCaption
-                        size: Type.sizeCaption
-                        anchors.verticalCenter: parent.verticalCenter
-                        name: "lock"
-                        color: plateChip.current ? Colors.accent : Colors.textTertiary
-                    }
-
-                    Text {
-                        id: plateLabel
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: plateChip.modelData.label === undefined
-                              ? plateChip.modelData.name : plateChip.modelData.label
-                        font.family: Type.family
-                        font.pixelSize: Type.sizeCaption
-                        font.bold: true
-                        color: plateChip.current ? Colors.accent
-                             : plateChip.modelData.locked ? Colors.textTertiary
-                                                          : Colors.textSecondary
-                    }
-                }
-
-                // The active plate carries its own options button: everything
-                // that belongs to that plate rather than to an object on it.
-                Text {
-                    id: plateOptions
-                    visible: plateChip.current
-                    anchors.right: parent.right
-                    anchors.rightMargin: Metrics.xs
+                Icon {
+                    visible: plateSelector.current !== null && plateSelector.current.locked
+                    width: Type.sizeCaption
+                    height: Type.sizeCaption
+                    size: Type.sizeCaption
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "\u25be"
+                    name: "lock"
+                    color: Colors.accent
+                }
+
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Plate " + (root.activePlate + 1)
+                          + (plateSelector.current !== null && plateSelector.current.count > 0
+                             ? " \u00b7 " + plateSelector.current.count : "")
+                          + " of " + Math.max(1, root.plates.length)
+                          + "  \u25be"
                     font.family: Type.family
                     font.pixelSize: Type.sizeCaption
-                    color: plateOptionsMouse.containsMouse ? Colors.accent : Colors.textSecondary
-
-                    MouseArea {
-                        id: plateOptionsMouse
-                        anchors.fill: parent
-                        anchors.margins: -Metrics.xs
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            const scene = mapToItem(null, mouse.x, mouse.y)
-                            root.plateMenuRequested(plateChip.index, scene.x, scene.y)
-                        }
-                    }
+                    font.bold: true
+                    color: Colors.accent
                 }
-
-                MouseArea {
-                    id: plateMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    acceptedButtons: Qt.LeftButton | Qt.MiddleButton
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: (mouse) => {
-                        if (mouse.button === Qt.MiddleButton && root.plates.length > 1)
-                            root.plateRemoved(plateChip.index)
-                        else
-                            root.plateSelected(plateChip.index)
-                    }
-                }
-
-                ToolTip.visible: plateMouse.containsMouse
-                ToolTip.text: "Plate " + (plateChip.index + 1) + " — middle click to remove"
-                ToolTip.delay: 500
             }
+
+            MouseArea {
+                id: selectorMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: (mouse) => {
+                    const scene = mapToItem(null, mouse.x, mouse.y)
+                    root.plateListRequested(scene.x, scene.y)
+                }
+            }
+
+            ToolTip.visible: selectorMouse.containsMouse
+            ToolTip.text: "Build plates \u2014 pick the one to work on"
+            ToolTip.delay: 500
         }
 
-        // The plate cluster, beside the plate you just selected: the four
-        // things you do to a plate rather than to what is on it.
+        // The plate cluster, beside the selector: the four things you do to a
+        // plate rather than to what is on it.
         ToolButton {
             icon: "add"
             hint: "Add a build plate"
@@ -318,6 +285,17 @@ Item {
             primary: true
             enabled: root.canSlice && !root.slicing
             onClicked: root.sliceRequested()
+        }
+
+        // The other half of the slice action: a project of fourteen plates is
+        // sliced as one job from here, and each plate keeps its own toolpath.
+        ToolButton {
+            icon: "layers"
+            hint: root.plates.length > 1
+                  ? "Slice all " + root.plates.length + " plates"
+                  : "Slice all plates"
+            enabled: root.canSlice && !root.slicing && root.plates.length > 1
+            onClicked: root.sliceAllRequested()
         }
 
         Button {

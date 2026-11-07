@@ -116,9 +116,30 @@ Window {
     property bool addMenuVisible: false
     property bool layerMenuVisible: false
     property bool plateMenuVisible: false
+    property bool plateListVisible: false
+    property real plateListX: 0
+    property real plateListY: 0
     property int plateMenuIndex: 0
     property real plateMenuX: 0
     property real plateMenuY: 0
+
+    // The plate selector's list: every plate with what it holds, the active one
+    // marked, then the options of the plate you are on. One entry per plate keeps
+    // the bar down to a single control however many plates a project has.
+    readonly property var plateListEntries: {
+        const list = []
+        const source = root.plates
+        for (let i = 0; i < source.length; ++i) {
+            const entry = source[i]
+            list.push({ id: "plateGo:" + i,
+                        label: "Plate " + (i + 1) + (entry.count > 0 ? " \u00b7 " + entry.count : ""),
+                        hint: entry.locked ? "locked" : (i === root.activePlate ? "active" : ""),
+                        active: i === root.activePlate })
+        }
+        list.push({ id: "sep1" })
+        list.push({ id: "plateOptions", label: "Plate options\u2026", hint: "" })
+        return list
+    }
 
     readonly property var plateMenuEntries: [
         { id: "plateRename", label: "Rename plate\u2026", hint: "" },
@@ -376,18 +397,20 @@ Window {
 
     // Plates belong to the document -- count, names and locks -- because the
     // viewport draws a bed per plate and has to agree with the bar above it. The
-    // window only keeps what is not the document's business: the toolpath each
-    // plate last sliced, so switching plates shows what was sliced.
-    property var plateGcodes: []
+    // toolpath each plate last sliced is the slice controller's, one per plate, so
+    // switching plates shows what was sliced rather than the last run's output.
 
     readonly property var plates: {
         const source = plateDocument.plates
+        // Reading the version is what makes this re-evaluate when a plate is
+        // sliced: the toolpaths live in the slice controller, which owns them.
+        const version = sliceController.gcodeVersion
         const list = []
         for (let i = 0; i < source.length; ++i) {
             const entry = source[i]
             // The bar shows how many objects each plate holds: the only signal
             // that an empty plate is empty rather than broken.
-            entry.gcode = i < root.plateGcodes.length ? root.plateGcodes[i] : ""
+            entry.gcode = version >= 0 ? sliceController.plateGcode(i) : ""
             entry.label = entry.count > 0 ? entry.name + " \u00b7 " + entry.count : entry.name
             list.push(entry)
         }
@@ -451,20 +474,6 @@ Window {
             plateDocument.duplicateObject(id)
     }
 
-    function setActivePlate(entry) {
-        if (entry.gcode === undefined)
-            return
-        const next = root.plateGcodes.slice()
-        while (next.length <= root.activePlate)
-            next.push("")
-        next[root.activePlate] = entry.gcode
-        root.plateGcodes = next
-    }
-
-    function setPlateGcode(gcode) {
-        root.setActivePlate({ gcode: gcode })
-    }
-
     // Plates live in the document, not in the window: every plate is a set of
     // objects on its own bed, and switching plates only changes which set the
     // viewport, the object list and the slice all read. Each plate keeps its own
@@ -488,7 +497,8 @@ Window {
         viewport.fitPlate()
 
         const plate = root.plates[index]
-        if (plate.gcode.length > 0 && toolpath.load(plate.gcode)) {
+        const gcode = sliceController.plateGcode(index)
+        if (plate !== undefined && gcode.length > 0 && toolpath.load(gcode)) {
             toolpath.setLayer(toolpath.layerCount - 1)
             root.mode = root.previewMode
         } else {
@@ -499,9 +509,7 @@ Window {
 
     function addPlate() {
         const index = plateDocument.addPlate()
-        const gcodes = root.plateGcodes.slice()
-        gcodes.splice(index, 0, "")
-        root.plateGcodes = gcodes
+        sliceController.shiftPlateGcodes(index, 1)
         root.switchPlate(index)
         root.setStatus("added plate " + (index + 1))
     }
@@ -510,19 +518,14 @@ Window {
         if (plateDocument.plateCount <= 1)
             return
         plateDocument.removePlate(index)
-        const gcodes = root.plateGcodes.slice()
-        if (index < gcodes.length)
-            gcodes.splice(index, 1)
-        root.plateGcodes = gcodes
+        sliceController.shiftPlateGcodes(index, -1)
         root.activePlate = Math.min(index, plateDocument.plateCount - 1)
         root.switchPlate(root.activePlate)
     }
 
     function duplicatePlate(index) {
         const target = plateDocument.duplicatePlate(index)
-        const gcodes = root.plateGcodes.slice()
-        gcodes.splice(target, 0, index < gcodes.length ? gcodes[index] : "")
-        root.plateGcodes = gcodes
+        sliceController.duplicatePlateGcode(index, target)
         root.switchPlate(target)
         root.setStatus("cloned plate " + (index + 1) + " as plate " + (target + 1))
     }
@@ -541,7 +544,6 @@ Window {
     function clearObject() {
         session.clear()
         toolpath.clear()
-        root.setActivePlate({ path: "", label: "", gcode: "" })
         viewport.selected = false
         root.activeTool = ""
         root.mode = root.modelMode
@@ -555,7 +557,6 @@ Window {
             return false
         }
         root.projectPath = path
-        root.setActivePlate({ path: session.path, label: session.displayName() })
         root.setStatus("saved " + path.split("/").pop())
         return true
     }
@@ -589,6 +590,12 @@ Window {
     }
 
     function runAction(id) {
+        // The plate list's rows carry the plate they mean in the id, so one list can
+        // address any number of plates without a second model.
+        if (typeof id === "string" && id.indexOf("plateGo:") === 0) {
+            root.switchPlate(parseInt(id.substring("plateGo:".length), 10))
+            return
+        }
         switch (id) {
         case "open": openDialog.open(); break
         case "objects": root.objectListVisible = !root.objectListVisible; break
@@ -1091,10 +1098,16 @@ Window {
                 root.plateMenuY = y
                 root.plateMenuVisible = true
             }
+            onPlateListRequested: (x, y) => {
+                root.plateListX = x
+                root.plateListY = y
+                root.plateListVisible = true
+            }
             onToolTriggered: (id) => root.runTool(id)
             onActionTriggered: (id) => root.runAction(id)
             onAddRequested: root.addMenuVisible = !root.addMenuVisible
             onSliceRequested: footer.startSlice()
+            onSliceAllRequested: footer.startSliceAll()
         }
 
         // The object list slides out of the settings panel's inner edge. Its
@@ -1359,8 +1372,6 @@ Window {
             toolpath.clear()
             root.mode = root.modelMode
             root.title = "next-layer · " + session.displayName()
-            if (session.hasModel)
-                root.setActivePlate({ path: session.path, label: session.displayName() })
         }
     }
 
@@ -1368,7 +1379,10 @@ Window {
         target: sliceController
 
         function onFinished() {
-            root.setPlateGcode(sliceController.gcodePath)
+            // A single slice belongs to the active plate; a slice-all gave every
+            // plate its own toolpath, so the viewport reloads the active plate's.
+            if (sliceController.slicedAll)
+                root.switchPlate(root.activePlate)
         }
     }
 
@@ -1575,7 +1589,7 @@ Window {
         onDismissed: root.layerMenuVisible = false
     }
 
-    // The plate options menu, dropped from the chevron on the active plate tab.
+    // The plate options menu, dropped from the plate selector.
     MenuPanel {
         id: plateMenu
         parent: Overlay.overlay
@@ -1588,6 +1602,31 @@ Window {
         anchorY: Math.min(root.plateMenuY + 8, root.height - 200)
         onTriggered: (id) => root.runAction(id)
         onDismissed: root.plateMenuVisible = false
+    }
+
+    // The plate list: every plate in the selector, so fourteen plates cost one
+    // control on the bar instead of fourteen.
+    MenuPanel {
+        id: plateList
+        parent: Overlay.overlay
+        anchors.fill: parent
+        visible: root.plateListVisible
+        z: 110
+        menuWidth: 300
+        entries: root.plateListEntries
+        anchorX: Math.min(root.plateListX, root.width - 320)
+        anchorY: Math.min(root.plateListY + 8, root.height - 320)
+        onTriggered: (id) => {
+            if (id === "plateOptions") {
+                root.plateMenuIndex = root.activePlate
+                root.plateMenuX = root.plateListX
+                root.plateMenuY = root.plateListY
+                root.plateMenuVisible = true
+                return
+            }
+            root.runAction(id)
+        }
+        onDismissed: root.plateListVisible = false
     }
 
     TextPromptDialog {
@@ -1970,8 +2009,7 @@ Window {
             root.panelOnLeft = true
         Colors.loadFromHost()
         if (session.hasModel)
-            root.setActivePlate({ path: session.path, label: session.displayName() })
-        if (typeof startupPlates !== "undefined")
+            if (typeof startupPlates !== "undefined")
             for (let i = 1; i < startupPlates; ++i)
                 root.addPlate()
         if (startupGcodePath.length > 0 && toolpath.load(startupGcodePath)) {

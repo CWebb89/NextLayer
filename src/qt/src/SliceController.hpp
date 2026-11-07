@@ -6,6 +6,7 @@
 #include "SliceRuntime.hpp"
 #include "Scratch.hpp"
 
+#include <QHash>
 #include <QObject>
 #include <QString>
 #include <QTemporaryDir>
@@ -28,6 +29,14 @@ class SliceController : public QObject
     Q_PROPERTY(int moveCount READ moveCount NOTIFY moveCountChanged)
     Q_PROPERTY(double filamentGrams READ filamentGrams NOTIFY moveCountChanged)
     Q_PROPERTY(QString estimatedTime READ estimatedTime NOTIFY moveCountChanged)
+    /// Whether the run that just finished sliced every plate rather than the active
+    /// one. The window needs the difference: a single slice owns the active plate's
+    /// toolpath, a slice-all leaves one per plate and the active plate's is the one
+    /// to show.
+    Q_PROPERTY(bool slicedAll READ slicedAll NOTIFY busyChanged)
+    /// Bumped whenever a plate's toolpath changes, so the plate list re-reads
+    /// `plateGcode` instead of caching what it saw first.
+    Q_PROPERTY(int gcodeVersion READ gcodeVersion NOTIFY plateGcodesChanged)
 
 public:
     explicit SliceController(std::string modelPath, SettingsModel* settings, QObject* parent = nullptr);
@@ -43,8 +52,24 @@ public:
     /// filament and the printing time it estimates for the plate.
     double filamentGrams() const { return m_filamentGrams; }
     QString estimatedTime() const { return m_estimatedTime; }
+    bool slicedAll() const { return m_sliceAll; }
+    int gcodeVersion() const { return m_gcodeVersion; }
+    /// The G-code one plate was last sliced to, or an empty string. A project's
+    /// plates each keep their own toolpath: switching to a plate shows what that
+    /// plate was sliced to, not the last run's output.
+    Q_INVOKABLE QString plateGcode(int plate) const { return m_plateGcodes.value(plate); }
+    /// Keeps the per-plate toolpaths lined up with the plate list when a plate is
+    /// added (delta +1) or removed (delta -1) at `at`. Without this, deleting the
+    /// second plate would leave the third plate showing the fourth one's toolpath.
+    Q_INVOKABLE void shiftPlateGcodes(int at, int delta);
+    Q_INVOKABLE void duplicatePlateGcode(int from, int at);
 
     Q_INVOKABLE void slice();
+    /// Slices every plate in the document, one after another, and reports each
+    /// result. One worker doing them in order is what a printer with one nozzle
+    /// wants: the numbers in the footer are the whole job, and each plate's
+    /// toolpath is kept so switching to it shows what was sliced.
+    Q_INVOKABLE void sliceAll();
     void setModelPath(std::string modelPath);
     void setDocument(PlateDocument* document) { m_document = document; }
 
@@ -57,6 +82,11 @@ signals:
     void moveCountChanged();
     void finished();
     void failed(const QString& message);
+    /// One plate of a slice-all run: which plate, where its G-code went, and what
+    /// it holds. Emitted once per plate, in plate order.
+    void plateSliced(int plate, const QString& gcodePath, int layerCount, int moveCount,
+                     double filamentGrams, const QString& estimatedTime);
+    void plateGcodesChanged();
 
 private:
     void publishResult(bool ok,
@@ -77,6 +107,9 @@ private:
     std::thread m_worker;
     int m_sliceIndex = 0;
     bool m_busy = false;
+    bool m_sliceAll = false;
+    QHash<int, QString> m_plateGcodes;
+    int m_gcodeVersion = 0;
     QString m_status;
     QString m_gcodePath;
     double m_elapsedMs = 0.0;

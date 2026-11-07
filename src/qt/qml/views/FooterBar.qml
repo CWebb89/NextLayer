@@ -55,11 +55,25 @@ Item {
         sliceController.slice()
     }
 
+    function startSliceAll() {
+        if (root.slicing)
+            return
+        root.lastError = ""
+        root.haveResult = false
+        root.sliceRequested()
+        sliceController.sliceAll()
+    }
+
     Connections {
         target: sliceController
 
         function onFinished() {
             root.haveResult = true
+            // A slice-all leaves one toolpath per plate; the window decides which
+            // of them the viewport shows, because it is the one that knows which
+            // plate is active.
+            if (sliceController.slicedAll)
+                return
             if (toolpath.load(sliceController.gcodePath) && toolpath.layerCount > 0) {
                 toolpath.setLayer(toolpath.layerCount - 1)
                 root.previewReady()

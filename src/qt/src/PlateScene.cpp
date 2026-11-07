@@ -87,6 +87,7 @@ PlateScene::PlateScene(PlateDocument* document, QObject* parent)
     : QObject(parent)
     , m_document(document)
     , m_plate(new MeshGeometry(nullptr))
+    , m_otherPlate(new MeshGeometry(nullptr))
     , m_selection(new MeshGeometry(nullptr))
     , m_paint(new MeshGeometry(nullptr))
     , m_volumes(new MeshGeometry(nullptr))
@@ -94,6 +95,7 @@ PlateScene::PlateScene(PlateDocument* document, QObject* parent)
     , m_gizmo(new MeshGeometry(nullptr))
 {
     m_plate->setParent(this);
+    m_otherPlate->setParent(this);
     m_selection->setParent(this);
     m_paint->setParent(this);
     m_volumes->setParent(this);
@@ -109,6 +111,11 @@ PlateScene::PlateScene(PlateDocument* document, QObject* parent)
 QQuick3DGeometry* PlateScene::plateGeometry() const
 {
     return m_plate;
+}
+
+QQuick3DGeometry* PlateScene::otherPlateGeometry() const
+{
+    return m_otherPlate;
 }
 
 QQuick3DGeometry* PlateScene::selectionGeometry() const
@@ -298,11 +305,14 @@ void PlateScene::rebuild()
     QElapsedTimer timer;
     timer.start();
     TriangleMesh plate;
+    TriangleMesh otherPlates;
     TriangleMesh selection;
 
     // Every plate is drawn, not just the active one: a project with three plates
     // shows three beds in the project view. Each plate's objects
-    // are shifted by that plate's offset in the scene.
+    // are shifted by that plate's offset in the scene. The other plates are a
+    // separate mesh so they can be drawn dimmed: the one you are working on is
+    // the one that stands out, and only it is sliced.
     for (const int id : m_document->ids()) {
         const PlateDocument::Object* object = m_document->object(id);
         if (object == nullptr || !object->visible)
@@ -324,12 +334,14 @@ void PlateScene::rebuild()
                 continue;
             TriangleMesh world = m_document->worldMesh(id);
             world.translate(Slic3r::Domain::Vec3f(offset.x(), offset.y(), offset.z()));
-            appendMesh(plate, world);
+            appendMesh(otherPlates, world);
         }
     }
 
+    m_hasOtherPlates = !otherPlates.its.indices.empty();
     m_hasSelection = !selection.its.indices.empty();
     m_plate->setMesh(plate);
+    m_otherPlate->setMesh(otherPlates);
     m_selection->setMesh(selection);
 
     // Modifier volumes of every visible object, in world coordinates and tinted

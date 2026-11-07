@@ -311,6 +311,14 @@ public:
     /// Every visible object as the slicer needs it: geometry in printer
     /// coordinates plus its overrides, layer height profile and paint.
     QVector<next_layer::PlateSliceObject> sliceObjects() const;
+    /// The same objects for a plate that is not the active one, without changing
+    /// which plate is active: slicing every plate must not move the camera or the
+    /// selection out from under the person who asked for it.
+    QVector<next_layer::PlateSliceObject> sliceObjectsFor(int plate) const;
+    /// Which plate lies under a point on the bed plane, or -1 for the gap between
+    /// plates. Plates are drawn in a grid, so a double click anywhere on one is
+    /// enough to say which plate was meant.
+    Q_INVOKABLE int plateAt(const QVector3D& point) const;
     Q_INVOKABLE bool arrangeSelection();
     Q_INVOKABLE bool dropToBed(int id);
     Q_INVOKABLE QVariantMap objectInfo(int id) const;

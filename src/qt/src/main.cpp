@@ -709,6 +709,7 @@ int main(int argc, char* argv[])
     for (int index = 1; index < argc; ++index) {
         const std::string_view argument(argv[index]);
         if (argument == "--smoke" || argument == "--slice" || argument == "--selftest-slice"
+            || argument == "--slice-all"
             || argument == "--calibration-test" || argument == "--mesh-tools-test"
             || argument == "--print-host-test" || argument == "--print-host-start"
             || argument == "--update-install" || argument == "--dump-config"
@@ -767,6 +768,7 @@ int main(int argc, char* argv[])
         "Load the positional models into one plate, place them apart, slice and export: CONFIG,GCODE.",
         "CONFIG,GCODE");
     const QCommandLineOption selftest_option("selftest-slice", "Slice through SliceController, report the result, exit.");
+    const QCommandLineOption slice_all_option("slice-all", "Slice every plate through SliceController, report each plate, exit.");
     const QCommandLineOption project_test_option("project-test",
         "Save a plate to a project file, reload it into a cleared document, and slice the reloaded plate; CONFIG is a resolved config.",
         "CONFIG");
@@ -854,7 +856,7 @@ int main(int argc, char* argv[])
                        ortho_option, plates_option,
                        settings_tab_option, paint_test_option, input_test_option, slider_test_option,
                        preset_dialog_option,
-                       panel_left_option, selftest_option, plate_tools_option, slice_features_option,
+                       panel_left_option, selftest_option, slice_all_option, plate_tools_option, slice_features_option,
                        project_test_option, mesh_tools_option, update_option,
                        update_install_option, multi_tool_option, print_host_test_option, print_host_start_option, volume_settings_option, calibration_test_option, shape_test_option, keep_gcode_option, scene_selftest_option, preview_stats_option, vgcode_shot_option,
                        dump_presets_option, dump_presets_json_option, dump_fonts_option, dump_object_settings_option, preset_printer_option, preset_process_option, preset_filament_option, preset_filaments_option,
@@ -1570,9 +1572,14 @@ int main(int argc, char* argv[])
 
     if (parser.isSet(dump_plates_option)) {
         std::fprintf(stdout, "plates %d\n", document->plateCount());
-        for (int plate = 0; plate < document->plateCount(); ++plate)
-            std::fprintf(stdout, "  plate %d: %d object(s)\n", plate + 1,
-                         document->objectsOnPlate(plate));
+        for (int plate = 0; plate < document->plateCount(); ++plate) {
+            // The scene offset too: plates are laid out in a grid of four to a row,
+            // and that is geometry the viewport has to agree with, so it is
+            // checked here rather than by looking at a window.
+            const QVector3D offset = document->plateOffset(plate);
+            std::fprintf(stdout, "  plate %d: %d object(s) at %.1f %.1f\n", plate + 1,
+                         document->objectsOnPlate(plate), double(offset.x()), double(offset.y()));
+        }
         return 0;
     }
 
@@ -1631,6 +1638,37 @@ int main(int argc, char* argv[])
         startupViewType = parser.value(view_type_option);
         for (const QString& name : parser.value(hide_option_option).split(',', Qt::SkipEmptyParts))
             startupHiddenOptions.append(name.trimmed());
+    }
+
+    if (parser.isSet(slice_all_option)) {
+        QEventLoop loop;
+        int exit_code = 1;
+        QObject::connect(slicer, &SliceController::plateSliced, &loop,
+                         [](int plate, const QString& path, int layers, int moves,
+                            double grams, const QString& time) {
+                             std::fprintf(stdout, "plate %d: %d layers, %d moves, %.1f g, %s -> %s\n",
+                                          plate + 1, layers, moves, grams,
+                                          time.toUtf8().constData(),
+                                          path.toUtf8().constData());
+                         });
+        QObject::connect(slicer, &SliceController::finished, &loop, [&] {
+            std::fprintf(stdout, "slice-all finished in %.0f ms: %d layers, %d moves over %d plate(s)\n",
+                         slicer->elapsedMs(), slicer->layerCount(), slicer->moveCount(),
+                         document->plateCount());
+            for (int plate = 0; plate < document->plateCount(); ++plate)
+                std::fprintf(stdout, "  kept plate %d -> %s\n", plate + 1,
+                             slicer->plateGcode(plate).toUtf8().constData());
+            exit_code = 0;
+            loop.quit();
+        });
+        QObject::connect(slicer, &SliceController::failed, &loop, [&](const QString& message) {
+            std::fprintf(stderr, "slice-all failed: %s\n", message.toUtf8().constData());
+            loop.quit();
+        });
+        slicer->sliceAll();
+        loop.exec();
+        next_layer::SliceRuntime::shutdown();
+        return exit_code;
     }
 
     if (parser.isSet(selftest_option)) {

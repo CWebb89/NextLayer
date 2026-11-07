@@ -141,7 +141,7 @@ Plates on the left, tools next, object actions on the right — one panel.
 
 | Action | Status |
 | --- | --- |
-| Add plate / switch plate / remove plate (middle-click a tab) | done — app-level plates: each holds its own model and G-code |
+| Add plate / switch plate / remove plate | done — app-level plates: each holds its own model and G-code; the plate selector names the plate you are on and opens the list, so fourteen plates cost one control |
 | Open / import model | done — dialog or drag-and-drop appends to the plate; multi-file drop adds every file |
 | Duplicate | done — the document copies the selected object beside it |
 | Centre on bed | done — the document moves the selected object's centre onto the bed centre |
@@ -239,7 +239,7 @@ Now part of the same strip.
 | --- | --- |
 | Per-object settings | done — 136 print settings are overridable per object in this engine; the object panel lists them with an inherit/override switch and a typed editor, they are stored in `ObjectSettings::overrides` and reach the slicer through the plate path (`--slice-features` proves 0.30 mm per-object layer height → 84 layers instead of 125) |
 | Variable layer height | done — see the tool rail row; the profile covers the whole object and restates the printer height outside the band |
-| Plates | done — every plate is its own set of objects with its own toolpath; the toolbar shows the object count per plate, adding and removing plates keeps the document (and undo) intact, and each plate slices and exports separately |
+| Plates | done — every plate is its own set of objects with its own toolpath, kept per plate so switching shows what that plate was sliced to; the selector names the plate and lists every plate with its object count, plates are drawn in a grid of four to a row with the active one lit and the rest dimmed, a double click on a bed makes it active, and **slice all plates** runs the whole project as one job (`--slice-all` reports each plate) |
 | Save / load project file | done — Ctrl+S / Ctrl+Shift+O, one `.nextproj` file holding every object with its transform, overrides, layer height profile and paint, the plates, the tool colours and the print setup; `--project-test` saves, reloads into a cleared document, compares and slices the reloaded plate |
 | Preset diff | done — Ctrl+Shift+D lists every setting changed from the preset, with before/after and a per-row reset |
 | Preset export / import | done — Ctrl+Shift+E writes the configuration the app would slice with; Ctrl+Shift+I loads one back into the settings panel |

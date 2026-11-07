@@ -474,7 +474,7 @@ rm -f $plate_fixture
 python3 $root/oracle/plate-fixture/make.py $plate_fixture >/dev/null 2>&1
 set -l plate_out (env QT_QPA_PLATFORM=offscreen $bin $plate_fixture --dump-plates 2>/dev/null)
 set -l plate_header (printf '%s\n' $plate_out | grep -cE '^plates 2$')
-set -l plate_singles (printf '%s\n' $plate_out | grep -cE '^  plate [0-9]+: 1 object\(s\)$')
+set -l plate_singles (printf '%s\n' $plate_out | grep -cE '^  plate [0-9]+: 1 object\(s\) at ')
 if not test -f $plate_fixture
     __bad 'project plates: the two-plate fixture could not be written'
 else if test $plate_header -ne 1
@@ -483,6 +483,42 @@ else if test $plate_singles -ne 2
     __bad "project plates: expected one object on each of two plates, got $plate_singles"
 else
     __ok 'project plates: a two-plate project file reopened as 2 plates, 1 object each'
+end
+
+# Plates are laid out in a grid of four to a row, not one long line: past the
+# fourth plate a line runs off the screen and "which plate is where" becomes a
+# guess. The fixture's second plate has to sit one bed-width plus the gap to the
+# right of the first, and the fifth has to wrap onto the next row.
+set -l plate_grid (mktemp /tmp/nl-check-grid-XXXXXX.3mf)
+env QT_QPA_PLATFORM=offscreen python3 $root/oracle/plate-fixture/make.py $plate_grid 5 >/dev/null 2>&1
+set -l grid_out (env QT_QPA_PLATFORM=offscreen $bin $plate_grid --dump-plates 2>/dev/null)
+set -l grid_first (string match -r '^  plate 1: .* at ([0-9.-]+) ([0-9.-]+)$' -- $grid_out | tail -n 1)
+set -l grid_fifth (string match -r '^  plate 5: .* at ([0-9.-]+) ([0-9.-]+)$' -- $grid_out | tail -n 1)
+rm -f $plate_grid
+if test "$grid_first" = '' -o "$grid_fifth" = ''
+    __bad 'plate grid: five plates could not be read back'
+else if test $grid_first[1] != 0.0 -o $grid_first[2] != 0.0
+    __bad "plate grid: the active plate is not at the origin ($grid_first)"
+else if test $grid_fifth[1] = 0.0 -o $grid_fifth[2] = 0.0
+    __bad "plate grid: plate 5 is still in the first row and column ($grid_fifth)"
+else
+    __ok "plate grid: plate 5 wraps to the next row at $grid_fifth"
+end
+
+# Slice all plates: one job, one toolpath per plate, and every plate empty of
+# objects skipped rather than failed. The fixture's two plates both hold a cube.
+set -l all_fixture /tmp/nl-check-slice-all.3mf
+set -l all_out /tmp/nl-check-slice-all.out
+python3 $root/oracle/plate-fixture/make.py $all_fixture >/dev/null 2>&1
+env QT_QPA_PLATFORM=offscreen $bin $all_fixture --slice-all >$all_out 2>/dev/null
+set -l all_rc $status
+set -l all_plates (cat $all_out | grep -cE '^plate [0-9]+: [0-9]+ layers, [0-9]+ moves')
+set -l all_total (cat $all_out | grep -cE '^slice-all finished')
+rm -f $all_fixture
+if test $all_rc -ne 0 -o $all_plates -ne 2 -o $all_total -ne 1
+    __bad "slice all plates: expected 2 plate results, got $all_plates (rc $all_rc)"
+else
+    __ok 'slice all plates: both plates sliced, one G-code file each'
 end
 
 # Import gate: another slicer's presets have to become a bundle this engine

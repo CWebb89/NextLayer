@@ -20,6 +20,11 @@ class PlateScene : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(QQuick3DGeometry* plateGeometry READ plateGeometry NOTIFY geometryChanged)
+    /// Every plate that is not the active one, drawn dimmed: the plate you are
+    /// working on should be the one that reads as active, and only that one is
+    /// sliced.
+    Q_PROPERTY(QQuick3DGeometry* otherPlateGeometry READ otherPlateGeometry NOTIFY geometryChanged)
+    Q_PROPERTY(bool hasOtherPlates READ hasOtherPlates NOTIFY geometryChanged)
     Q_PROPERTY(QQuick3DGeometry* selectionGeometry READ selectionGeometry NOTIFY geometryChanged)
     Q_PROPERTY(bool hasSelection READ hasSelection NOTIFY geometryChanged)
     Q_PROPERTY(QQuick3DGeometry* paintGeometry READ paintGeometry NOTIFY geometryChanged)
@@ -36,6 +41,8 @@ public:
     explicit PlateScene(PlateDocument* document, QObject* parent = nullptr);
 
     QQuick3DGeometry* plateGeometry() const;
+    QQuick3DGeometry* otherPlateGeometry() const;
+    bool hasOtherPlates() const { return m_hasOtherPlates; }
     QQuick3DGeometry* selectionGeometry() const;
     QQuick3DGeometry* paintGeometry() const;
     /// Modifier, negative and support volumes of every visible object, each
@@ -79,6 +86,7 @@ private:
 
     PlateDocument* m_document;
     MeshGeometry* m_plate;
+    MeshGeometry* m_otherPlate;
     MeshGeometry* m_selection;
     MeshGeometry* m_paint;
     MeshGeometry* m_volumes;
@@ -87,6 +95,7 @@ private:
     QVector3D m_gizmoOrigin;
     bool m_hasGizmo = false;
     bool m_hasSelection = false;
+    bool m_hasOtherPlates = false;
     bool m_hasVolumes = false;
     int m_pickedId = 0;
     int m_pickedFacet = -1;

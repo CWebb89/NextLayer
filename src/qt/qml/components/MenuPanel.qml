@@ -107,7 +107,8 @@ Item {
                             elide: Text.ElideRight
                             font.family: Type.family
                             font.pixelSize: Type.sizeSmall
-                            color: row.disabled ? Colors.textMuted : Colors.textPrimary
+                            color: row.disabled ? Colors.textMuted
+                                 : row.modelData.active ? Colors.accent : Colors.textPrimary
                         }
 
                         Text {

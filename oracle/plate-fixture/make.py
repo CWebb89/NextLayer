@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Write a two-plate project 3MF for the plate-assignment gate.
+"""Write a project 3MF holding one identical cube on each plate.
 
-The cube is written twice: both objects are identical and sit at the same local
-origin, so an importer that ignored the project's plate records would produce one
-plate holding two objects and the gate could not tell the difference from the
-model alone. Nothing else in the application reads this file.
+Every cube is written at the same local origin, so an importer that ignored the
+project's plate records would produce one plate holding all of them and the gate
+could not tell the difference from the model alone. The optional second argument
+is the number of plates, which is how the grid layout is checked: past the fourth
+plate the beds wrap onto the next row. Nothing else in the application reads this
+file.
 """
 
 import sys
@@ -23,51 +25,15 @@ RELS = """<?xml version="1.0" encoding="UTF-8"?>
 </Relationships>
 """
 
-MODEL = """<?xml version="1.0" encoding="UTF-8"?>
+MODEL_HEAD = """<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xml:lang="en-US"
        xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
  <resources>
-  <object id="1" type="model">
-   <mesh>
-    <vertices>%(vertices)s</vertices>
-    <triangles>%(triangles)s</triangles>
-   </mesh>
-  </object>
-  <object id="2" type="model">
-   <mesh>
-    <vertices>%(vertices)s</vertices>
-    <triangles>%(triangles)s</triangles>
-   </mesh>
-  </object>
- </resources>
- <build>
-  <item objectid="1" transform="1 0 0 0 1 0 0 0 1 60 60 0"/>
-  <item objectid="2" transform="1 0 0 0 1 0 0 0 1 600 600 0"/>
- </build>
-</model>
 """
 
-SETTINGS = """<?xml version="1.0" encoding="UTF-8"?>
+SETTINGS_HEAD = """<?xml version="1.0" encoding="UTF-8"?>
 <config>
- <plate>
-  <metadata key="plater_id" value="1"/>
-  <metadata key="plater_name" value=""/>
-  <model_instance>
-   <metadata key="object_id" value="1"/>
-   <metadata key="instance_id" value="0"/>
-  </model_instance>
- </plate>
- <plate>
-  <metadata key="plater_id" value="2"/>
-  <metadata key="plater_name" value=""/>
-  <model_instance>
-   <metadata key="object_id" value="2"/>
-   <metadata key="instance_id" value="0"/>
-  </model_instance>
- </plate>
-</config>
 """
-
 
 def cube(origin, size):
     x, y, z = origin
@@ -91,17 +57,52 @@ def cube(origin, size):
 
 
 def main():
-    if len(sys.argv) != 2:
-        print("usage: make.py OUT.3mf", file=sys.stderr)
+    if len(sys.argv) not in (2, 3):
+        print("usage: make.py OUT.3mf [PLATES]", file=sys.stderr)
+        return 2
+
+    plates = int(sys.argv[2]) if len(sys.argv) == 3 else 2
+    if plates < 1:
+        print("make.py: a project needs at least one plate", file=sys.stderr)
         return 2
 
     vertices, triangles = cube((0.0, 0.0, 0.0), 20.0)
+    objects = []
+    items = []
+    plate_records = []
+    for plate in range(plates):
+        object_id = plate + 1
+        objects.append(
+            '  <object id="%d" type="model">\n   <mesh>\n'
+            '    <vertices>%%(vertices)s</vertices>\n'
+            '    <triangles>%%(triangles)s</triangles>\n'
+            '   </mesh>\n  </object>' % object_id
+        )
+        items.append(
+            '  <item objectid="%d" transform="1 0 0 0 1 0 0 0 1 %d %d 0"/>'
+            % (object_id, 60 + plate * 540, 60 + plate * 540)
+        )
+        plate_records.append(
+            ' <plate>\n'
+            '  <metadata key="plater_id" value="%d"/>\n'
+            '  <metadata key="plater_name" value=""/>\n'
+            '  <model_instance>\n'
+            '   <metadata key="object_id" value="%d"/>\n'
+            '   <metadata key="instance_id" value="0"/>\n'
+            '  </model_instance>\n'
+            ' </plate>' % (object_id, object_id)
+        )
+
+    model = MODEL_HEAD + "\n".join(objects) + "\n </resources>\n <build>\n" \
+        + "\n".join(items) + "\n </build>\n</model>\n"
+    settings = SETTINGS_HEAD + "\n".join(plate_records) + "\n</config>\n"
+
     with zipfile.ZipFile(sys.argv[1], "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("[Content_Types].xml", CONTENT_TYPES)
         archive.writestr("_rels/.rels", RELS)
         archive.writestr("3D/3dmodel.model",
-                         MODEL % {"vertices": vertices, "triangles": triangles})
-        archive.writestr("Metadata/model_settings.config", SETTINGS)
+                         model % {"vertices": vertices, "triangles": triangles})
+        archive.writestr("Metadata/model_settings.config", settings)
     return 0
 
 

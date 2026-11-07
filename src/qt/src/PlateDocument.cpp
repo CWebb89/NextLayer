@@ -819,10 +819,28 @@ void PlateDocument::setActivePlate(int plate)
 
 QVector3D PlateDocument::plateOffset(int plate) const
 {
-    if (plate <= 0)
-        return QVector3D();
-    const float step = m_bedSize.x() + 40.0f;
-    return QVector3D(step * float(plate), 0.0f, 0.0f);
+    // Four plates to a row, the way a multi-plate project is laid out in the
+    // plate list of every slicer worth copying: a long line of beds runs off the
+    // screen at the fifth plate and makes "which plate is where" unguessable.
+    // Offsets are relative to the active plate, which always sits at the origin
+    // where the camera is.
+    constexpr int columns = 4;
+    const float stepX = m_bedSize.x() + 40.0f;
+    const float stepY = m_bedSize.y() + 40.0f;
+    const int column = plate % columns - m_activePlate % columns;
+    const int row = plate / columns - m_activePlate / columns;
+    return QVector3D(stepX * float(column), stepY * float(row), 0.0f);
+}
+
+int PlateDocument::plateAt(const QVector3D& point) const
+{
+    for (int plate = 0; plate < plateCount(); ++plate) {
+        const QVector3D centre = plateOffset(plate);
+        if (std::abs(point.x() - centre.x()) <= m_bedSize.x() / 2.0f
+            && std::abs(point.y() - centre.y()) <= m_bedSize.y() / 2.0f)
+            return plate;
+    }
+    return -1;
 }
 
 int PlateDocument::addPlate()
@@ -2383,10 +2401,15 @@ QVector<next_layer::PlateLayerGcode> PlateDocument::layerGcodeList() const
 
 QVector<next_layer::PlateSliceObject> PlateDocument::sliceObjects() const
 {
+    return sliceObjectsFor(m_activePlate);
+}
+
+QVector<next_layer::PlateSliceObject> PlateDocument::sliceObjectsFor(int plate) const
+{
     QVector<next_layer::PlateSliceObject> objects;
     objects.reserve(m_objects.size());
     for (const Object& object : m_objects) {
-        if (object.plate != m_activePlate || !object.visible || object.mesh == nullptr)
+        if (object.plate != plate || !object.visible || object.mesh == nullptr)
             continue;
         next_layer::PlateSliceObject slice;
         slice.name = object.displayName();
