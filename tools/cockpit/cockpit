@@ -26,8 +26,10 @@ empty-workspace rule holds.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import difflib
 import fcntl
+import io
 import glob
 import json
 import os
@@ -335,6 +337,31 @@ def to_screen(state: dict, x: float, y: float) -> tuple[int, int]:
 # ---------------------------------------------------------------- commands ---
 
 
+def app_windows(name: str) -> list[dict]:
+    """Every open window that belongs to this app, matched by class or title.
+
+    The class is what the compositor reports ("next-layer-qt"), the title starts
+    with the app name, and a session may not exist yet, so both are tried.
+    """
+    wanted = name.lower()
+    found = []
+    for client in clients():
+        window_class = str(client.get("class", "")).lower()
+        # Class only: a terminal whose title happens to name the app is not the
+        # app, and adopting one is how `stop` once closed the agent's terminal.
+        if wanted and wanted in window_class:
+            found.append(client)
+    return found
+
+
+def adopt_window(name: str, client: dict) -> dict:
+    state = {"app": name, "ws": client["workspace"]["id"], "return_ws": active_workspace(),
+             "address": client["address"], "class": client.get("class", ""),
+             "command": "", "started": time.time()}
+    save_state(name, state)
+    return state
+
+
 def cmd_start(args: argparse.Namespace) -> int:
     state = sessions().get(args.app)
     if state is not None:
@@ -344,6 +371,19 @@ def cmd_start(args: argparse.Namespace) -> int:
             return 1
         except SystemExit:
             os.unlink(state_path(args.app))
+
+    # One instance is the rule: a second window of the same app is a second
+    # process fighting over the same QSettings, the same presets and the same
+    # scratch directory, and a functional test does not need two.
+    existing = app_windows(args.app)
+    if existing and not args.workspace:
+        window = existing[0]
+        state = adopt_window(args.app, window)
+        print(f"cockpit: reusing {args.app} already open on workspace {state['ws']}")
+        focus_workspace(state["ws"])
+        time.sleep(0.2)
+        hypr("dispatch", f'hl.dsp.focus({{window="address:{window["address"]}"}})')
+        return 0
 
     workspace = args.workspace or free_workspace()
     here = active_workspace()
@@ -384,9 +424,55 @@ def cmd_start(args: argparse.Namespace) -> int:
              "class": window_class, "command": command, "started": time.time()}
     save_state(args.app, state)
     window = window_of(state)
+
+    if not args.no_activate_click:
+        # See the module note: without this the first key of the session is lost.
+        centre = to_screen(state, window["size"][0] // 2, window["size"][1] // 2)
+        move_cursor(*centre)
+        time.sleep(0.1)
+        device = Input()
+        try:
+            device.button("left", True)
+            time.sleep(0.05)
+            device.button("left", False)
+        finally:
+            device.close()
+        time.sleep(0.2)
     print(f"cockpit: {args.app} on workspace {workspace}, window {window['size'][0]}x"
           f"{window['size'][1]} at {window['at'][0]},{window['at'][1]}")
     return 0
+
+
+def wait_for_gone(state: dict, seconds: float) -> bool:
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if not any(client["workspace"]["id"] == state["ws"]
+                   and client.get("class") == state.get("class") for client in clients()):
+            return True
+        time.sleep(0.2)
+    return False
+
+
+def press_key(app: str, name: str) -> None:
+    args = argparse.Namespace(app=app, name=name, modifier=[], times=1, interval=0.05)
+    with contextlib.redirect_stderr(io.StringIO()):
+        try:
+            cmd_key(args)
+        except SystemExit:
+            pass
+
+
+def click_text_in_window(app: str, text: str) -> bool:
+    """Click a button by its label in the session window. False when it is absent."""
+    args = argparse.Namespace(app=app, text=text, index=0, x=0, y=0, button="left",
+                              double=False, settle=0.15)
+    # Looking for a button that is not there is the normal case, so its complaint
+    # is swallowed: a stop that needs no guard should read as one line.
+    with contextlib.redirect_stderr(io.StringIO()):
+        try:
+            return cmd_click_text(args) == 0
+        except SystemExit:
+            return False
 
 
 def cmd_stop(args: argparse.Namespace) -> int:
@@ -399,12 +485,35 @@ def cmd_stop(args: argparse.Namespace) -> int:
         window = None
     if window is not None:
         hypr("dispatch", f'hl.dsp.window.close({{window="address:{window["address"]}"}})')
-        deadline = time.monotonic() + 3.0
+        # The app refuses to close over unsaved work and asks what to do with it.
+        # That guard is part of the app, so the tool has to answer it: poll for the
+        # window to go, and answer "Discard" the moment it appears -- nothing on a
+        # test plate is worth keeping, and the guard would otherwise hold the window
+        # open indefinitely.
+        deadline = time.monotonic() + 8.0
+        attempts = 0
         while time.monotonic() < deadline:
             if not any(client["workspace"]["id"] == state["ws"]
                        and client.get("class") == state.get("class") for client in clients()):
                 break
-            time.sleep(0.2)
+            # The app asks "save this plate before closing?" when what is on the
+            # plate is unsaved, and the second close request is the answer the app
+            # documents as discard. Keys are tried too: they are free when the
+            # guard is not up, and they are what a person would press.
+            press_key(args.app, "d")
+            attempts += 1
+            if attempts >= 2:
+                hypr("dispatch", f'hl.dsp.window.close({{window="address:{window["address"]}"}})')
+            time.sleep(0.6)
+        wait_for_gone(state, 1.5)
+    still_open = any(client["workspace"]["id"] == state["ws"]
+                     and client.get("class") == state.get("class") for client in clients())
+    if still_open:
+        # Keep the session: an open window the tool cannot close is still a
+        # session, and dropping the record orphans it.
+        print(f"cockpit: {args.app} is still open on workspace {state['ws']}", file=sys.stderr)
+        return 1
+
     os.unlink(state_path(args.app))
     if state.get("return_ws"):
         focus_workspace(state["return_ws"])
@@ -436,10 +545,7 @@ def cmd_windows(args: argparse.Namespace) -> int:
 
 
 def cmd_focus(args: argparse.Namespace) -> int:
-    state = load_state(args.app)
-    focus_workspace(state["ws"])
-    time.sleep(0.2)
-    hypr("dispatch", f'hl.dsp.focus({{window="address:{state["address"]}"}})')
+    focus_session(load_state(args.app))
     return 0
 
 
@@ -691,9 +797,16 @@ def cmd_scroll(args: argparse.Namespace) -> int:
     return 0
 
 
+def focus_session(state: dict) -> None:
+    """Make the session's workspace active, then focus the app's own window."""
+    focus_workspace(state["ws"])
+    time.sleep(0.15)
+    hypr("dispatch", f'hl.dsp.focus({{window="address:{state["address"]}"}})')
+
+
 def cmd_key(args: argparse.Namespace) -> int:
     state = load_state(args.app)
-    hypr("dispatch", f'hl.dsp.focus({{window="address:{state["address"]}"}})')
+    focus_session(state)
     time.sleep(0.05)
     names = key_names()
     alias = {"escape": "esc", "return": "enter", "del": "delete", "pgup": "pageup"}
@@ -714,7 +827,7 @@ def cmd_key(args: argparse.Namespace) -> int:
 
 def cmd_type(args: argparse.Namespace) -> int:
     state = load_state(args.app)
-    hypr("dispatch", f'hl.dsp.focus({{window="address:{state["address"]}"}})')
+    focus_session(state)
     time.sleep(0.05)
     device = Input("cockpit-keyboard", kind="keyboard")
     try:
@@ -782,6 +895,8 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--workspace", type=int, help="use this workspace instead of a free one")
     start.add_argument("--wait", type=float, default=25.0, help="seconds to wait for a window")
     start.add_argument("--no-fullscreen", action="store_true")
+    start.add_argument("--no-activate-click", action="store_true",
+                       help="do not click once to activate the window (keys will not arrive)")
     start.set_defaults(func=cmd_start)
 
     stop = subparsers.add_parser("stop", help="close the app and drop the session")

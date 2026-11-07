@@ -586,10 +586,12 @@ Item {
                 geometry: plateScene.hoverGeometry
                 visible: plateScene.hasHover && root.mode !== "preview" && root.layOnFaceActive
 
+                // A coloured geometry needs the matching material: the colour is
+                // per triangle, so it is read from the vertex buffer, and no
+                // lighting keeps a flat tint flat.
                 materials: PrincipledMaterial {
                     lighting: PrincipledMaterial.NoLighting
                     vertexColorsEnabled: true
-                    alphaMode: PrincipledMaterial.Blend
                     cullMode: Material.NoCulling
                 }
             }

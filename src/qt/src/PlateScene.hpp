@@ -30,6 +30,9 @@ class PlateScene : public QObject
     /// before you click, which is what makes the tool usable.
     Q_PROPERTY(QQuick3DGeometry* hoverGeometry READ hoverGeometry NOTIFY geometryChanged)
     Q_PROPERTY(bool hasHover READ hasHover NOTIFY geometryChanged)
+    /// How many triangles the highlighted face came out as: one for a single
+    /// triangle of a curved surface, two or more for a flat face made of several.
+    Q_PROPERTY(int hoverTriangles READ hoverTriangles NOTIFY geometryChanged)
     Q_PROPERTY(QQuick3DGeometry* selectionGeometry READ selectionGeometry NOTIFY geometryChanged)
     Q_PROPERTY(bool hasSelection READ hasSelection NOTIFY geometryChanged)
     Q_PROPERTY(QQuick3DGeometry* paintGeometry READ paintGeometry NOTIFY geometryChanged)
@@ -50,6 +53,7 @@ public:
     bool hasOtherPlates() const { return m_hasOtherPlates; }
     QQuick3DGeometry* hoverGeometry() const;
     bool hasHover() const { return m_hasHover; }
+    int hoverTriangles() const { return m_hoverTriangles; }
     /// The face under the pointer, or -1 for nothing. Rebuilding one triangle is
     /// cheap enough to run on every mouse move, unlike a full plate rebuild.
     Q_INVOKABLE void setHoverFacet(int id, int facet);
@@ -108,6 +112,7 @@ private:
     bool m_hasSelection = false;
     bool m_hasOtherPlates = false;
     bool m_hasHover = false;
+    int m_hoverTriangles = 0;
     bool m_hasVolumes = false;
     int m_pickedId = 0;
     int m_pickedFacet = -1;

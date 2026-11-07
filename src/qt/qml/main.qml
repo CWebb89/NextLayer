@@ -782,6 +782,14 @@ Window {
     title: "next-layer"
     color: Colors.background
 
+    // A window that comes up without keyboard focus swallows every key until
+    // something is clicked -- the first `F` or `Ctrl+O` of a session did nothing,
+    // which reads as shortcuts being broken rather than as focus being elsewhere.
+    onActiveChanged: {
+        if (active && shell.activeFocusItem === null)
+            shell.forceActiveFocus()
+    }
+
     Item {
         id: shell
         anchors.fill: parent
@@ -791,6 +799,23 @@ Window {
         // dialog shows. Escape is handled before the table because it means
         // "leave what you are doing" first and "deselect" only after that.
         Keys.onPressed: (event) => {
+            // The close guard answers to keys as well as the mouse: it is the one
+            // dialog a person meets when a script or a terminal asks the window to
+            // close, and a button that can only be hit with the pointer cannot be
+            // answered by anything but a pointer. `D` discards, `S` saves and
+            // closes, Escape cancels.
+            if (root.closeGuardOpen) {
+                if (event.key === Qt.Key_D) {
+                    root.closeWithoutSaving()
+                    event.accepted = true
+                    return
+                }
+                if (event.key === Qt.Key_S) {
+                    root.saveThenClose()
+                    event.accepted = true
+                    return
+                }
+            }
             if (event.key === Qt.Key_Escape && root.addMenuVisible) {
                 root.addMenuVisible = false
                 event.accepted = true
@@ -1903,18 +1928,18 @@ Window {
                     spacing: Metrics.sm
 
                     Button {
-                        text: "Save and close"
+                        text: "Save and close (S)"
                         primary: true
                         onClicked: root.saveThenClose()
                     }
 
                     Button {
-                        text: "Discard"
+                        text: "Discard (D)"
                         onClicked: root.closeWithoutSaving()
                     }
 
                     Button {
-                        text: "Cancel"
+                        text: "Cancel (Esc)"
                         onClicked: root.closeGuardOpen = false
                     }
                 }
@@ -2058,6 +2083,7 @@ Window {
     }
 
     Component.onCompleted: {
+        shell.forceActiveFocus()
         preferencesDialog.load()
         root.applyPreferences()
         if (typeof startupPanelLeft !== "undefined" && startupPanelLeft)

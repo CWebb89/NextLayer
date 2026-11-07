@@ -19,6 +19,7 @@
 
 #include <cmath>
 #include <limits>
+#include <vector>
 
 using Slic3r::Domain::Index3;
 using Slic3r::Domain::Transform3d;
@@ -134,28 +135,82 @@ void PlateScene::setHoverFacet(int id, int facet)
             return;
         m_hover->setColoredMesh(TriangleMesh{}, {});
         m_hasHover = false;
+        m_hoverTriangles = 0;
         emit geometryChanged();
         return;
     }
 
-    const Index3& face = object->mesh->its.indices[size_t(facet)];
-    TriangleMesh triangle;
-    triangle.its.vertices = {object->mesh->its.vertices[face[0]],
-                             object->mesh->its.vertices[face[1]],
-                             object->mesh->its.vertices[face[2]]};
-    triangle.its.indices.push_back(Index3{0, 1, 2});
-    triangle.transform(object->trafo.get_matrix());
+    const TriangleMesh& mesh = *object->mesh;
+    const Index3& seed = mesh.its.indices[size_t(facet)];
+    const Vec3f& sa = mesh.its.vertices[seed[0]];
+    const Vec3f& sb = mesh.its.vertices[seed[1]];
+    const Vec3f& sc = mesh.its.vertices[seed[2]];
+    const Vec3f normal = (sb - sa).cross(sc - sa).normalized();
+    const float plane = normal.dot(sa);
 
-    // Lifted off the surface along its own normal so the tint wins the depth test
-    // against the face it is sitting on rather than z-fighting with it.
-    const Vec3f& a = triangle.its.vertices[0];
-    const Vec3f& b = triangle.its.vertices[1];
-    const Vec3f& c = triangle.its.vertices[2];
-    const Vec3f normal = (b - a).cross(c - a).normalized();
-    triangle.translate(Vec3f(normal.x() * 0.35f, normal.y() * 0.35f, normal.z() * 0.35f));
+    // A flat face is several triangles, so the highlight has to be the whole face:
+    // marking one triangle of a square reads as a broken highlight, not as a face.
+    // Flood out through shared vertices, keeping every triangle in the same plane.
+    std::vector<std::vector<size_t>> vertexFacets(mesh.its.vertices.size());
+    for (size_t index = 0; index < mesh.its.indices.size(); ++index) {
+        for (const int vertex : mesh.its.indices[index])
+            vertexFacets[size_t(vertex)].push_back(index);
+    }
 
-    m_hover->setColoredMesh(triangle, {QVector4D(0.16f, 0.72f, 0.98f, 0.55f)});
+    std::vector<bool> visited(mesh.its.indices.size(), false);
+    std::vector<size_t> pending{size_t(facet)};
+    std::vector<size_t> chosen;
+    visited[size_t(facet)] = true;
+    while (!pending.empty()) {
+        const size_t current = pending.back();
+        pending.pop_back();
+        chosen.push_back(current);
+        for (const int vertex : mesh.its.indices[current]) {
+            for (const size_t neighbour : vertexFacets[size_t(vertex)]) {
+                if (visited[neighbour])
+                    continue;
+                const Index3& tri = mesh.its.indices[neighbour];
+                const Vec3f& a = mesh.its.vertices[tri[0]];
+                const Vec3f& b = mesh.its.vertices[tri[1]];
+                const Vec3f& c = mesh.its.vertices[tri[2]];
+                const Vec3f faceNormal = (b - a).cross(c - a);
+                if (faceNormal.norm() <= 0.0f)
+                    continue;
+                const Vec3f unit = faceNormal.normalized();
+                if (unit.dot(normal) < 0.9995f || std::abs(unit.dot(a) - plane) > 0.05f)
+                    continue;
+                visited[neighbour] = true;
+                pending.push_back(neighbour);
+            }
+        }
+    }
+
+    TriangleMesh patch;
+    patch.its.indices.reserve(chosen.size());
+    QVector<QVector4D> colours;
+    colours.reserve(int(chosen.size()));
+    for (const size_t index : chosen) {
+        const Index3& face = mesh.its.indices[index];
+        const auto base = static_cast<int>(patch.its.vertices.size());
+        patch.its.vertices.push_back(mesh.its.vertices[face[0]]);
+        patch.its.vertices.push_back(mesh.its.vertices[face[1]]);
+        patch.its.vertices.push_back(mesh.its.vertices[face[2]]);
+        patch.its.indices.push_back(Index3{base, base + 1, base + 2});
+        colours.append(QVector4D(0.18f, 0.74f, 0.99f, 1.0f));
+    }
+    // Lifted off the surface by scaling a hair about the object's own centre, the
+    // way the paint overlay does: the face's stored winding may point either way,
+    // and a normal-shaped lift disappears inside the model whenever it does.
+    const Vec3f centre((object->localMin.x() + object->localMax.x()) * 0.5f,
+                       (object->localMin.y() + object->localMax.y()) * 0.5f,
+                       (object->localMin.z() + object->localMax.z()) * 0.5f);
+    for (Vec3f& vertex : patch.its.vertices)
+        vertex = centre + (vertex - centre) * 1.004f;
+    patch.transform(object->trafo.get_matrix());
+
+    m_hover->setColoredMesh(patch, colours);
     m_hasHover = true;
+    m_hoverTriangles = int(chosen.size());
     emit geometryChanged();
 }
 

@@ -129,6 +129,14 @@ protected:
         if (!unsaved)
             return QObject::eventFilter(watched, event);
 
+        // Asking to close a second time while the question is on screen is an
+        // answer: discard. Without this a window with unsaved work could only be
+        // closed by a pointer on the right pixel, which no script has.
+        if (m_window->property("closeGuardOpen").toBool()) {
+            QMetaObject::invokeMethod(m_window, "closeWithoutSaving");
+            return true;
+        }
+
         event->ignore();
         QMetaObject::invokeMethod(m_window, "promptClose");
         return true;
@@ -709,7 +717,7 @@ int main(int argc, char* argv[])
     for (int index = 1; index < argc; ++index) {
         const std::string_view argument(argv[index]);
         if (argument == "--smoke" || argument == "--slice" || argument == "--selftest-slice"
-            || argument == "--slice-all"
+            || argument == "--slice-all" || argument == "--hover-test"
             || argument == "--calibration-test" || argument == "--mesh-tools-test"
             || argument == "--print-host-test" || argument == "--print-host-start"
             || argument == "--update-install" || argument == "--dump-config"
@@ -743,6 +751,8 @@ int main(int argc, char* argv[])
     const QCommandLineOption dump_tabs_option("dump-tabs", "Print the settings tab tree with per-sub-tab counts and exit.");
     const QCommandLineOption dump_plates_option("dump-plates", "Print the plate count and the objects on each plate after loading, then exit.");
     const QCommandLineOption dump_objects_option("dump-objects", "Print every loaded object's name, facet count, plate and position, then exit.");
+    const QCommandLineOption hover_test_option("hover-test",
+        "Highlight the face under facet N of the first object and report how many triangles it came out as, then exit.", "facet");
     const QCommandLineOption dump_names_option("dump-setting-names",
         "Print every setting name the sidebar exposes and exit.");
     const QCommandLineOption dump_subtab_option("dump-subtab", "Print the settings of one sub-tab (TAB/SUBTAB) and exit.", "tab/subtab");
@@ -856,7 +866,7 @@ int main(int argc, char* argv[])
                        ortho_option, plates_option,
                        settings_tab_option, paint_test_option, input_test_option, slider_test_option,
                        preset_dialog_option,
-                       panel_left_option, selftest_option, slice_all_option, plate_tools_option, slice_features_option,
+                       hover_test_option, panel_left_option, selftest_option, slice_all_option, plate_tools_option, slice_features_option,
                        project_test_option, mesh_tools_option, update_option,
                        update_install_option, multi_tool_option, print_host_test_option, print_host_start_option, volume_settings_option, calibration_test_option, shape_test_option, keep_gcode_option, scene_selftest_option, preview_stats_option, vgcode_shot_option,
                        dump_presets_option, dump_presets_json_option, dump_fonts_option, dump_object_settings_option, preset_printer_option, preset_process_option, preset_filament_option, preset_filaments_option,
@@ -1583,6 +1593,35 @@ int main(int argc, char* argv[])
         return 0;
     }
 
+    if (parser.isSet(hover_test_option)) {
+        const int facet = parser.value(hover_test_option).toInt();
+        const QVariantList plate = document->objects();
+        if (plate.isEmpty()) {
+            std::fprintf(stderr, "hover-test: nothing is on the plate\n");
+            return 1;
+        }
+        const int id = plate.first().toMap().value(QStringLiteral("id")).toInt();
+        const PlateDocument::Object* object = document->object(id);
+        const int facets = object != nullptr && object->mesh != nullptr
+            ? int(object->mesh->its.indices.size()) : 0;
+        auto hover = std::make_unique<PlateScene>(document);
+        hover->setHoverFacet(id, facet);
+        const QVector3D low = hover->hoverGeometry()->boundsMin();
+        const QVector3D high = hover->hoverGeometry()->boundsMax();
+        std::fprintf(stdout, "object has %d facets; facet %d highlights %d triangle(s) "
+                             "within %.2f %.2f %.2f .. %.2f %.2f %.2f\n",
+                     facets, facet, hover->hoverTriangles(),
+                     double(low.x()), double(low.y()), double(low.z()),
+                     double(high.x()), double(high.y()), double(high.z()));
+        const bool whole = hover->hoverTriangles() > 1;
+        if (!whole) {
+            std::fprintf(stderr, "hover-test: a flat face came out as one triangle: "
+                                 "the highlight is per-triangle, not per-face\n");
+            return 1;
+        }
+        return 0;
+    }
+
     if (parser.isSet(paint_test_option)) {
         const double radius = qMax(0.5, parser.value(paint_test_option).toDouble());
         int painted = 0;
@@ -1778,6 +1817,14 @@ int main(int argc, char* argv[])
 
     auto* closeGuard = new CloseGuard(window);
     window->installEventFilter(closeGuard);
+
+    // Ask the compositor for keyboard focus once the window is mapped. Without
+    // this the window is placed and raised but not active, so the first key of a
+    // session -- F to frame the plate, Ctrl+O to open a model -- is delivered to
+    // nothing and looks like a broken shortcut.
+    QTimer::singleShot(120, window, [window] {
+        window->requestActivate();
+    });
 
     if (parser.isSet(view_option)) {
         const QStringList parts = parser.value(view_option).split(',');
