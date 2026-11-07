@@ -94,7 +94,6 @@ Popup {
         return plateDocument.paintedFacetCount(root.objectId, kind) + " painted triangle(s)"
     }
 
-    parent: Overlay.overlay
     width: Math.min(720, parent.width - Metrics.xl * 2)
     height: Math.min(680, parent.height - Metrics.xl * 2)
     x: Math.round((parent.width - width) / 2)

@@ -41,7 +41,7 @@ app replaces its window during start-up and a fullscreen toggle remaps it.
 | `status` / `windows` / `focus` / `stop` | session management |
 | `shot <out.png>` | capture the workspace |
 | `ocr` / `find-text TEXT` / `click-text TEXT [--index N]` | read the screen and click a label |
-| `move X Y`, `click X Y [--double] [--button]` | pointer |
+| `move X Y [--hover]`, `click X Y [--double] [--button]` | pointer; `--hover` also refreshes hover state |
 | `drag X1 Y1 X2 Y2 [--steps N]` | press, move, release |
 | `scroll N [--x X --y Y]` | wheel |
 | `key NAME [--modifier ctrl] [--times N]` | keys, named from `linux/input-event-codes.h` (`keys` lists them) |
@@ -56,6 +56,11 @@ app replaces its window during start-up and a fullscreen toggle remaps it.
   (`Slice plate` → `siceplate`); when a label will not resolve, read the position
   off a screenshot with `cockpit shot` + `cockpit ocr` and click coordinates
   directly.
+- `move` warps the cursor and a warp sends the client no pointer event, so Qt
+  keeps whatever hover state it had: hover fills, `HoverHandler`s and tooltips
+  stay frozen where the pointer last *was*. `move --hover` warps and then turns
+  the wheel one step each way at that point, which is what makes the client
+  notice; the two steps cancel out.
 - Everything runs through the compositor, so it is the same input path a person
   would take. There is no test-only hook in either application.
 - The session file survives between commands, so the app keeps running while

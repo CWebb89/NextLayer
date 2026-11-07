@@ -22,7 +22,6 @@ Popup {
     property string dataDir: ""
     property string presetDir: ""
 
-    parent: Overlay.overlay
     width: Math.min(560, parent.width - Metrics.xl * 2)
     height: content.implicitHeight + Metrics.xl * 2
     x: Math.round((parent.width - width) / 2)

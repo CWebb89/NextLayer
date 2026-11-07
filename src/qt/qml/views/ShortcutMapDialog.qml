@@ -42,7 +42,6 @@ Popup {
         root.open()
     }
 
-    parent: Overlay.overlay
     width: Math.min(760, parent.width - Metrics.xl * 2)
     height: Math.min(680, parent.height - Metrics.xl * 2)
     x: Math.round((parent.width - width) / 2)
@@ -84,10 +83,12 @@ Popup {
 
                 Text {
                     text: root.visibleShortcuts.length + " of " + root.shortcuts.length
+                    horizontalAlignment: Text.AlignRight
                     font.family: Type.family
                     font.pixelSize: Type.sizeCaption
                     color: Colors.textMuted
                     Layout.fillWidth: true
+                    Layout.leftMargin: Metrics.md
                 }
 
                 ToolButton {

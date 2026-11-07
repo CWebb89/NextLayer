@@ -18,6 +18,8 @@ Item {
 
     property var groups: []
     property string filterText: ""
+    property Item tipItem: null
+    property string tipText: ""
 
     readonly property bool filtering: root.filterText.length > 0
     readonly property int editorWidth: Math.round(width * 0.46)
@@ -49,7 +51,19 @@ Item {
         contentHeight: fieldColumn.implicitHeight + Metrics.md
         clip: true
         boundsBehavior: Flickable.StopAtBounds
-        ScrollBar.vertical: ScrollBar {}
+        ScrollBar.vertical: ThemedScrollBar {}
+
+        // A Flickable does not scroll on the wheel by itself, and a settings page
+        // is exactly the place a person reaches for the wheel. The handler sits on
+        // the flickable so it wins over anything behind the panel and stops the
+        // viewport from zooming while the pointer is over a setting.
+        WheelHandler {
+            onWheel: (event) => {
+                const limit = Math.max(0, flick.contentHeight - flick.height)
+                flick.contentY = Math.max(0, Math.min(limit, flick.contentY - event.angleDelta.y / 2))
+                event.accepted = true
+            }
+        }
 
         Column {
             id: fieldColumn
@@ -192,24 +206,87 @@ Item {
                                 }
                             }
 
+                            // Behind the editor, not in front of it: a row-sized
+                            // MouseArea on top would swallow every click meant for a
+                            // field. `z: -1` costs it the label, where the text sits
+                            // above it, and nothing else on the row is a hit area.
                             MouseArea {
                                 id: rowHover
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 acceptedButtons: Qt.NoButton
                                 z: -1
-                            }
 
-                            ToolTip.visible: rowHover.containsMouse
-                                             && settingRow.modelData.tooltip !== undefined
-                                             && settingRow.modelData.tooltip !== null
-                                             && String(settingRow.modelData.tooltip).length > 0
-                            ToolTip.text: String(settingRow.modelData.tooltip)
-                            ToolTip.delay: 700
+                                onEntered: {
+                                    const text = settingRow.modelData.tooltip === undefined
+                                                 || settingRow.modelData.tooltip === null
+                                                 ? "" : String(settingRow.modelData.tooltip)
+                                    if (text.length === 0)
+                                        return
+                                    root.tipItem = settingRow
+                                    root.tipText = text
+                                    tipTimer.restart()
+                                }
+
+                                onExited: {
+                                    root.tipItem = null
+                                    root.tipText = ""
+                                    tipTimer.stop()
+                                    descriptionTip.close()
+                                }
+                            }
                         }
                     }
                 }
             }
+        }
+    }
+
+    // The description of the setting under the pointer. Qt's attached tooltip
+    // centres itself over the row, so a two-sentence description 650 px wide on
+    // a 400 px row hung half of it off the window. This one is a fixed width,
+    // wraps its text, and is placed under the row inside the panel.
+    ToolTip {
+        id: descriptionTip
+        parent: root
+        width: Math.min(380, Math.max(240, root.width - Metrics.xl * 2))
+        height: tipLabel.implicitHeight + Metrics.md * 2
+        padding: Metrics.md
+        visible: false
+        closePolicy: Popup.NoAutoClose
+
+        contentItem: Text {
+            id: tipLabel
+            width: descriptionTip.width - Metrics.md * 2
+            text: descriptionTip.text
+            wrapMode: Text.WordWrap
+            font.family: Type.family
+            font.pixelSize: Type.sizeCaption
+            color: Colors.textSecondary
+        }
+
+        background: Rectangle {
+            radius: Metrics.radiusSmall
+            color: Colors.surfaceContainerHigh
+            border.width: Metrics.borderWidth
+            border.color: Colors.edgeStrong
+        }
+    }
+
+    Timer {
+        id: tipTimer
+        interval: 550
+        onTriggered: {
+            if (root.tipItem === null || root.tipText.length === 0)
+                return
+            const point = root.tipItem.mapToItem(root, 0, root.tipItem.height + Metrics.xs)
+            const text = root.tipText
+            descriptionTip.text = text
+            descriptionTip.x = Math.max(Metrics.xs,
+                                        Math.min(root.width - descriptionTip.width - Metrics.xs, point.x))
+            descriptionTip.y = Math.max(Metrics.xs,
+                                        Math.min(root.height - descriptionTip.height - Metrics.xs, point.y))
+            descriptionTip.open()
         }
     }
 

@@ -74,8 +74,9 @@ Item {
         onClicked: root.clicked()
     }
 
-    ToolTip.visible: mouse.containsMouse && root.hint !== ""
-    ToolTip.text: root.hint
-    ToolTip.delay: 400
-    ToolTip.timeout: 10000
+    Tooltip {
+        target: root
+        text: root.hint
+        shown: mouse.containsMouse && root.enabled && root.hint !== ""
+    }
 }

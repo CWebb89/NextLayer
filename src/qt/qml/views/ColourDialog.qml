@@ -32,7 +32,6 @@ Popup {
         "#90A4AE", "#FFD54F", "#EF5350"
     ]
 
-    parent: Overlay.overlay
     width: Math.min(460, parent.width - Metrics.xl * 2)
     height: Math.min(520, parent.height - Metrics.xl * 2)
     x: Math.round((parent.width - width) / 2)

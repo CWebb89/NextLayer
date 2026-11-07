@@ -18,7 +18,6 @@ Popup {
     property string message: ""
     property bool messageOk: false
 
-    parent: Overlay.overlay
     width: Math.min(620, (parent ? parent.width : 1280) - 140)
     height: Math.min(parent ? parent.height - Metrics.xl * 2 : 460, 470)
     x: parent ? Math.round((parent.width - width) / 2) : 0

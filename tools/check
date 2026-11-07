@@ -492,14 +492,14 @@ end
 set -l plate_grid (mktemp /tmp/nl-check-grid-XXXXXX.3mf)
 env QT_QPA_PLATFORM=offscreen python3 $root/oracle/plate-fixture/make.py $plate_grid 5 >/dev/null 2>&1
 set -l grid_out (env QT_QPA_PLATFORM=offscreen $bin $plate_grid --dump-plates 2>/dev/null)
-set -l grid_first (string match -r '^  plate 1: .* at ([0-9.-]+) ([0-9.-]+)$' -- $grid_out | tail -n 1)
-set -l grid_fifth (string match -r '^  plate 5: .* at ([0-9.-]+) ([0-9.-]+)$' -- $grid_out | tail -n 1)
+set -l grid_first (printf '%s\n' $grid_out | sed -n 's/^  plate 1: .* at \([0-9.-]*\) \([0-9.-]*\)$/\1 \2/p')
+set -l grid_fifth (printf '%s\n' $grid_out | sed -n 's/^  plate 5: .* at \([0-9.-]*\) \([0-9.-]*\)$/\1 \2/p')
 rm -f $plate_grid
 if test "$grid_first" = '' -o "$grid_fifth" = ''
     __bad 'plate grid: five plates could not be read back'
-else if test $grid_first[1] != 0.0 -o $grid_first[2] != 0.0
+else if test "$grid_first" != '0.0 0.0'
     __bad "plate grid: the active plate is not at the origin ($grid_first)"
-else if test $grid_fifth[1] = 0.0 -o $grid_fifth[2] = 0.0
+else if test "$grid_fifth" = '0.0 0.0'
     __bad "plate grid: plate 5 is still in the first row and column ($grid_fifth)"
 else
     __ok "plate grid: plate 5 wraps to the next row at $grid_fifth"

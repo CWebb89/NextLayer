@@ -119,9 +119,11 @@ Item {
 
     // A truncated value is still readable in full on hover, which is the whole
     // point of truncating it rather than shrinking the font.
-    Controls.ToolTip.visible: area.containsMouse && label.truncated
-    Controls.ToolTip.delay: 400
-    Controls.ToolTip.text: root.currentLabel
+    Tooltip {
+        target: root
+        text: root.currentLabel
+        shown: area.containsMouse && label.truncated
+    }
 
     Text {
         id: chevron

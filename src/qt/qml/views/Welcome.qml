@@ -254,7 +254,7 @@ Item {
 
             Text {
                 width: parent.width
-                visible: root.importResult.refused && root.importResult.refused.length > 0
+                visible: !!(root.importResult.refused && root.importResult.refused.length > 0)
                 text: root.importResult.refused && root.importResult.refused.length > 0
                       ? "Left out: " + root.importResult.refused.slice(0, 3).join("; ")
                       : ""
@@ -266,7 +266,7 @@ Item {
 
             Text {
                 width: parent.width
-                visible: root.importResult.elsewhere && root.importResult.elsewhere.length > 0
+                visible: !!(root.importResult.elsewhere && root.importResult.elsewhere.length > 0)
                 text: root.importResult.elsewhere && root.importResult.elsewhere.length > 0
                       ? root.importResult.elsewhere.length
                         + " of them live in another profile on this engine (retraction is per filament here), so they stay with the machine's own settings."

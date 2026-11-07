@@ -42,8 +42,10 @@ Column {
         id: hover
     }
 
-    ToolTip.visible: hover.hovered && root.tooltip !== ""
-    ToolTip.text: root.tooltip
-    ToolTip.delay: 500
-    ToolTip.timeout: 20000
+    Tooltip {
+        target: root
+        text: root.tooltip
+        shown: hover.hovered && root.tooltip !== ""
+        delay: 500
+    }
 }

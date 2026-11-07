@@ -1039,7 +1039,7 @@ Item {
                 }
             }
 
-            Divider { anchors.verticalCenter: parent.verticalCenter }
+            Divider { vertical: true; anchors.verticalCenter: parent.verticalCenter }
 
             ToolButton {
                 width: Metrics.rowHeight - Metrics.sm
@@ -1577,11 +1577,14 @@ Item {
                                                      : root.plateSelected(plateItem.index)
                     }
 
-                    ToolTip.visible: nameHover.hovered
-                    ToolTip.text: plateItem.current
-                                 ? "Rename " + plateItem.modelData.name
-                                 : "Switch to " + plateItem.modelData.name
-                    ToolTip.delay: 400
+                    Tooltip {
+                        target: nameDecal
+                        text: plateItem.current
+                              ? "Rename " + plateItem.modelData.name
+                              : "Switch to " + plateItem.modelData.name
+                        shown: nameHover.hovered
+                        delay: 400
+                    }
                     HoverHandler { id: nameHover }
                 }
 
@@ -1611,9 +1614,12 @@ Item {
                                                      : root.plateSelected(plateItem.index)
                     }
 
-                    ToolTip.visible: pencilHover.hovered
-                    ToolTip.text: plateItem.current ? "Rename this plate" : "Switch to this plate"
-                    ToolTip.delay: 400
+                    Tooltip {
+                        target: pencilDecal
+                        text: plateItem.current ? "Rename this plate" : "Switch to this plate"
+                        shown: pencilHover.hovered
+                        delay: 400
+                    }
                     HoverHandler { id: pencilHover }
                 }
 
@@ -1693,9 +1699,12 @@ Item {
                             }
                         }
 
-                        ToolTip.visible: actionMouse.containsMouse
-                        ToolTip.text: actionDecal.modelData.hint
-                        ToolTip.delay: 500
+                        Tooltip {
+                            target: actionDecal
+                            text: actionDecal.modelData.hint
+                            shown: actionMouse.containsMouse
+                            delay: 500
+                        }
                     }
                 }
 
@@ -1736,12 +1745,15 @@ Item {
                         onClicked: root.plateSelected(plateItem.index)
                     }
 
-                    ToolTip.visible: numberHover.hovered
-                    ToolTip.text: plateItem.modelData.count > 0
-                                  ? plateItem.modelData.name + " \u2014 "
-                                    + plateItem.modelData.count + " object(s)"
-                                  : plateItem.modelData.name + " \u2014 empty"
-                    ToolTip.delay: 400
+                    Tooltip {
+                        target: numberDecal
+                        text: plateItem.modelData.count > 0
+                              ? plateItem.modelData.name + " \u2014 "
+                                + plateItem.modelData.count + " object(s)"
+                              : plateItem.modelData.name + " \u2014 empty"
+                        shown: numberHover.hovered
+                        delay: 400
+                    }
                     HoverHandler { id: numberHover }
                 }
             }

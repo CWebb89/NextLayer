@@ -20,6 +20,10 @@ Item {
     property string url: ""
     property string stateLine: "no printer is configured"
     property bool loading: false
+    /// Non-empty when the last load failed. Chromium's own error page is bright
+    /// white and has nothing to do with this app, so it is hidden and the reason is
+    /// shown in the app's own colours with a way to try again.
+    property string pageError: ""
 
     readonly property DeviceWebView page: web.item as DeviceWebView
 
@@ -190,6 +194,7 @@ Item {
                 id: web
                 anchors.fill: parent
                 anchors.margins: Metrics.borderWidth
+                visible: root.pageError.length === 0
                 active: root.visible
                 source: active ? "DeviceWebView.qml" : ""
 
@@ -204,9 +209,58 @@ Item {
                             printerLink.deviceUrl = opened
                         }
                     })
-                    root.page.loadingStarted.connect(() => root.loading = true)
+                    root.page.loadEnded.connect((ok, reason) => {
+                        root.loading = false
+                        root.pageError = ok ? "" : reason
+                    })
                     root.page.renderProcessTerminated.connect((status, code) =>
                         root.status("the device page stopped (status " + status + ", code " + code + ")"))
+                }
+            }
+
+            ColumnLayout {
+                anchors.centerIn: parent
+                width: parent.width * 0.5
+                visible: root.pageError.length > 0
+                spacing: Metrics.md
+
+                Icon {
+                    Layout.alignment: Qt.AlignHCenter
+                    name: "cloud_off"
+                    size: Type.sizeXLarge
+                    color: Colors.textMuted
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                    text: root.url.replace("http://", "").replace(/\/$/, "") + " did not answer"
+                    font.family: Type.family
+                    font.pixelSize: Type.sizeBody
+                    font.bold: true
+                    color: Colors.textPrimary
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                    text: root.pageError
+                    font.family: Type.family
+                    font.pixelSize: Type.sizeCaption
+                    color: Colors.textTertiary
+                }
+
+                Button {
+                    Layout.alignment: Qt.AlignHCenter
+                    text: "Try again"
+                    primary: true
+                    onClicked: {
+                        root.pageError = ""
+                        if (root.page !== null)
+                            root.page.reload()
+                    }
                 }
             }
 

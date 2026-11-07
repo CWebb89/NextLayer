@@ -29,7 +29,6 @@ Popup {
     readonly property bool bedShape: root.settingName === "bed_shape"
     readonly property int minimumPoints: root.bedShape ? 3 : 1
 
-    parent: Overlay.overlay
     width: Math.min(620, parent.width - Metrics.xl * 2)
     height: Math.min(620, parent.height - Metrics.xl * 2)
     x: Math.round((parent.width - width) / 2)

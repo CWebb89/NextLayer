@@ -19,3 +19,5 @@ SettingEditor 1.0 SettingEditor.qml
 Slider 1.0 Slider.qml
 Toggle 1.0 Toggle.qml
 ToolButton 1.0 ToolButton.qml
+ThemedScrollBar 1.0 ThemedScrollBar.qml
+Tooltip 1.0 Tooltip.qml

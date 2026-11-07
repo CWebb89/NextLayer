@@ -4,10 +4,16 @@
 import QtQuick
 import "../theme"
 
-// Vertical hairline separating toolbar groups, matching the dividers between
-// icon clusters.
+// Hairline rule. Horizontal by default, because that is how it is used: between
+// sections of a panel or a dialog, where the caller anchors it left-to-right or
+// asks a layout to fill the width. Toolbar clusters set `vertical: true` and get
+// the short upright mark that separates one icon group from the next.
 Rectangle {
-    width: Metrics.hairline
-    height: Metrics.xxl
+    property bool vertical: false
+
+    implicitWidth: vertical ? Metrics.hairline : Metrics.xxl * 8
+    implicitHeight: vertical ? Metrics.xxl : Metrics.hairline
+    width: implicitWidth
+    height: implicitHeight
     color: Colors.separator
 }

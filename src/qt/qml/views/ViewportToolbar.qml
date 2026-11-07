@@ -62,12 +62,22 @@ Item {
     /// the top of the strip has to be drawn over the whole window.
     signal plateListRequested(real x, real y)
     signal actionTriggered(string id)
-    signal addRequested()
+    /// The Add button was pressed, with the point under its bottom-left corner in
+    /// window coordinates, so the menu it opens lands on the button rather than in
+    /// a corner of the window.
+    signal addRequested(real x, real y)
     signal toolTriggered(string id)
     signal sliceRequested()
     signal sliceAllRequested()
 
-    implicitHeight: Metrics.rowHeight + Metrics.md * 2
+    // Two rows, because one cannot hold them: a plate cluster, nine object
+    // actions, fourteen tools and the slice controls came to roughly 1300 px
+    // against 1150 available, and the overflow silently clipped the last six
+    // tools -- support, seam and colour painting, variable layer height,
+    // assemble and calibration -- off the end of the strip. Plate and object
+    // actions share the top row with the slice controls; the tools own the
+    // second row and always fit.
+    implicitHeight: Metrics.rowHeight + Metrics.md * 2 + Metrics.rowHeight + Metrics.xs
 
     Rectangle {
         anchors.fill: parent
@@ -81,7 +91,8 @@ Item {
         id: plateRow
         anchors.left: parent.left
         anchors.leftMargin: Metrics.sm
-        anchors.verticalCenter: parent.verticalCenter
+        anchors.top: parent.top
+        anchors.topMargin: Metrics.md
         spacing: Metrics.xxs
 
         // One control for the whole plate list. A project can hold fourteen plates
@@ -137,9 +148,12 @@ Item {
                 }
             }
 
-            ToolTip.visible: selectorMouse.containsMouse
-            ToolTip.text: "Build plates \u2014 pick the one to work on"
-            ToolTip.delay: 500
+            Tooltip {
+                target: plateSelector
+                text: "Build plates \u2014 pick the one to work on"
+                shown: selectorMouse.containsMouse
+                delay: 500
+            }
         }
 
         // The plate cluster, beside the selector: the four things you do to a
@@ -177,14 +191,15 @@ Item {
 
     Divider {
         id: plateDivider
+        vertical: true
         anchors.left: plateRow.right
         anchors.leftMargin: Metrics.sm
-        anchors.verticalCenter: parent.verticalCenter
+        anchors.verticalCenter: plateRow.verticalCenter
     }
 
     Row {
         id: actionRow
-        anchors.verticalCenter: parent.verticalCenter
+        anchors.verticalCenter: plateRow.verticalCenter
         anchors.left: plateDivider.right
         anchors.leftMargin: Metrics.md
         spacing: 0
@@ -192,14 +207,17 @@ Item {
         // Add is first because it is the first thing a plate needs: a shape of
         // its own, or a volume that changes what a shape becomes.
         ToolButton {
+            id: addButton
             icon: "add_box"
             hint: "Add a shape or a modifier volume"
-            onClicked: root.addRequested()
+            onClicked: (mouse) => {
+                const point = addButton.mapToItem(null, 0, addButton.height + Metrics.xs)
+                root.addRequested(point.x, point.y)
+            }
         }
 
         Divider {
-            width: Metrics.borderWidth
-            height: Metrics.controlHeight - Metrics.xs * 2
+            vertical: true
             anchors.verticalCenter: parent.verticalCenter
         }
 
@@ -220,21 +238,22 @@ Item {
 
     Divider {
         id: actionDivider
+        vertical: true
         anchors.left: actionRow.right
         anchors.leftMargin: Metrics.sm
-        anchors.verticalCenter: parent.verticalCenter
+        anchors.verticalCenter: plateRow.verticalCenter
     }
 
     // The tools in three groups, separated, so the strip reads as "shape it,
     // paint it, measure it" instead of one undifferentiated run of icons.
     Row {
         id: toolRow
-        anchors.verticalCenter: parent.verticalCenter
-        anchors.left: actionDivider.right
+        anchors.left: parent.left
         anchors.leftMargin: Metrics.md
-        anchors.right: sliceRow.left
-        anchors.rightMargin: Metrics.sm
-        clip: true
+        anchors.right: parent.right
+        anchors.rightMargin: Metrics.md
+        anchors.top: plateRow.bottom
+        anchors.topMargin: Metrics.md
         spacing: 0
 
         Repeater {
@@ -275,7 +294,7 @@ Item {
         id: sliceRow
         anchors.right: parent.right
         anchors.rightMargin: Metrics.sm
-        anchors.verticalCenter: parent.verticalCenter
+        anchors.verticalCenter: plateRow.verticalCenter
         spacing: Metrics.sm
 
         Button {

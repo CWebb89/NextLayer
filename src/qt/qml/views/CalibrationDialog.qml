@@ -24,7 +24,6 @@ Popup {
     property string flavour: "klipper"
     property real applyValue: 0
 
-    parent: Overlay.overlay
     width: Math.min(880, (parent ? parent.width : 1280) - 140)
     height: Math.min(620, (parent ? parent.height : 800) - 110)
     modal: true
@@ -211,7 +210,7 @@ Popup {
                     contentHeight: form.implicitHeight
                     clip: true
                     boundsBehavior: Flickable.StopAtBounds
-                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                    ScrollBar.vertical: ThemedScrollBar {}
 
                     ColumnLayout {
                         id: form

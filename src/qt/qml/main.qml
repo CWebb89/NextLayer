@@ -4,6 +4,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
+import QtQuick.Layouts
 import QtCore
 import NextLayer 1.0
 import "theme"
@@ -42,6 +43,7 @@ Window {
                                               ? presetDirString : ""
     property string projectPath: ""
     property bool fileMenuVisible: false
+    property point fileMenuAt: Qt.point(Metrics.panelPadding, Metrics.headerHeight + 4)
     property bool calibrationVisible: false
     property bool objectMenuVisible: false
     property int objectMenuObjectId: 0
@@ -116,6 +118,8 @@ Window {
         root.closeWithoutSaving()
     }
     property bool addMenuVisible: false
+    property point addMenuAt: Qt.point(Metrics.railWidth + Metrics.md,
+                                       Metrics.headerHeight + Metrics.md)
     property bool layerMenuVisible: false
     property bool plateMenuVisible: false
     property bool plateListVisible: false
@@ -795,6 +799,14 @@ Window {
         anchors.fill: parent
         focus: true
 
+        // Modal dialogs are drawn by the Controls overlay, and their dimming comes
+        // from the platform style: under qt6ct that scrim is fully transparent, so a
+        // dialog floated over a bright toolpath with nothing behind it. Attached to
+        // the window's content item, one rule covers every dialog in the app.
+        Overlay.modal: Rectangle {
+            color: Colors.alpha("#000000", 0.55)
+        }
+
         // Every binding comes from root.shortcutList, the same table the map
         // dialog shows. Escape is handled before the table because it means
         // "leave what you are doing" first and "deselect" only after that.
@@ -929,7 +941,10 @@ Window {
             version: root.appVersion
             documentName: session.hasModel ? session.displayName() : ""
             onModeRequested: (requested) => root.mode = requested
-            onFileMenuRequested: root.fileMenuVisible = !root.fileMenuVisible
+            onFileMenuRequested: (x, y) => {
+                root.fileMenuAt = Qt.point(x, y)
+                root.fileMenuVisible = !root.fileMenuVisible
+            }
             onSavePresetRequested: {
                 root.mode = "model"
                 settingsPanel.openPresetEditor(settingsPanel.activeTab)
@@ -1138,7 +1153,10 @@ Window {
             }
             onToolTriggered: (id) => root.runTool(id)
             onActionTriggered: (id) => root.runAction(id)
-            onAddRequested: root.addMenuVisible = !root.addMenuVisible
+            onAddRequested: (x, y) => {
+                root.addMenuAt = Qt.point(x, y)
+                root.addMenuVisible = !root.addMenuVisible
+            }
             onSliceRequested: footer.startSlice()
             onSliceAllRequested: footer.startSliceAll()
         }
@@ -1564,8 +1582,8 @@ Window {
         z: 110
         entries: root.addMenuEntries
         menuWidth: 300
-        anchorX: rail.width + Metrics.md
-        anchorY: header.height + viewportToolbar.height + Metrics.sm
+        anchorX: Math.max(Metrics.xs, Math.min(root.width - menuWidth - Metrics.xs, root.addMenuAt.x))
+        anchorY: root.addMenuAt.y
         onTriggered: (id) => root.runAction(id)
         onDismissed: root.addMenuVisible = false
     }
@@ -1576,7 +1594,6 @@ Window {
 
     CalibrationDialog {
         id: calibrationDialog
-        parent: Overlay.overlay
         visible: root.calibrationVisible
         onClosed: {
             root.calibrationVisible = false
@@ -1764,8 +1781,11 @@ Window {
 
         Rectangle {
             id: menuPanel
-            x: Metrics.panelPadding
-            y: Metrics.headerHeight + 4
+
+            // Under the button that opened it, and never off the window: the menu
+            // used to sit at the far left under the logo whatever opened it.
+            x: Math.max(Metrics.xs, Math.min(root.width - width - Metrics.xs, root.fileMenuAt.x))
+            y: root.fileMenuAt.y
             width: 340
             height: menuColumn.implicitHeight + Metrics.sm * 2
             radius: Metrics.radiusMedium
@@ -1874,75 +1894,132 @@ Window {
     }
 
     // The question the close guard asks. It is deliberately blunt: save, discard,
-    // or stay.
-    Item {
+    // or stay. Built like every other dialog in the app -- header row with a close
+    // X, a body, and its own footer row for the buttons -- so the three answers
+    // never share a line with the sentence that asks the question.
+    Popup {
         id: closeGuard
-        parent: Overlay.overlay
-        anchors.fill: parent
+
+        width: Math.min(Math.max(560, closeContent.implicitWidth + Metrics.xl * 2),
+                        parent ? parent.width - Metrics.xl * 2 : 560)
+        height: closeContent.implicitHeight + Metrics.xl * 2
+        x: parent ? Math.round((parent.width - width) / 2) : 0
+        y: parent ? Math.round((parent.height - height) / 2) : 0
         visible: root.closeGuardOpen
-        z: 130
+        modal: true
+        dim: true
+        padding: 0
+        closePolicy: Popup.NoAutoClose
 
-        Rectangle {
-            anchors.fill: parent
-            color: Colors.alpha(Colors.background, 0.75)
-        }
+        onVisibleChanged: if (!visible) root.closeGuardOpen = false
 
-        Rectangle {
-            anchors.centerIn: parent
-            width: 460
-            height: closeColumn.implicitHeight + Metrics.panelPadding * 2
-            radius: Metrics.radiusLarge
+        background: Rectangle {
+            radius: Metrics.radiusMedium
             color: Colors.surfaceContainerLow
             border.width: Metrics.borderWidth
-            border.color: Colors.edge
+            border.color: Colors.outlineVariant
+        }
 
-            Column {
-                id: closeColumn
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.top: parent.top
-                anchors.margins: Metrics.panelPadding
+        contentItem: Item {
+            implicitWidth: closeContent.implicitWidth
+            implicitHeight: closeContent.implicitHeight
+
+            ColumnLayout {
+                id: closeContent
+                anchors.fill: parent
                 spacing: Metrics.md
 
-                Text {
-                    text: "Save this plate before closing?"
-                    font.family: Type.family
-                    font.pixelSize: Type.sizeBody
-                    font.bold: true
-                    color: Colors.textPrimary
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.leftMargin: Metrics.xl
+                    Layout.rightMargin: Metrics.xl
+                    Layout.topMargin: Metrics.xl
+                    spacing: Metrics.md
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Save this plate before closing?"
+                        font.family: Type.family
+                        font.pixelSize: Type.sizeHeading
+                        font.bold: true
+                        color: Colors.textPrimary
+                    }
+
+                    ToolButton {
+                        icon: "close"
+                        label: "Cancel"
+                        hint: "Stay here (Esc)"
+                        onClicked: root.closeGuardOpen = false
+                    }
+                }
+
+                Divider {
+                    Layout.fillWidth: true
+                    Layout.leftMargin: Metrics.xl
+                    Layout.rightMargin: Metrics.xl
                 }
 
                 Text {
-                    width: parent.width
-                    text: plateDocument.count + " object(s) on the plate"
+                    Layout.fillWidth: true
+                    Layout.leftMargin: Metrics.xl
+                    Layout.rightMargin: Metrics.xl
+                    text: plateDocument.count + (plateDocument.count === 1 ? " object on the plate" : " objects on the plate")
                           + (plateDocument.projectPath.length > 0
                              ? ", last saved to " + plateDocument.projectPath
-                             : "") + ". Nothing is saved until you say so."
+                             : "") + "."
+                    wrapMode: Text.WordWrap
+                    font.family: Type.family
+                    font.pixelSize: Type.sizeBody
+                    color: Colors.textSecondary
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    Layout.leftMargin: Metrics.xl
+                    Layout.rightMargin: Metrics.xl
+                    text: "Nothing is saved until you say so. Closing without saving loses this plate."
                     wrapMode: Text.WordWrap
                     font.family: Type.family
                     font.pixelSize: Type.sizeCaption
                     color: Colors.textTertiary
                 }
 
-                Row {
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.leftMargin: Metrics.xl
+                    Layout.rightMargin: Metrics.xl
+                    Layout.bottomMargin: Metrics.xl
                     spacing: Metrics.sm
 
                     Button {
-                        text: "Save and close (S)"
+                        text: "Save and close"
+                        hint: "S"
                         primary: true
                         onClicked: root.saveThenClose()
                     }
 
                     Button {
-                        text: "Discard (D)"
+                        text: "Discard"
+                        hint: "D"
                         onClicked: root.closeWithoutSaving()
                     }
 
+                    Item { Layout.fillWidth: true }
+
                     Button {
-                        text: "Cancel (Esc)"
+                        text: "Cancel"
+                        hint: "Esc"
                         onClicked: root.closeGuardOpen = false
                     }
                 }
+            }
+
+            ResizeGrip {
+                dialog: closeGuard
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.rightMargin: Metrics.xs
+                anchors.bottomMargin: Metrics.xs
             }
         }
     }

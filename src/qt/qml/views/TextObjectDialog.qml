@@ -42,7 +42,6 @@ Popup {
     modal: true
     dim: true
     padding: 0
-    parent: Overlay.overlay
     width: 480
     height: Math.min(620, parent.height - Metrics.xl * 2)
     x: Math.round((parent.width - width) / 2)

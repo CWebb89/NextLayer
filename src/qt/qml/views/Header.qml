@@ -135,7 +135,10 @@ Item {
                 cursorShape: Qt.PointingHandCursor
                 // Open on release: opening on press lets the same press be read
                 // as "pressed outside" and closes the menu in the same frame.
-                onReleased: root.fileMenuRequested(fileButton.width, fileButton.height)
+                onReleased: {
+                    const point = fileButton.mapToItem(null, 0, fileButton.height + Metrics.xs)
+                    root.fileMenuRequested(point.x, point.y)
+                }
             }
         }
     }

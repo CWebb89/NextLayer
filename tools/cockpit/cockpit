@@ -559,7 +559,30 @@ def cmd_shot(args: argparse.Namespace) -> int:
 
 def cmd_move(args: argparse.Namespace) -> int:
     state = load_state(args.app)
-    move_cursor(*to_screen(state, args.x, args.y))
+    target = to_screen(state, args.x, args.y)
+    # `hl.dsp.cursor.move` warps the cursor, and a warp produces no pointer event
+    # for the client: Qt never learns the pointer arrived, so hover state, hover
+    # fills and tooltips stay frozen where they were. Walking the pointer there
+    # with the relative virtual device costs a few dozen events and makes hover
+    # behave the way a hand does.
+    if args.hover:
+        # A warp gives the client no pointer event at all, so Qt keeps whatever
+        # hover state it had: hover fills, hovers and tooltips stay frozen where
+        # the pointer last *was*. A wheel event at the point does refresh it, and
+        # one step each way leaves the content where it began. Relative motion
+        # from the virtual device was tried first and did not: the client stayed
+        # on the stale hover until a button event arrived.
+        move_cursor(*target)
+        time.sleep(0.12)
+        pointer = Input()
+        try:
+            pointer.scroll(1)
+            pointer.scroll(-1)
+        finally:
+            pointer.close()
+        time.sleep(0.05)
+        return 0
+    move_cursor(*target)
     return 0
 
 
@@ -919,6 +942,8 @@ def build_parser() -> argparse.ArgumentParser:
     move = subparsers.add_parser("move", help="move the pointer (window pixels)")
     move.add_argument("x", type=float)
     move.add_argument("y", type=float)
+    move.add_argument("--hover", action="store_true",
+                      help="walk the pointer there with real motion, so hover state updates")
     move.set_defaults(func=cmd_move)
 
     click = subparsers.add_parser("click", help="click a point (window pixels)")

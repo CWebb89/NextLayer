@@ -21,7 +21,6 @@ Popup {
 
     signal submitted(string text)
 
-    parent: Overlay.overlay
     width: 460
     height: 200
     x: Math.round((parent.width - width) / 2)

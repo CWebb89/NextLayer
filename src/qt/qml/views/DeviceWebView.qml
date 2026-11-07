@@ -14,11 +14,19 @@ WebEngineView {
     property color surfaceColor: Colors.surfaceContainerLow
 
     signal loadingStarted
+    /// Emitted when a load finishes. `reason` is empty on success. The caller has
+    /// no QtWebEngine import of its own -- it never loads this unless the tab is
+    /// open -- so the status enum stays on this side of the boundary.
+    signal loadEnded(bool ok, string reason)
 
     backgroundColor: surfaceColor
 
     onLoadingChanged: (request) => {
-        if (request.status === WebEngineView.LoadStartedStatus)
+        if (request.status === WebEngineView.LoadStartedStatus) {
             loadingStarted()
+            return
+        }
+        loadEnded(request.status !== WebEngineView.LoadFailedStatus,
+                  request.status === WebEngineView.LoadFailedStatus ? request.errorString : "")
     }
 }

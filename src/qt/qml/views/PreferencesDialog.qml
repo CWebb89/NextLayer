@@ -74,7 +74,6 @@ Popup {
 
     onClosed: root.store()
 
-    parent: Overlay.overlay
     width: Math.min(620, parent.width - Metrics.xl * 2)
     // Never taller than the window, and never shorter than the content wants: the
     // scroll area takes the first hit, so the Done button and the last line of
@@ -138,12 +137,18 @@ Popup {
                 contentHeight: form.implicitHeight
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
-                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                ScrollBar.vertical: ThemedScrollBar {}
 
                 ColumnLayout {
                     id: form
                     width: parent.width
                     spacing: Metrics.md
+
+                    // A layout inside a flickable does not shrink to fit: one long
+                    // sentence without a wrap pushed the column wider than the
+                    // dialog, so the toggles and the update button were cut off at
+                    // the right edge.
+                    Layout.preferredWidth: parent.width
 
                     Text {
                         text: "Viewport"
@@ -239,14 +244,18 @@ Popup {
                             spacing: 0
 
                             Text {
+                                Layout.fillWidth: true
                                 text: "Slice again when a setting changes"
+                                wrapMode: Text.WordWrap
                                 font.family: Type.family
                                 font.pixelSize: Type.sizeBody
                                 color: Colors.textPrimary
                             }
 
                             Text {
+                                Layout.fillWidth: true
                                 text: "Runs the slicer after every edit once a plate has been sliced once."
+                                wrapMode: Text.WordWrap
                                 font.family: Type.family
                                 font.pixelSize: Type.sizeCaption
                                 color: Colors.textMuted
