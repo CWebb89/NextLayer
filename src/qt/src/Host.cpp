@@ -10,9 +10,13 @@
 
 #include <QFile>
 
+#include <QDir>
 #include <QFileInfo>
 #include <QStandardPaths>
+#include <QStringList>
 #include <QUrl>
+
+#include <Slic3r/Biz/FileLoadingLogic.hpp>
 
 next_layer::Host::Host(const Palette& palette, QVariantList bedShape, double maxPrintHeight,
                        QVariantList focusWorld, double modelRadius,
@@ -39,7 +43,34 @@ next_layer::Host::Host(const Palette& palette, QVariantList bedShape, double max
 
 QString next_layer::Host::downloadFolder() const
 {
-    return QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+    // `Downloads` and `downloads` are different directories on a case-sensitive
+    // filesystem, and only one of them holds the files. The one with more models
+    // in it wins; the system answer is the tie-breaker.
+    QStringList candidates;
+    candidates << QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+    const QString home = QDir::homePath();
+    candidates << home + QStringLiteral("/Downloads") << home + QStringLiteral("/downloads");
+
+    QStringList patterns;
+    for (const std::string& extension : Slic3r::Biz::FileLoadingLogic::get_import_extensions()) {
+        const QString bare = QString::fromStdString(extension);
+        patterns << QStringLiteral("*") + bare << QStringLiteral("*") + bare.toUpper();
+    }
+
+    QString best;
+    int bestCount = -1;
+    QStringList seen;
+    for (const QString& candidate : candidates) {
+        if (candidate.isEmpty() || seen.contains(candidate) || !QFileInfo(candidate).isDir())
+            continue;
+        seen << candidate;
+        const int count = QDir(candidate).entryList(patterns, QDir::Files).size();
+        if (count > bestCount) {
+            bestCount = count;
+            best = candidate;
+        }
+    }
+    return best.isEmpty() ? QDir::homePath() : best;
 }
 
 bool next_layer::Host::copyFile(const QString& source, const QString& target) const
