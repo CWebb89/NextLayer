@@ -104,12 +104,11 @@ to place anything on:
 - **Create your own**: a name and the three bed dimensions is enough, and that
   printer preset is yours, inherited from nobody, or
 - **Import my presets**: reads another slicer's configuration directory (the
-  folders for `OrcaSlicer`, `PrusaSlicer`, `SuperSlicer`, `BambuStudio` and
-  `Slic3r` are detected under your config home) and writes the machines,
-  processes and filaments this engine can express into your own bundle, under
-  their own names. Settings with no equivalent are dropped and counted, never
-  guessed at. The engine reads its preset bundle once per start, so the app
-  restarts itself to make them selectable.
+  profile folders those apps write under your config home are detected) and
+  writes the machines, processes and filaments this engine can express into your
+  own bundle, under their own names. Settings with no equivalent are dropped and
+  counted, never guessed at. The engine reads its preset bundle once per start,
+  so the app restarts itself to make them selectable.
 
 Setup stores the machine, the material and the process; the next launch opens
 straight onto the plate you left.

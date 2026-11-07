@@ -116,12 +116,29 @@ XDG_DATA_HOME=/tmp/nl-imp $BIN oracle/models/cube_20.stl --slice /tmp/imp.json,/
 grep -c ';LAYER_CHANGE' /tmp/imp.gcode        # 100 for the fixture
 ```
 
-Against a real installation, point it at `~/.config/OrcaSlicer` (or
-`PrusaSlicer`, `SuperSlicer`, `BambuStudio`, `Slic3r`). In the app: welcome →
-**Import my presets** → the detected folder → the summary. When the summary says
-the machines appear after a restart, that is expected: the engine reads its
-preset bundle once per process, so the app relaunches itself rather than pretend
-the new vendor is loaded.
+Against a real installation, point it at that slicer's own profile directory. In
+the app: welcome → **Import my presets** → the detected folder → the summary.
+When the summary says the machines appear after a restart, that is expected: the
+engine reads its preset bundle once per process, so the app relaunches itself
+rather than pretend the new vendor is loaded.
+
+Every key that does not arrive is named. Two lists are printed:
+
+- **dropped** — this engine has no such setting at all. Re-run with
+  `NEXT_LAYER_DEBUG_PRESETS=1` to print each key. What is on that list today is
+  the engine's own limit, not the importer's: per-role jerk, adaptive layer
+  height, wall sequence, per-plate temperatures beyond one bed temperature, and
+  the pressure-advance calibration pass.
+- **belong to another profile** — the setting exists, but on a different profile:
+  this engine keeps retraction and pressure advance on the filament, not on the
+  process, so a process-level copy is reported rather than written into the
+  wrong profile.
+
+What does import through the name map, verified by importing and slicing: scarf
+seams, arc fitting, the whole prime/wipe tower (width, brim, extra spacing and
+flow), dynamic overhang speed and fan curves, tree/organic supports with their
+branch angle, distance, tip diameter and top rate, plate temperature, and
+pressure advance.
 
 What to check by eye after an import:
 
