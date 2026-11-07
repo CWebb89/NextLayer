@@ -327,37 +327,42 @@ the *Calibration Guide* entry (a wiki link) and the AMS-specific flows.
 ## Printer catalog
 
 `tools/printer-catalog/generate.py` turns reference vendor profiles into a
-next-layer bundle: **67 vendors, 450 printers**, written to
+next-layer bundle: **67 vendors, 428 printers**, written to
 `upstream/resources/presets/vendor-catalog/` (a build artifact, regenerated, not
 tracked). Pick one from the Printer dropdown — the list is searchable — and the
 engine resolves it like any other preset.
 
 | Aspect | State |
 | --- | --- |
-| Machine geometry (bed size, height, nozzle, extruder count, limits) | done — 432 machines, sliced end to end |
-| Per-vendor printer listing and search | done — catalog counts 482 printers in `--dump-presets`, `tools/check` slices one and fails on duplicate names |
-| Process and filament settings | staged — borrowed from the engine's own templates, not the vendor's own |
-| Vendor start/end G-code | staged — imported for 284 of 432 machines, brace expressions included; the rest use names with no engine counterpart and are dropped whole (see below) |
+| Machine geometry (bed size, height, nozzle, extruder count, limits) | done — 428 machines, every one sliced end to end |
+| Per-vendor printer listing and search | done — 460 hardware configs in an isolated `--dump-presets`, no duplicate names, `tools/check` slices one of them |
+| Process and filament settings | done — each machine slices with the vendor's own default process and filament preset, not this app's generic profile |
+| Vendor start/end G-code | staged — imported whole for the machines whose templates this engine can evaluate; 159 start, 119 end, 13 layer and 90 filament-start templates still name options the engine does not have and are dropped whole (see below) |
 | Per-vendor profile UI (vendor > machine > variant tree) | staged — the flat searchable list stands in for a grouped picker |
 
 Known loss: a G-code template referencing a name the engine does not have
-(`initial_no_support_extruder`, `plate_name`, `machine_max_speed_z`) is dropped
-entirely rather than half-applied, so those presets have no start/end sequence
-until it is written in Printer → Custom G-code. The same test now reads inside
-`{brace expressions}`: braces are kept, `{first_layer_bed_temperature[0]}` and
-`{max_layer_z + 0.5}` are evaluated by the engine, but a brace naming an unknown
-option stops the whole export (no G-code, exit 0), so it is checked the same way.
+(`initial_no_support_extruder`, `plate_name`, `machine_max_speed_z`,
+`activate_air_filtration`) is dropped entirely rather than half-applied, so those
+presets have no start/end sequence until it is written in Printer → Custom G-code.
+Braces are kept and repaired instead: a renamed setting is renamed inside the
+expression, a bare reference to a per-tool setting gets `[0]` (the engine refuses
+an unindexed vector), and a quoted literal is not read as a setting name.
 Line-level salvage is the obvious next step.
 
-Slicing state, measured with `validate.py` over the catalog's own 432 machines: 423
-slice with their vendor start G-code and 9 write no G-code at all (Anycubic Kobra
-Max / Plus / Vyper, Flashforge Guider 2s / Adventurer 3 / Adventurer 4 / Artemis,
-UltiMaker S5 ×2) — the vendor's start G-code still names an option the engine
-cannot evaluate, and the export stops silently. None fail to resolve.
+Slicing state, measured with `validate.py` over the catalog's own 428 machines:
+**428/428 write G-code, 0 failures**, each with its vendor's own process and
+filament. One machine declares no start G-code, so there is no marker to look for;
+30 have no convertible vendor process and publish this app's standard profile
+instead, named individually in the run report.
 
-Two generation bugs hid that: `slugify` mapped `UltiMaker 2` and `UltiMaker 2+` to
-the same id, so one machine overwrote the other's preset, and `validate.py` parsed
-the padded column dump, reading the vendor as part of 12 over-long names. Ids are
+The reference's `Custom` vendor is not published: it holds printer templates
+(`MyKlipper`, `MyMarlin`) meant to be copied, and next-layer already owns that
+bundle name, so a machine published there can never resolve.
+
+Two generation bugs hid the earlier numbers: `slugify` mapped `UltiMaker 2` and
+`UltiMaker 2+` to the same id, so one machine overwrote the other's preset, and
+`validate.py` parsed the padded column dump, reading the vendor as part of 12
+over-long names. Ids are
 unique per vendor now, `validate.py` reads `--dump-presets-json`, and the app's
 hardware configs carry no duplicate names — which is what made process lookup look
 nondeterministic: resolution takes the first config with a matching name, and a
@@ -465,8 +470,8 @@ and the engine's plater.
 | Height-range modifier volumes | per-object layer-height bands exist; per-Z modifier volumes do not | pick + placement in the object panel |
 | Smooth variable-layer-height profile editor | bands (bottom/top/height) only, no adaptive curve | profile editor over `LayerHeightProfile` |
 | Fuzzy-skin *painting* | the setting exists and is exposed (Process ▸ Walls & Perimeters) | a fifth brush kind in the paint tool |
-| Vendor process and filament profiles in the catalog | borrowed from the engine's own templates, not the vendor's own | the converter's keymap, per vendor |
-| Vendor G-code template salvage | a template naming an unknown option is dropped whole (9 of 432 machines write no G-code) | line-level salvage |
+| Vendor process and filament profiles in the catalog | done — each machine uses the vendor's own default process and filament; 30 machines have no convertible process and publish this app's standard profile instead | more keymap coverage per vendor |
+| Vendor G-code template salvage | a template naming an unknown option is dropped whole (159 start, 119 end, 13 layer, 90 filament-start templates) | line-level salvage |
 | Cloud, network accounts, AMS/MMU, SLA | out of scope by design, stated in the UI | — |
 
 Deliberately not on that list: the tool rail's gizmos, the bed tabs, arrange,
