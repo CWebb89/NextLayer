@@ -461,7 +461,18 @@ bool assignValue(ConfigValue& current, const ConfigItemDef& def, const QVariant&
     return false;
 }
 
-QVariantList choicesFor(const ConfigValue& value)
+/// The engine's own UI strings are generic about one thing this app is specific
+/// about: its organic support generator is a tree, and calling it "Organic" tells
+/// a user nothing about what they will get on the plate.
+QString enumLabel(const QString& name, const EnumValueDef& definition)
+{
+    const std::string& serialized = definition.str_serialized;
+    if (name == QLatin1String("support_material_style") && serialized == "organic")
+        return QStringLiteral("Tree");
+    return QString::fromStdString(definition.str_ui);
+}
+
+QVariantList choicesFor(const QString& name, const ConfigValue& value)
 {
     QVariantList choices;
 
@@ -469,14 +480,14 @@ QVariantList choicesFor(const ConfigValue& value)
         for (const EnumValueDef& definition : value.get<EnumWrapper>().def()) {
             QVariantMap choice;
             choice.insert(QStringLiteral("value"), QString::fromStdString(definition.str_serialized));
-            choice.insert(QStringLiteral("label"), QString::fromStdString(definition.str_ui));
+            choice.insert(QStringLiteral("label"), enumLabel(name, definition));
             choices.append(choice);
         }
     } else if (value.holds_alternative<EnumVectorWrapper>()) {
         for (const EnumValueDef& definition : value.get<EnumVectorWrapper>().def()) {
             QVariantMap choice;
             choice.insert(QStringLiteral("value"), QString::fromStdString(definition.str_serialized));
-            choice.insert(QStringLiteral("label"), QString::fromStdString(definition.str_ui));
+            choice.insert(QStringLiteral("label"), enumLabel(name, definition));
             choices.append(choice);
         }
     }
@@ -635,6 +646,8 @@ struct SettingsModel::Impl
             entry.guiType = guiTypeName(def.gui_type);
             entry.groupKey = QString::number(entry.group);
             entry.groupTitle = QString::fromStdString(ConfigItemDef::translate_option_group(def.option_group));
+            if (def.option_group == ConfigItemDef::OptionGroup::Print_Supports_OrganicSupports)
+                entry.groupTitle = QStringLiteral("Tree supports");
             entry.multiline = def.multiline;
             entry.fullWidth = def.full_width;
             entries.push_back(std::move(entry));
@@ -761,7 +774,7 @@ struct SettingsModel::Impl
             entry.def->max.has_value() ? QVariant(*entry.def->max) : QVariant()
         );
         item.insert(QStringLiteral("units"), unitsFor(*entry.def));
-        item.insert(QStringLiteral("choices"), choicesFor(entry.currentValue));
+        item.insert(QStringLiteral("choices"), choicesFor(entry.name, entry.currentValue));
         item.insert(QStringLiteral("modified"), entry.modified);
         item.insert(
             QStringLiteral("percent"),

@@ -489,11 +489,18 @@ if test $import_rc -eq 0 -a -n "$import_printer" -a -n "$import_print" -a -n "$i
     env XDG_DATA_HOME=$import_home $bin $model --printer $import_listed --process $import_print --filament $import_filament --dump-config $import_cfg >/tmp/nl-check-import-resolve.out 2>&1
     if test -f $import_cfg
         env XDG_DATA_HOME=$import_home $bin $model --slice $import_cfg,/tmp/nl-check-import.gcode >/dev/null 2>&1
+        # Overhangs, so the imported tree supports have something to hold up: a
+        # cube has none and would pass this check with supports switched off.
+        env XDG_DATA_HOME=$import_home $bin $root/oracle/models/bridge_30.stl --slice $import_cfg,/tmp/nl-check-import-overhang.gcode >/dev/null 2>&1
     end
 end
 set -l import_layers 0
+set -l import_arcs 0
+set -l import_support 0
 if test -f /tmp/nl-check-import.gcode
     set import_layers (grep -c ';LAYER_CHANGE' /tmp/nl-check-import.gcode)
+    set import_arcs (grep -cE '^G[23] ' /tmp/nl-check-import.gcode)
+    set import_support (grep -c ';TYPE:Support material' /tmp/nl-check-import-overhang.gcode)
 end
 rm -rf $import_home
 if test $import_rc -ne 0
@@ -502,8 +509,12 @@ else if test -z "$import_printer" -o -z "$import_print" -o -z "$import_filament"
     __bad "preset import: the fixture produced printer '$import_printer', print '$import_print', filament '$import_filament'"
 else if test $import_layers -lt 20
     __bad "preset import: the imported triple sliced to $import_layers layer(s)"
+else if test $import_arcs -lt 1
+    __bad "preset import: arc fitting was imported but the G-code has no arc move"
+else if test $import_support -lt 1
+    __bad "preset import: tree supports were imported but no support material was extruded"
 else
-    __ok "preset import: fixture -> '$import_printer' / '$import_print' / '$import_filament' sliced $import_layers layers"
+    __ok "preset import: fixture -> '$import_printer' / '$import_print' / '$import_filament' sliced $import_layers layers, $import_arcs arc moves, $import_support support lines"
 end
 
 # Multi-tool gate: a tool changer has to resolve one material per extruder and a
