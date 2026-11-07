@@ -338,6 +338,10 @@ QVariantMap PlateDocument::objectInfo(int id) const
     info.insert(QStringLiteral("width"), high.x() - low.x());
     info.insert(QStringLiteral("depth"), high.y() - low.y());
     info.insert(QStringLiteral("height"), high.z() - low.z());
+    // World bounds, so a rubber-band selection can project an object without
+    // guessing at its centre from a position that is the object's origin.
+    info.insert(QStringLiteral("min"), QVariantList{low.x(), low.y(), low.z()});
+    info.insert(QStringLiteral("max"), QVariantList{high.x(), high.y(), high.z()});
     info.insert(QStringLiteral("volumes"), volumes(object->id));
     return info;
 }
@@ -1611,6 +1615,25 @@ void PlateDocument::selectAll()
     selection.reserve(m_objects.size());
     for (const Object& object : m_objects)
         selection.push_back(object.id);
+    if (selection == m_selectedIds)
+        return;
+    m_selectedIds = std::move(selection);
+    emit selectionChanged();
+    emit objectsChanged();
+}
+
+void PlateDocument::selectObjects(const QVariantList& ids)
+{
+    std::vector<int> selection;
+    selection.reserve(ids.size());
+    for (const QVariant& entry : ids) {
+        const int id = entry.toInt();
+        const Object* object = find(id);
+        if (object == nullptr || object->plate != m_activePlate)
+            continue;
+        if (std::find(selection.begin(), selection.end(), id) == selection.end())
+            selection.push_back(id);
+    }
     if (selection == m_selectedIds)
         return;
     m_selectedIds = std::move(selection);

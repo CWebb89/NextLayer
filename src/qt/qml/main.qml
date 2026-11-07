@@ -24,6 +24,8 @@ Window {
     readonly property real maxPanelWidth: 680
     property string activeTool: ""
     property string viewportStatus: ""
+    property string lastModelPath: ""
+    property string lastModelFolder: ""
     property bool objectListVisible: false
 
     readonly property bool hasModel: session.hasModel
@@ -132,7 +134,7 @@ Window {
         for (let i = 0; i < source.length; ++i) {
             const entry = source[i]
             list.push({ id: "plateGo:" + i,
-                        label: "Plate " + (i + 1) + (entry.count > 0 ? " \u00b7 " + entry.count : ""),
+                        label: entry.name,
                         hint: entry.locked ? "locked" : (i === root.activePlate ? "active" : ""),
                         active: i === root.activePlate })
         }
@@ -434,6 +436,9 @@ Window {
         const added = session.addModels(paths)
         if (added > 0) {
             root.mode = root.modelMode
+            // A model that lands somewhere the camera is not looking is a model the
+            // user has to hunt for: frame what was just added, once.
+            viewport.frameContent()
             root.setStatus(added === 1 ? "added 1 model" : "added " + added + " models")
         } else if (session.error.length > 0) {
             root.setStatus(session.error)
@@ -637,7 +642,7 @@ Window {
             layerGcodeDialog.openFor(toolpath.layerZ, toolpath.currentLayer, "tool"); break
         case "plateRename":
             textPrompt.openWith("Rename plate", plateDocument.plateName(root.plateMenuIndex),
-                                plateDocument.plateName(root.plateMenuIndex))
+                                "", "Rename")
             break
         case "plateDuplicate":
             root.duplicatePlate(root.plateMenuIndex)
@@ -1034,14 +1039,17 @@ Window {
             onPainted: (objectId, facets) => {
                 root.setStatus("painted " + facets + " facet(s)")
             }
+            onBandSelected: (count) => {
+                root.setStatus(count === 1 ? "selected 1 object"
+                                            : "selected " + count + " objects")
+            }
             onPlateSelected: (index) => root.switchPlate(index)
             onPlateAddRequested: root.addPlate()
             onPlateRemoveRequested: (index) => root.removePlate(index)
             onPlateLockRequested: (index) => root.togglePlateLock(index)
             onPlateRenameRequested: (index) => {
                 root.plateMenuIndex = index
-                textPrompt.openWith("Rename plate", plateDocument.plateName(index),
-                                    plateDocument.plateName(index))
+                textPrompt.openWith("Rename plate", plateDocument.plateName(index), "", "Rename")
             }
             // Both act on the plate you are on: switching first is what makes the
             // click mean "this plate" rather than "whichever plate was active".
@@ -1110,6 +1118,36 @@ Window {
             onSliceAllRequested: footer.startSliceAll()
         }
 
+        // What the last action did, in the same corner the tool strip calls home.
+        // Every tool reports through setStatus, and until now nothing on screen
+        // read it: the message went into a property and vanished.
+        Rectangle {
+            id: statusToast
+            visible: root.viewportStatus.length > 0
+            anchors.left: viewport.left
+            anchors.bottom: viewport.bottom
+            anchors.leftMargin: Metrics.md
+            anchors.bottomMargin: Metrics.md
+            width: Math.min(statusLabel.implicitWidth + Metrics.md * 2, viewport.width - Metrics.md * 2)
+            height: Metrics.rowHeight
+            radius: Metrics.radiusSmall
+            color: Colors.alpha(Colors.surfaceContainerLow, 0.94)
+            border.width: Metrics.borderWidth
+            border.color: Colors.edge
+            z: 5
+
+            Text {
+                id: statusLabel
+                anchors.centerIn: parent
+                width: Math.min(implicitWidth, statusToast.width - Metrics.md * 2)
+                text: root.viewportStatus
+                elide: Text.ElideRight
+                font.family: Type.family
+                font.pixelSize: Type.sizeCaption
+                color: Colors.textSecondary
+            }
+        }
+
         // The object list slides out of the settings panel's inner edge. Its
         // toggle is the rail's third entry, so the list has no tab of its
         // own to sit in the way of the viewport.
@@ -1152,6 +1190,7 @@ Window {
             onDuplicateRequested: (count) => root.duplicateSelected(count)
             onCenterRequested: plateDocument.centreObject(plateDocument.selectedId)
             onDropRequested: plateDocument.dropToBed(plateDocument.selectedId)
+            onDismissed: root.activeTool = ""
         }
 
         SettingsPanel {
@@ -1372,6 +1411,12 @@ Window {
             toolpath.clear()
             root.mode = root.modelMode
             root.title = "next-layer · " + session.displayName()
+            // Only a different model moves the camera. Re-framing on every document
+            // change is what made a plain move or delete look like a zoom.
+            if (session.path !== root.lastModelPath) {
+                root.lastModelPath = session.path
+                viewport.frameContent()
+            }
         }
     }
 
@@ -1404,6 +1449,7 @@ Window {
         category: "next-layer"
         property alias panelOnLeft: root.panelOnLeft
         property alias panelWidth: root.panelWidth
+        property alias lastModelFolder: root.lastModelFolder
     }
 
     DropArea {
@@ -1980,10 +2026,19 @@ Window {
         title: "Add model"
         fileMode: FileDialog.OpenFiles
         nameFilters: ["Models (" + plateDocument.importWildcards() + ")", "All files (*)"]
+        // The dialog opens where models were last found. A home directory can hold
+        // both `Downloads` and `downloads` -- only one of them is where the files
+        // actually are -- so the folder that was last used wins over the default.
+        currentFolder: root.lastModelFolder.length > 0
+                        ? root.lastModelFolder : "file://" + Host.downloadFolder
         onAccepted: {
             const paths = []
             for (let i = 0; i < selectedFiles.length; ++i)
                 paths.push(selectedFiles[i].toString())
+            if (selectedFiles.length > 0) {
+                const folder = selectedFiles[0].toString()
+                root.lastModelFolder = folder.substring(0, folder.lastIndexOf("/"))
+            }
             root.addModels(paths)
         }
     }

@@ -122,7 +122,7 @@ Popup {
                 ToolButton {
                     icon: "close"
                     label: "Close"
-                    hint: "Close preferences (Escape)"
+                    hint: "Close preferences"
                     onClicked: root.close()
                 }
             }

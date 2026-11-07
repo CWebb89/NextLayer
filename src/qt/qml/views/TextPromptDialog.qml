@@ -17,6 +17,7 @@ Popup {
     property string title: ""
     property string value: ""
     property string placeholder: ""
+    property string action: "Apply"
 
     signal submitted(string text)
 
@@ -30,10 +31,12 @@ Popup {
     padding: 0
     closePolicy: Popup.CloseOnEscape
 
-    function openWith(heading, current, hint) {
+    function openWith(heading, current, hint, actionLabel) {
         root.title = heading
         root.value = current
         root.placeholder = hint
+        root.action = actionLabel === undefined || actionLabel.length === 0
+                      ? "Apply" : actionLabel
         field.text = current
         root.open()
         field.forceActiveFocus()
@@ -103,7 +106,7 @@ Popup {
                 spacing: Metrics.sm
 
                 Button {
-                    text: "Rename"
+                    text: root.action
                     primary: true
                     enabled: field.text.trim().length > 0
                     onClicked: {

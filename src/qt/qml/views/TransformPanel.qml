@@ -6,9 +6,11 @@ import QtQuick.Controls
 import "../theme"
 import "../components"
 
-// Numeric transform panel for the tools that need a value rather than a drag
-// gizmo: rotate, scale, move, cut, duplicate. Each row commits straight to the
-// transform controller, which runs the engine and reloads the resulting mesh.
+// Numeric transform panel for the tools that take a value as well as a drag:
+// rotate, scale, move, cut, duplicate. A value commits as it is typed -- there is
+// no Apply to press, because the field you just edited is the thing you meant.
+// It shows only for those tools: opening an empty panel with a dead Apply button
+// for a tool that takes no numbers is worse than showing nothing.
 Item {
     id: root
 
@@ -22,6 +24,7 @@ Item {
     signal duplicateRequested(int count)
     signal centerRequested()
     signal dropRequested()
+    signal dismissed()
 
     property real rotateX: 0
     property real rotateY: 0
@@ -32,17 +35,22 @@ Item {
     property real cutZ: 10
     property int duplicates: 2
 
-    readonly property var titles: ({
-        rotate: "Rotate",
-        scale: "Scale",
-        move: "Move",
-        cut: "Cut at Z",
-        duplicate: "Duplicate"
-    })
+    // Written as property reads, not as a helper call: QML only tracks the
+    // dependencies a binding names directly, so `titleFor(root.tool)` would have
+    // been evaluated once with an empty tool and never again -- the panel stayed
+    // hidden for every tool.
+    readonly property bool hasFields: root.tool === "rotate" || root.tool === "scale"
+                                      || root.tool === "move" || root.tool === "cut"
+                                      || root.tool === "duplicate"
 
-    visible: root.tool !== ""
+    objectName: "transformPanel"
+    visible: root.hasFields
     width: 300
-    height: body.implicitHeight + Metrics.panelPadding * 2
+    height: 220
+
+    function commitRotate() {
+        root.rotateRequested(root.rotateX, root.rotateY, root.rotateZ)
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -66,21 +74,24 @@ Item {
 
             Text {
                 anchors.verticalCenter: parent.verticalCenter
-                text: root.titles[root.tool] !== undefined ? root.titles[root.tool] : ""
+                width: parent.width - closeButton.width - Metrics.sm
+                text: root.busy ? "working…"
+                                : root.tool === "rotate" ? "Rotate"
+                                : root.tool === "scale" ? "Scale"
+                                : root.tool === "move" ? "Move"
+                                : root.tool === "cut" ? "Cut at Z"
+                                : root.tool === "duplicate" ? "Duplicate" : ""
                 font.family: Type.family
                 font.pixelSize: Type.sizeCaption
                 font.bold: true
                 color: Colors.textPrimary
             }
 
-            Item { width: parent.width - 120; height: 1 }
-
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: root.busy ? "working…" : "esc closes"
-                font.family: Type.family
-                font.pixelSize: Type.sizeCaption
-                color: Colors.textMuted
+            ToolButton {
+                id: closeButton
+                icon: "close"
+                hint: "Close this panel"
+                onClicked: root.dismissed()
             }
         }
 
@@ -98,7 +109,10 @@ Item {
                     value: root.rotateX
                     decimals: 1
                     units: "°"
-                    onEdited: (value) => root.rotateX = value
+                    onEdited: (value) => {
+                        root.rotateX = value
+                        root.commitRotate()
+                    }
                 }
 
                 NumberField {
@@ -106,7 +120,10 @@ Item {
                     value: root.rotateY
                     decimals: 1
                     units: "°"
-                    onEdited: (value) => root.rotateY = value
+                    onEdited: (value) => {
+                        root.rotateY = value
+                        root.commitRotate()
+                    }
                 }
 
                 NumberField {
@@ -114,7 +131,10 @@ Item {
                     value: root.rotateZ
                     decimals: 1
                     units: "°"
-                    onEdited: (value) => root.rotateZ = value
+                    onEdited: (value) => {
+                        root.rotateZ = value
+                        root.commitRotate()
+                    }
                 }
             }
         }
@@ -129,7 +149,10 @@ Item {
                 value: root.scaleFactor
                 from: 0.05
                 to: 50
-                onEdited: (value) => root.scaleFactor = value
+                onEdited: (value) => {
+                    root.scaleFactor = value
+                    root.scaleRequested(value)
+                }
             }
         }
 
@@ -147,7 +170,10 @@ Item {
                     value: root.moveX
                     units: "x"
                     isLength: true
-                    onEdited: (value) => root.moveX = value
+                    onEdited: (value) => {
+                        root.moveX = value
+                        root.moveRequested(value, root.moveY)
+                    }
                 }
 
                 NumberField {
@@ -155,7 +181,10 @@ Item {
                     value: root.moveY
                     units: "y"
                     isLength: true
-                    onEdited: (value) => root.moveY = value
+                    onEdited: (value) => {
+                        root.moveY = value
+                        root.moveRequested(root.moveX, value)
+                    }
                 }
             }
         }
@@ -171,7 +200,10 @@ Item {
                 from: 0.1
                 units: "mm"
                 isLength: true
-                onEdited: (value) => root.cutZ = value
+                onEdited: (value) => {
+                    root.cutZ = value
+                    root.cutRequested(value)
+                }
             }
         }
 
@@ -186,31 +218,17 @@ Item {
                 from: 1
                 to: 100
                 decimals: 0
-                onEdited: (value) => root.duplicates = Math.round(value)
+                onEdited: (value) => {
+                    root.duplicates = Math.round(value)
+                    root.duplicateRequested(root.duplicates)
+                }
             }
         }
 
         Row {
             width: parent.width
             spacing: Metrics.sm
-
-            Button {
-                text: "apply"
-                primary: true
-                enabled: !root.busy
-                onClicked: {
-                    if (root.tool === "rotate")
-                        root.rotateRequested(root.rotateX, root.rotateY, root.rotateZ)
-                    else if (root.tool === "scale")
-                        root.scaleRequested(root.scaleFactor)
-                    else if (root.tool === "move")
-                        root.moveRequested(root.moveX, root.moveY)
-                    else if (root.tool === "cut")
-                        root.cutRequested(root.cutZ)
-                    else if (root.tool === "duplicate")
-                        root.duplicateRequested(root.duplicates)
-                }
-            }
+            visible: root.tool === "move" || root.tool === "rotate"
 
             Button {
                 text: "centre"

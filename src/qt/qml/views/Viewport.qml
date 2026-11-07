@@ -17,6 +17,8 @@ Item {
     /// reframes the camera and swaps the loaded G-code, which the viewport cannot
     /// do on its own.
     signal plateSelected(int index)
+    /// How many objects a rubber-band drag picked up, so the window can say so.
+    signal bandSelected(int count)
     /// The plate's own button row, mirroring the per-plate icons.
     signal plateAddRequested()
     signal plateRemoveRequested(int index)
@@ -48,6 +50,11 @@ Item {
     readonly property bool dragSelectedEnabled: root.mode === "model"
         && !root.measureActive && !root.paintActive && !root.layOnFaceActive
     property bool layOnFaceActive: false
+
+    onLayOnFaceActiveChanged: {
+        if (!root.layOnFaceActive)
+            plateScene.setHoverFacet(0, -1)
+    }
     property bool paintActive: false
     property int paintObjectId: 0
     property string paintKind: "supports"
@@ -134,14 +141,14 @@ Item {
 
     readonly property vector3d focusPoint: {
         const plate = Host.bedCentreWorld
-        const model = Host.focusWorld
-        // Both lists can be empty before a printer or a model is known, and one
-        // undefined component put NaN in the camera -- the whole scene rendered as
-        // stripes. Every component falls back to a real number.
+        // The pivot is the bed, never the model: a camera that recentres itself on
+        // the objects moves the whole view every time an object is added, moved or
+        // deleted, which reads as the viewport doing something on its own. Both
+        // lists can be empty before a printer is known, and one undefined
+        // component put NaN in the camera -- the whole scene rendered as stripes.
         const px = (plate && plate.length >= 3) ? plate[0] : 0
         const pz = (plate && plate.length >= 3) ? plate[2] : 0
-        const height = (model && model.length >= 3) ? model[1] : 0
-        return Qt.vector3d(px + root.plateShiftScene.x, height,
+        return Qt.vector3d(px + root.plateShiftScene.x, 0,
                            pz + root.plateShiftScene.z)
     }
 
@@ -177,9 +184,10 @@ Item {
         ? bedPlateGeometry.boundsMin.z - 0.03
         : -4.03
 
-    // Distance fits the model, the pivot stays on the plate: that keeps the
-    // object filling the viewport without the camera following it around the bed.
-    readonly property real boundingRadius: Host.modelRadius > 0 ? Host.modelRadius : 100
+    // Distance fits the bed, not the model: the camera must not resize itself
+    // when an object is added, moved or deleted. Frame the content by pressing F
+    // or by loading a model, which assigns `zoom` once.
+    readonly property real boundingRadius: Host.bedRadius > 0 ? Host.bedRadius : 200
 
     readonly property real fittedDistance: {
         const vertical = root.fieldOfView * Math.PI / 180
@@ -296,6 +304,65 @@ Item {
     function fitPlate() {
         root.panOffset = Qt.vector3d(0, 0, 0)
         root.zoom = Math.max(root.minZoom, Math.min(root.maxZoom, root.bedFitZoom))
+    }
+
+    // Frame what is on the plate, once. Not a binding: a camera that recomputes
+    // itself from the model resizes the viewport on every move and delete.
+    function frameContent() {
+        const content = Host.focusWorld
+        if (content && content.length >= 3) {
+            const focus = root.focusPoint
+            root.panOffset = Qt.vector3d(content[0] - focus.x, content[1] - focus.y,
+                                         content[2] - focus.z)
+        } else {
+            root.panOffset = Qt.vector3d(0, 0, 0)
+        }
+        const radius = Host.modelRadius
+        const scale = radius > 0 ? radius / root.boundingRadius : root.bedFitZoom
+        root.zoom = Math.max(root.minZoom, Math.min(root.maxZoom, scale))
+    }
+
+    /// The plate coordinates of a point on screen, projected the way the objects
+    /// are: printer Z-up into the scene's Y-up frame. Used by the rubber band, which
+    /// has to know where an object's corners land on screen.
+    function screenPointOf(printerPoint) {
+        const projected = view.mapFrom3DScene(Qt.vector3d(printerPoint.x, printerPoint.z,
+                                                        -printerPoint.y))
+        return projected
+    }
+
+    // Shift and drag selects everything inside the rectangle, the way every other
+    // slicer does it. An object counts when its bounding box overlaps the band, so
+    // a drag across a row of parts picks them up without having to enclose each one
+    // completely.
+    function selectInBand() {
+        const left = Math.min(band.startX, band.endX)
+        const right = Math.max(band.startX, band.endX)
+        const top = Math.min(band.startY, band.endY)
+        const bottom = Math.max(band.startY, band.endY)
+
+        const chosen = []
+        const objects = plateDocument.objects
+        for (let i = 0; i < objects.length; ++i) {
+            const entry = objects[i]
+            if (entry.min === undefined || entry.max === undefined)
+                continue
+            let lowX = 1e9, lowY = 1e9, highX = -1e9, highY = -1e9
+            for (let corner = 0; corner < 8; ++corner) {
+                const px = (corner & 1) ? entry.max[0] : entry.min[0]
+                const py = (corner & 2) ? entry.max[1] : entry.min[1]
+                const pz = (corner & 4) ? entry.max[2] : entry.min[2]
+                const projected = root.screenPointOf(Qt.vector3d(px, py, pz))
+                lowX = Math.min(lowX, projected.x)
+                highX = Math.max(highX, projected.x)
+                lowY = Math.min(lowY, projected.y)
+                highY = Math.max(highY, projected.y)
+            }
+            if (highX >= left && lowX <= right && highY >= top && lowY <= bottom)
+                chosen.push(entry.id)
+        }
+        plateDocument.selectObjects(chosen)
+        return chosen.length
     }
 
     function vAdd(a, b) { return Qt.vector3d(a.x + b.x, a.y + b.y, a.z + b.z) }
@@ -508,6 +575,22 @@ Item {
                     metalness: 0.0
                     opacity: 0.34
                     alphaMode: PrincipledMaterial.Blend
+                }
+            }
+
+            // The face under the pointer while the lay-on-face tool is armed: one
+            // tinted triangle, so the face you are about to lay down is visible
+            // before the click rather than only afterwards.
+            Model {
+                objectName: "hoverNode"
+                geometry: plateScene.hoverGeometry
+                visible: plateScene.hasHover && root.mode !== "preview" && root.layOnFaceActive
+
+                materials: PrincipledMaterial {
+                    lighting: PrincipledMaterial.NoLighting
+                    vertexColorsEnabled: true
+                    alphaMode: PrincipledMaterial.Blend
+                    cullMode: Material.NoCulling
                 }
             }
 
@@ -975,6 +1058,25 @@ Item {
         }
     }
 
+    // The selection rectangle, drawn over the viewport while Shift is held down.
+    // Kept outside the input area so it never eats the drag it is visualising.
+    Rectangle {
+        id: band
+        visible: false
+        x: Math.min(band.startX, band.endX)
+        y: Math.min(band.startY, band.endY)
+        width: Math.abs(band.endX - band.startX)
+        height: Math.abs(band.endY - band.startY)
+        color: Colors.alpha(Colors.accent, 0.12)
+        border.width: Metrics.borderWidth
+        border.color: Colors.accent
+
+        property real startX: 0
+        property real startY: 0
+        property real endX: 0
+        property real endY: 0
+    }
+
     MouseArea {
         id: input
         anchors.fill: parent
@@ -1000,6 +1102,7 @@ Item {
         property int gizmoAxis: -1
         property var gizmoStart: null
         property vector3d gizmoDelta: Qt.vector3d(0, 0, 0)
+        property bool banding: false
 
         onPressed: (mouse) => {
             input.forceActiveFocus()
@@ -1026,6 +1129,19 @@ Item {
                     if (plateDocument.placeOnFace(plateScene.pickedId, facet))
                         root.placedOnFace(plateScene.pickedId, facet)
                 }
+                return
+            }
+
+            // Shift and drag is a selection rectangle, not a click: the click part is
+            // decided on release, so Shift-click still adds one object and a Shift
+            // drag picks up everything the rectangle covers.
+            if ((mouse.modifiers & Qt.ShiftModifier) !== 0 && root.mode === "model") {
+                input.banding = true
+                band.startX = mouse.x
+                band.startY = mouse.y
+                band.endX = mouse.x
+                band.endY = mouse.y
+                band.visible = true
                 return
             }
 
@@ -1072,6 +1188,22 @@ Item {
         }
 
         onReleased: (mouse) => {
+            if (input.banding) {
+                input.banding = false
+                band.visible = false
+                const travelled = Math.abs(mouse.x - input.pressX) + Math.abs(mouse.y - input.pressY)
+                if (travelled < 4) {
+                    // A Shift click is still a Shift click: it adds one object.
+                    const hit = root.hitAt(mouse.x, mouse.y)
+                    if (hit.w > 0)
+                        plateDocument.selectObject(plateScene.pickedId, true)
+                } else {
+                    const count = root.selectInBand()
+                    root.bandSelected(count)
+                }
+                return
+            }
+
             if (input.gizmoAxis >= 0) {
                 const moved = input.gizmoDelta
                 input.gizmoAxis = -1
@@ -1126,6 +1258,22 @@ Item {
         }
 
         onPositionChanged: (mouse) => {
+            if (input.banding) {
+                band.endX = mouse.x
+                band.endY = mouse.y
+                return
+            }
+
+            // With the lay-on-face tool armed, the face under the pointer is tinted
+            // before the click: that is the difference between aiming and guessing.
+            if (root.layOnFaceActive && !input.pressed) {
+                const hoverHit = root.hitAt(mouse.x, mouse.y)
+                if (hoverHit.w > 0)
+                    plateScene.setHoverFacet(plateScene.pickedId, plateScene.pickedFacet)
+                else
+                    plateScene.setHoverFacet(0, -1)
+            }
+
             if (input.pressed && input.gizmoAxis >= 0 && input.gizmoStart !== null) {
                 const ray = root.rayAt(mouse.x, mouse.y)
                 if (ray !== null) {

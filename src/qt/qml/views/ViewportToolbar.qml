@@ -116,11 +116,9 @@ Item {
 
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "Plate " + (root.activePlate + 1)
-                          + (plateSelector.current !== null && plateSelector.current.count > 0
-                             ? " \u00b7 " + plateSelector.current.count : "")
-                          + " of " + Math.max(1, root.plates.length)
-                          + "  \u25be"
+                    text: (plateSelector.current !== null
+                           ? plateSelector.current.name
+                           : "Plate " + (root.activePlate + 1)) + "  \u25be"
                     font.family: Type.family
                     font.pixelSize: Type.sizeCaption
                     font.bold: true

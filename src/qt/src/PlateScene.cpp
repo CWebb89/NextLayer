@@ -88,6 +88,7 @@ PlateScene::PlateScene(PlateDocument* document, QObject* parent)
     , m_document(document)
     , m_plate(new MeshGeometry(nullptr))
     , m_otherPlate(new MeshGeometry(nullptr))
+    , m_hover(new MeshGeometry(nullptr))
     , m_selection(new MeshGeometry(nullptr))
     , m_paint(new MeshGeometry(nullptr))
     , m_volumes(new MeshGeometry(nullptr))
@@ -96,6 +97,7 @@ PlateScene::PlateScene(PlateDocument* document, QObject* parent)
 {
     m_plate->setParent(this);
     m_otherPlate->setParent(this);
+    m_hover->setParent(this);
     m_selection->setParent(this);
     m_paint->setParent(this);
     m_volumes->setParent(this);
@@ -116,6 +118,45 @@ QQuick3DGeometry* PlateScene::plateGeometry() const
 QQuick3DGeometry* PlateScene::otherPlateGeometry() const
 {
     return m_otherPlate;
+}
+
+QQuick3DGeometry* PlateScene::hoverGeometry() const
+{
+    return m_hover;
+}
+
+void PlateScene::setHoverFacet(int id, int facet)
+{
+    const PlateDocument::Object* object = m_document->object(id);
+    if (object == nullptr || object->mesh == nullptr || facet < 0
+        || size_t(facet) >= object->mesh->its.indices.size()) {
+        if (!m_hasHover)
+            return;
+        m_hover->setColoredMesh(TriangleMesh{}, {});
+        m_hasHover = false;
+        emit geometryChanged();
+        return;
+    }
+
+    const Index3& face = object->mesh->its.indices[size_t(facet)];
+    TriangleMesh triangle;
+    triangle.its.vertices = {object->mesh->its.vertices[face[0]],
+                             object->mesh->its.vertices[face[1]],
+                             object->mesh->its.vertices[face[2]]};
+    triangle.its.indices.push_back(Index3{0, 1, 2});
+    triangle.transform(object->trafo.get_matrix());
+
+    // Lifted off the surface along its own normal so the tint wins the depth test
+    // against the face it is sitting on rather than z-fighting with it.
+    const Vec3f& a = triangle.its.vertices[0];
+    const Vec3f& b = triangle.its.vertices[1];
+    const Vec3f& c = triangle.its.vertices[2];
+    const Vec3f normal = (b - a).cross(c - a).normalized();
+    triangle.translate(Vec3f(normal.x() * 0.35f, normal.y() * 0.35f, normal.z() * 0.35f));
+
+    m_hover->setColoredMesh(triangle, {QVector4D(0.16f, 0.72f, 0.98f, 0.55f)});
+    m_hasHover = true;
+    emit geometryChanged();
 }
 
 QQuick3DGeometry* PlateScene::selectionGeometry() const

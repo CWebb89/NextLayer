@@ -11,6 +11,7 @@
 #include <QFile>
 
 #include <QFileInfo>
+#include <QStandardPaths>
 #include <QUrl>
 
 next_layer::Host::Host(const Palette& palette, QVariantList bedShape, double maxPrintHeight,
@@ -34,6 +35,11 @@ next_layer::Host::Host(const Palette& palette, QVariantList bedShape, double max
     // so a moved model never drags the camera with it.
     m_bedCentreWorld = m_focusWorld;
     m_bedRadius = modelRadius;
+}
+
+QString next_layer::Host::downloadFolder() const
+{
+    return QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
 }
 
 bool next_layer::Host::copyFile(const QString& source, const QString& target) const

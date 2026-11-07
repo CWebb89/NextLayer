@@ -97,7 +97,7 @@ Popup {
                 ToolButton {
                     icon: "close"
                     label: "Close"
-                    hint: "Close the diff (Escape)"
+                    hint: "Close the diff"
                     onClicked: root.close()
                 }
             }

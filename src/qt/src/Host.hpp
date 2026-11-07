@@ -34,6 +34,9 @@ class Host : public QObject
     Q_PROPERTY(QVector3D bedMin READ bedMin NOTIFY bedChanged)
     Q_PROPERTY(QVector3D bedMax READ bedMax NOTIFY bedChanged)
     Q_PROPERTY(bool bedPlateLoaded READ bedPlateLoaded NOTIFY bedPlateLoadedChanged)
+    /// Where the system says downloads live. The model dialog starts here when no
+    /// folder has been used yet, and QML keeps the last one used after that.
+    Q_PROPERTY(QString downloadFolder READ downloadFolder CONSTANT)
 
 public:
     Host(const Palette& palette, QVariantList bedShape, double maxPrintHeight,
@@ -56,6 +59,7 @@ public:
     QVector3D bedMin() const { return m_bedMin; }
     QVector3D bedMax() const { return m_bedMax; }
     bool bedPlateLoaded() const { return m_bedPlateLoaded; }
+    QString downloadFolder() const;
 
     void setModel(QString path, QVariantList focusWorld, double modelRadius);
 

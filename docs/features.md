@@ -191,12 +191,14 @@ Now part of the same strip.
 | `R` / `Home` resets yaw, pitch, zoom and pan | done |
 | View presets — iso, top, bottom, front, rear, left, right (keys 1–7, corner camera bar) | done |
 | Orthographic / perspective toggle (`O`, camera bar) | done — the ortho camera carries the perspective framing so the switch does not resize the plate |
-| Fit plate (`F`, camera bar) | done — frames the whole `bed_shape`, which is the opening framing |
+| Fit plate (`F`, camera bar) | done — frames the whole `bed_shape`, which is the opening framing. The camera frames the **bed**, never the models: adding, moving or deleting an object no longer rescales or recentres the view, and a newly opened model is framed once (`frameContent`) instead of continuously |
 | Layer step from the keyboard (Up / Down) | done |
 | Click to select an object (accent tint) | done — picking walks every visible object's triangles, nearest hit wins, the document's selection follows |
 | Drag the selected object on the bed with the Move tool | done — commits `setPosition` on the document, so it is undoable and does not touch the file; the drag only arms with the Move tool, so a rotate never moves the plate under you |
 | Object list / per-object context menu | done — object list docked bottom-right, and right-clicking a row opens the object menu |
-| Multi-select | done — Ctrl-click toggles, Shift-click extends from the anchor, Ctrl+A selects the plate, and a drag with the Move tool moves every selected object by the same delta, undoably |
+| Multi-select | done — Ctrl-click toggles, Shift-click extends from the anchor, Ctrl+A selects the plate, a Shift drag draws a selection rectangle and takes every object whose bounding box it touches (`selectObjects` on the document), and a drag with the Move tool moves every selected object by the same delta, undoably |
+| Lay on face | done — with the tool armed the face under the pointer is tinted before the click (`PlateScene::setHoverFacet` builds one triangle lifted 0.35 mm off the surface), so you can see which face you are about to lay down |
+| Numeric tool panels (rotate, scale, move, cut, duplicate) | done — the panel beside the viewport shows only for tools that take numbers, commits each value as it is typed (no Apply button), has an X to close, and keeps drop/centre for `move` and `rotate` |
 | Ray picking for selection and measure | done — Möller–Trumbore over the mesh in printer coordinates; View3D.pick() returns nothing in this app |
 | Place on face | done — click a face with the tool armed; the facet's normal is turned to point down and the object is dropped onto the bed |
 | Auto-orient | done — every distinct face normal is tried as a resting surface and the pose scoring best on printed height plus overhanging area wins |

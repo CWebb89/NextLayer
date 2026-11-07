@@ -25,6 +25,11 @@ class PlateScene : public QObject
     /// sliced.
     Q_PROPERTY(QQuick3DGeometry* otherPlateGeometry READ otherPlateGeometry NOTIFY geometryChanged)
     Q_PROPERTY(bool hasOtherPlates READ hasOtherPlates NOTIFY geometryChanged)
+    /// The face under the pointer while the lay-on-face tool is armed, drawn as one
+    /// tinted triangle: the point is to see which face you are about to lay down
+    /// before you click, which is what makes the tool usable.
+    Q_PROPERTY(QQuick3DGeometry* hoverGeometry READ hoverGeometry NOTIFY geometryChanged)
+    Q_PROPERTY(bool hasHover READ hasHover NOTIFY geometryChanged)
     Q_PROPERTY(QQuick3DGeometry* selectionGeometry READ selectionGeometry NOTIFY geometryChanged)
     Q_PROPERTY(bool hasSelection READ hasSelection NOTIFY geometryChanged)
     Q_PROPERTY(QQuick3DGeometry* paintGeometry READ paintGeometry NOTIFY geometryChanged)
@@ -43,6 +48,11 @@ public:
     QQuick3DGeometry* plateGeometry() const;
     QQuick3DGeometry* otherPlateGeometry() const;
     bool hasOtherPlates() const { return m_hasOtherPlates; }
+    QQuick3DGeometry* hoverGeometry() const;
+    bool hasHover() const { return m_hasHover; }
+    /// The face under the pointer, or -1 for nothing. Rebuilding one triangle is
+    /// cheap enough to run on every mouse move, unlike a full plate rebuild.
+    Q_INVOKABLE void setHoverFacet(int id, int facet);
     QQuick3DGeometry* selectionGeometry() const;
     QQuick3DGeometry* paintGeometry() const;
     /// Modifier, negative and support volumes of every visible object, each
@@ -87,6 +97,7 @@ private:
     PlateDocument* m_document;
     MeshGeometry* m_plate;
     MeshGeometry* m_otherPlate;
+    MeshGeometry* m_hover;
     MeshGeometry* m_selection;
     MeshGeometry* m_paint;
     MeshGeometry* m_volumes;
@@ -96,6 +107,7 @@ private:
     bool m_hasGizmo = false;
     bool m_hasSelection = false;
     bool m_hasOtherPlates = false;
+    bool m_hasHover = false;
     bool m_hasVolumes = false;
     int m_pickedId = 0;
     int m_pickedFacet = -1;

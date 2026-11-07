@@ -231,6 +231,10 @@ public:
     Q_INVOKABLE void selectObject(int id, bool additive = false);
     Q_INVOKABLE void selectRange(int id);
     Q_INVOKABLE void selectAll();
+    /// Replace the selection with these objects, ignoring ids that are not on the
+    /// active plate. What a rubber-band selection needs: the viewport knows the
+    /// rectangle, the document owns the selection.
+    Q_INVOKABLE void selectObjects(const QVariantList& ids);
     Q_INVOKABLE void clearSelection();
     Q_INVOKABLE bool moveSelection(double deltaX, double deltaY, double deltaZ = 0.0);
     Q_INVOKABLE bool rotateSelection(double degrees);

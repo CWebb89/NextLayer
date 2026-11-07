@@ -302,22 +302,21 @@ def window_of(state: dict) -> dict:
     """The session's window, re-resolved by class on its workspace.
 
     Addresses change: a reference app replaces its window during start-up, and a fullscreen
-    toggle can remap it. The class on the session workspace is the stable key.
+    toggle can remap it. The class on the session workspace is the stable key. A window
+    whose class does not match is never adopted: adopting whatever happened to be on the
+    workspace meant `stop` could close an unrelated window -- a terminal running the agent
+    among them -- once the app itself had gone.
     """
+    wanted = state.get("class", "")
     on_workspace = [client for client in clients() if client["workspace"]["id"] == state["ws"]]
     for client in on_workspace:
-        if client.get("address") == state.get("address"):
+        if client.get("address") == state.get("address") and client.get("class", "") == wanted:
             return client
     for client in on_workspace:
-        if state.get("class") and client.get("class") == state["class"]:
+        if wanted and client.get("class") == wanted:
             state["address"] = client["address"]
             save_state(state["app"], state)
             return client
-    if on_workspace:
-        state["address"] = on_workspace[0]["address"]
-        state["class"] = on_workspace[0].get("class", state.get("class", ""))
-        save_state(state["app"], state)
-        return on_workspace[0]
     raise SystemExit("cockpit: the session window is gone; run `cockpit stop` then start again")
 
 
@@ -359,12 +358,14 @@ def cmd_start(args: argparse.Namespace) -> int:
     spawn(command)
 
     address = ""
+    window_class = ""
     deadline = time.monotonic() + args.wait
     while time.monotonic() < deadline and not address:
         time.sleep(0.4)
         for client in clients():
             if client["workspace"]["id"] == workspace:
                 address = client["address"]
+                window_class = client.get("class", "")
                 break
     if not address:
         print(f"cockpit: nothing appeared on workspace {workspace} within {args.wait:g}s")
@@ -380,9 +381,7 @@ def cmd_start(args: argparse.Namespace) -> int:
     time.sleep(0.5)
 
     state = {"app": args.app, "ws": workspace, "return_ws": here, "address": address,
-             "class": window_of({"app": args.app, "ws": workspace,
-                                  "address": address})["class"],
-             "command": command, "started": time.time()}
+             "class": window_class, "command": command, "started": time.time()}
     save_state(args.app, state)
     window = window_of(state)
     print(f"cockpit: {args.app} on workspace {workspace}, window {window['size'][0]}x"
@@ -392,19 +391,25 @@ def cmd_start(args: argparse.Namespace) -> int:
 
 def cmd_stop(args: argparse.Namespace) -> int:
     state = load_state(args.app)
+    # Only ever close a window that is this session's own: the address on disk can be
+    # stale, and closing a stale address closes whatever now owns it.
     try:
-        hypr("dispatch", f'hl.dsp.window.close({{window="address:{state["address"]}"}})')
-    except RuntimeError:
-        pass
-    deadline = time.monotonic() + 3.0
-    while time.monotonic() < deadline:
-        if not any(client["workspace"]["id"] == state["ws"] for client in clients()):
-            break
-        time.sleep(0.2)
+        window = window_of(state)
+    except SystemExit:
+        window = None
+    if window is not None:
+        hypr("dispatch", f'hl.dsp.window.close({{window="address:{window["address"]}"}})')
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline:
+            if not any(client["workspace"]["id"] == state["ws"]
+                       and client.get("class") == state.get("class") for client in clients()):
+                break
+            time.sleep(0.2)
     os.unlink(state_path(args.app))
     if state.get("return_ws"):
         focus_workspace(state["return_ws"])
-    print(f"cockpit: stopped {args.app}")
+    print(f"cockpit: stopped {args.app}" if window is not None
+          else f"cockpit: {args.app} was already gone; cleared the session")
     return 0
 
 
@@ -648,9 +653,15 @@ def cmd_drag(args: argparse.Namespace) -> int:
     hypr("dispatch", f'hl.dsp.focus({{window="address:{state["address"]}"}})')
     move_cursor(*start)
     time.sleep(args.settle)
-    device = Input()
+    pointer = Input()
+    # A modifier held for the whole drag is the only way to exercise Shift-drag
+    # selection: a tap releases it before the pointer has moved.
+    keyboard = Input("cockpit-keyboard", kind="keyboard") if args.hold else None
     try:
-        device.button(args.button, True)
+        if keyboard is not None:
+            keyboard.key(MODIFIERS[args.hold[0]], 1)
+            time.sleep(0.05)
+        pointer.button(args.button, True)
         time.sleep(0.05)
         for step in range(1, args.steps + 1):
             x = start[0] + (end[0] - start[0]) * step // args.steps
@@ -658,9 +669,12 @@ def cmd_drag(args: argparse.Namespace) -> int:
             move_cursor(x, y)
             time.sleep(args.step_delay)
         time.sleep(0.05)
-        device.button(args.button, False)
+        pointer.button(args.button, False)
     finally:
-        device.close()
+        if keyboard is not None:
+            keyboard.key(MODIFIERS[args.hold[0]], 0)
+            keyboard.close()
+        pointer.close()
     return 0
 
 
@@ -809,6 +823,8 @@ def build_parser() -> argparse.ArgumentParser:
     drag.add_argument("--steps", type=int, default=12)
     drag.add_argument("--settle", type=float, default=0.08)
     drag.add_argument("--step-delay", type=float, default=0.02)
+    drag.add_argument("--hold", action="append", default=[], choices=sorted(MODIFIERS),
+                       help="modifier held down for the whole drag (repeatable)")
     drag.set_defaults(func=cmd_drag)
 
     scroll = subparsers.add_parser("scroll", help="scroll the wheel (positive is up)")
