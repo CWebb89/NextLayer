@@ -47,6 +47,8 @@ add_executable(next-layer-qt
     src/GcodeView.hpp
     src/GcodeBrand.cpp
     src/GcodeBrand.hpp
+    src/ThreeMfPlates.cpp
+    src/ThreeMfPlates.hpp
     src/Cut.cpp
     src/Cut.hpp
     src/Text.cpp
@@ -91,6 +93,7 @@ target_link_libraries(next-layer-qt PRIVATE
     slic3r-app-cli
     slic3r-biz-arrange
     libpgcode
+    miniz
     PkgConfig::FONTCONFIG
     Qt6::Quick
     Qt6::Quick3D

@@ -749,6 +749,8 @@ int main(int argc, char* argv[])
     const QCommandLineOption preview_option("preview", "Open a G-code file in the toolpath preview.", "path");
     const QCommandLineOption dump_config_option("dump-config", "Write the settings model's engine config to a file and exit.", "path");
     const QCommandLineOption dump_tabs_option("dump-tabs", "Print the settings tab tree with per-sub-tab counts and exit.");
+    const QCommandLineOption dump_plates_option("dump-plates", "Print the plate count and the objects on each plate after loading, then exit.");
+    const QCommandLineOption dump_objects_option("dump-objects", "Print every loaded object's name, facet count, plate and position, then exit.");
     const QCommandLineOption dump_names_option("dump-setting-names",
         "Print every setting name the sidebar exposes and exit.");
     const QCommandLineOption dump_subtab_option("dump-subtab", "Print the settings of one sub-tab (TAB/SUBTAB) and exit.", "tab/subtab");
@@ -855,7 +857,7 @@ int main(int argc, char* argv[])
         "Read another slicer's presets out of its configuration directory and write the "
         "ones this engine can express into the user's own bundle. ", "dir");
     parser.addOptions({qml_option, smoke_option, shot_option, slice_option, preview_option, dump_config_option,
-                       dump_tabs_option, dump_names_option, dump_subtab_option, transform_option, hide_feature_option,
+                       dump_tabs_option, dump_names_option, dump_subtab_option, dump_plates_option, dump_objects_option, transform_option, hide_feature_option,
                        view_type_option, hide_option_option,
                        single_layer_option, layer_option, layer_from_option, moves_option, view_option, camera_view_option,
                        ortho_option, plates_option,
@@ -1557,6 +1559,30 @@ int main(int argc, char* argv[])
     } else {
         std::fprintf(stdout, "no model, empty bed %lld points centred (%.1f,%.1f)\n", 
                      static_cast<long long>(printer.bed.size()), centre.x(), centre.y());
+    }
+
+    if (parser.isSet(dump_objects_option)) {
+        for (int plate = 0; plate < document->plateCount(); ++plate) {
+            for (const int id : document->idsOnPlate(plate)) {
+                const PlateDocument::Object* object = document->object(id);
+                if (object == nullptr)
+                    continue;
+                const QVector3D position = object->position();
+                std::fprintf(stdout, "  obj %d plate %d '%s' faces %d at %.3f %.3f %.3f\n",
+                             object->id, object->plate + 1, object->name.toUtf8().constData(),
+                             int(object->mesh->its.indices.size() / 3), double(position.x()),
+                             double(position.y()), double(position.z()));
+            }
+        }
+        return 0;
+    }
+
+    if (parser.isSet(dump_plates_option)) {
+        std::fprintf(stdout, "plates %d\n", document->plateCount());
+        for (int plate = 0; plate < document->plateCount(); ++plate)
+            std::fprintf(stdout, "  plate %d: %d object(s)\n", plate + 1,
+                         document->objectsOnPlate(plate));
+        return 0;
     }
 
     if (parser.isSet(paint_test_option)) {

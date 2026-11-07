@@ -399,6 +399,7 @@ private:
     int importSceneObject(const Slic3r::Domain::ModelObject& source,
                           const Slic3r::Domain::ModelInstance* instance, const QString& local,
                           const QString& label, bool placeOnBed, bool deferPush);
+    void adoptProjectPlates(const QString& local, const QList<int>& added);
     void placeNext(Object& object) const;
     void fail(const QString& message);
     int applyPlacements(const std::vector<next_layer::PlaceableObject>& placeables);

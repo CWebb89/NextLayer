@@ -3,6 +3,8 @@
 
 #include "PlateDocument.hpp"
 
+#include "ThreeMfPlates.hpp"
+
 #include "Arranger.hpp"
 #include "GcodeBrand.hpp"
 #include "ProjectFile.hpp"
@@ -1069,6 +1071,7 @@ int PlateDocument::importObject(const QString& path, const QString& label, bool 
         return -1;
     }
 
+    adoptProjectPlates(local, added);
     m_selectedIds = std::vector<int>(added.begin(), added.end());
     m_error.clear();
     emit errorChanged();
@@ -1078,8 +1081,63 @@ int PlateDocument::importObject(const QString& path, const QString& label, bool 
     return added.front();
 }
 
-int PlateDocument::importSceneObject(const Slic3r::Domain::ModelObject& source,
-                                     const Slic3r::Domain::ModelInstance* instance,
+/// Places the objects of a project file on the plates its author saved. The
+/// file's own coordinates are one shared space in which the plates sit hundreds
+/// of millimetres to metres apart, and the reader re-centres every object by its
+/// own bounding box, so a loaded position cannot be matched back to a plate. The
+/// build list can: it names the placed objects in read order, one per object that
+/// comes back, and each object's plate is in the project's plate records.
+void PlateDocument::adoptProjectPlates(const QString& local, const QList<int>& added)
+{
+    const next_layer::ThreeMfPlates project = next_layer::readThreeMfPlates(local);
+    if (!project.valid || project.plateCount < 2)
+        return;
+    if (project.buildOrder.size() != added.size())
+        return;
+
+    QHash<int, QVector<int>> onPlate;
+    for (int index = 0; index < added.size(); ++index) {
+        const int plate = project.plateOfObject.value(project.buildOrder.at(index), 0) - 1;
+        if (plate < 0 || plate >= project.plateCount)
+            continue;
+        Object* object = find(added.at(index));
+        if (object == nullptr)
+            continue;
+        object->plate = plate;
+        onPlate[plate].append(object->id);
+    }
+
+    if (onPlate.isEmpty())
+        return;
+
+    m_plateCount = std::max(m_plateCount, project.plateCount);
+    for (auto it = onPlate.constBegin(); it != onPlate.constEnd(); ++it) {
+        float lowX = std::numeric_limits<float>::max();
+        float highX = std::numeric_limits<float>::lowest();
+        float lowY = lowX;
+        float highY = highX;
+        for (const int id : it.value()) {
+            const Object* object = find(id);
+            const QVector3D position = object->position();
+            const QVector3D size = object->size();
+            lowX = std::min(lowX, position.x() - size.x() * 0.5f);
+            highX = std::max(highX, position.x() + size.x() * 0.5f);
+            lowY = std::min(lowY, position.y() - size.y() * 0.5f);
+            highY = std::max(highY, position.y() + size.y() * 0.5f);
+        }
+        const double dx = double(m_bedCentre.x()) - (lowX + highX) * 0.5;
+        const double dy = double(m_bedCentre.y()) - (lowY + highY) * 0.5;
+        if (std::abs(dx) < 0.01 && std::abs(dy) < 0.01)
+            continue;
+        for (const int id : it.value()) {
+            Object* object = find(id);
+            const Vec3d offset = object->trafo.get_offset();
+            object->trafo.set_offset(Vec3d(offset.x() + dx, offset.y() + dy, offset.z()));
+        }
+    }
+}
+
+int PlateDocument::importSceneObject(const Slic3r::Domain::ModelObject& source,                                     const Slic3r::Domain::ModelInstance* instance,
                                      const QString& local, const QString& label, bool placeOnBed,
                                      bool deferPush)
 {

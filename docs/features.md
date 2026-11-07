@@ -310,7 +310,8 @@ the *Calibration Guide* entry (a wiki link) and the AMS-specific flows.
 | Feature | Status |
 | --- | --- |
 | Open STL by dialog or drag-and-drop | done |
-| Open OBJ, 3MF, STEP and SVG by dialog or drag-and-drop | done — every format goes through the engine's own reader (`FileLoadingLogic::read_model_from_file`), and the dialog's filter is built from its extension list, so a format the reader accepts is never missing from the dialog. A file holding several objects imports all of them in its own coordinates (measured: an 18-object 3MF project opens as 18 objects; a 568-object one as 568). A multi-plate project file lands on the current plate: the plate assignment lives in `Metadata/plate_N.json`, which this does not read yet |
+| Open OBJ, 3MF, STEP and SVG by dialog or drag-and-drop | done — every format goes through the engine's own reader (`FileLoadingLogic::read_model_from_file`), and the dialog's filter is built from its extension list, so a format the reader accepts is never missing from the dialog. A file holding several objects imports all of them (measured: an 18-object 3MF project opens as 18 objects; a 568-object one as 568) |
+| Project files with several plates | done — the plates are rebuilt from the project's own records: the scene's build list names the placed objects in read order and `Metadata/model_settings.config` names the plate each belongs to, so a 14-plate, 568-object project opens as 14 plates holding 8/15/1/16/16/100/100/100/100/100/4/1/4/3 objects, which is exactly what the file says. Each plate's group is then centred on its own bed, because the file's coordinates are one shared space with the plates laid out metres apart |
 | Empty bed with no model | done |
 | Multiple plates (app-level, one document each) | done |
 | Object position survives slicing | done — an import is centred once, then slices run with dont_arrange; before this the engine's arrange re-centred every slice and moves were discarded |

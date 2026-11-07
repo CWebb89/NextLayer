@@ -464,6 +464,27 @@ else
     __ok "user presets: saved, resolved (layer_height 0.25), renamed, deleted and shared -- exported to a file, re-imported as '$preset_imported' then '$preset_imported_again'"
 end
 
+# Project plates gate: a project file's own plate records have to come back as
+# plates rather than as one pile on the active plate. The fixture writes two
+# identical cubes at the same local origin on two different plates, so an import
+# that ignored the records would still show two objects -- one plate holding both
+# -- and this is the only thing that tells the two outcomes apart.
+set -l plate_fixture /tmp/nl-check-plates.3mf
+rm -f $plate_fixture
+python3 $root/oracle/plate-fixture/make.py $plate_fixture >/dev/null 2>&1
+set -l plate_out (env QT_QPA_PLATFORM=offscreen $bin $plate_fixture --dump-plates 2>/dev/null)
+set -l plate_header (printf '%s\n' $plate_out | grep -cE '^plates 2$')
+set -l plate_singles (printf '%s\n' $plate_out | grep -cE '^  plate [0-9]+: 1 object\(s\)$')
+if not test -f $plate_fixture
+    __bad 'project plates: the two-plate fixture could not be written'
+else if test $plate_header -ne 1
+    __bad 'project plates: the file declares two plates, the document does not have two'
+else if test $plate_singles -ne 2
+    __bad "project plates: expected one object on each of two plates, got $plate_singles"
+else
+    __ok 'project plates: a two-plate project file reopened as 2 plates, 1 object each'
+end
+
 # Import gate: another slicer's presets have to become a bundle this engine
 # loads and slices from. The fixture in oracle/import-fixture is that slicer's
 # shape -- JSON files under user/default/<kind> -- so the gate covers the whole
