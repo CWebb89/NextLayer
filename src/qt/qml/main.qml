@@ -1940,7 +1940,7 @@ Window {
         id: openDialog
         title: "Add model"
         fileMode: FileDialog.OpenFiles
-        nameFilters: ["Models (*.stl *.STL *.3mf)", "All files (*)"]
+        nameFilters: ["Models (" + plateDocument.importWildcards() + ")", "All files (*)"]
         onAccepted: {
             const paths = []
             for (let i = 0; i < selectedFiles.length; ++i)

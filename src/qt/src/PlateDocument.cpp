@@ -14,7 +14,11 @@
 #include "Text.hpp"
 
 #include <Slic3r/Biz/Algorithms/TriangleMesh.hpp>
+#include <Slic3r/Biz/FileLoadingLogic.hpp>
 #include <Slic3r/Biz/Format/STL.hpp>
+#include <Slic3r/Domain/Model.hpp>
+#include <Slic3r/Domain/ModelInstance.hpp>
+#include <Slic3r/Domain/ModelObject.hpp>
 #include <Slic3r/Domain/Types.hpp>
 
 #include <nlohmann/json.hpp>
@@ -1010,15 +1014,83 @@ bool PlateDocument::refuseOnLockedPlate()
     return true;
 }
 
+QString PlateDocument::importWildcards() const
+{
+    QStringList patterns;
+    for (const std::string& extension : Slic3r::Biz::FileLoadingLogic::get_import_extensions()) {
+        const QString bare = QString::fromStdString(extension);
+        patterns << QStringLiteral("*") + bare;
+        patterns << QStringLiteral("*") + bare.toUpper();
+    }
+    return patterns.join(QLatin1Char(' '));
+}
+
 int PlateDocument::importObject(const QString& path, const QString& label, bool placeOnBed)
 {
     if (refuseOnLockedPlate())
         return -1;
     const QString local = toLocalPath(path);
-    const auto loaded = Slic3r::Biz::load_stl(local.toStdString());
-    if (!loaded) {
+
+    // Everything the engine can read arrives through its own reader, which knows
+    // STL, OBJ, 3MF, STEP and SVG and returns a scene rather than one mesh. A
+    // single-mesh file keeps the placement behaviour this app has always had
+    // (normalise to the bed, next free spot); a scene file carries its own
+    // coordinates and its own object names, so it is taken as authored.
+    const auto scene = Slic3r::Biz::FileLoadingLogic::read_model_from_file(local.toStdString(), nullptr);
+    if (!scene) {
         fail(QStringLiteral("%1: %2")
-                 .arg(QFileInfo(local).fileName(), QString::fromStdString(loaded.error())));
+                 .arg(QFileInfo(local).fileName(), QString::fromStdString(scene.error())));
+        return -1;
+    }
+    if (scene->objects.empty()) {
+        fail(QStringLiteral("%1: the file holds no object").arg(QFileInfo(local).fileName()));
+        return -1;
+    }
+
+    const bool single = scene->objects.size() == 1 && scene->objects.front()->instances.size() <= 1;
+    if (single)
+        return importSceneObject(*scene->objects.front(),
+                                 scene->objects.front()->instances.empty()
+                                     ? nullptr
+                                     : scene->objects.front()->instances.front(),
+                                 local, label, placeOnBed, false);
+
+    pushUndo(QStringLiteral("Import %1").arg(QFileInfo(local).fileName()));
+    QList<int> added;
+    for (const auto& objectPtr : scene->objects) {
+        for (const auto& instance : objectPtr->instances) {
+            const int id = importSceneObject(*objectPtr, instance, local, QString(), false, true);
+            if (id >= 0)
+                added.push_back(id);
+        }
+    }
+    if (added.isEmpty()) {
+        fail(QStringLiteral("%1: the file holds no object").arg(QFileInfo(local).fileName()));
+        return -1;
+    }
+
+    m_selectedIds = std::vector<int>(added.begin(), added.end());
+    m_error.clear();
+    emit errorChanged();
+    emit selectionChanged();
+    changed();
+    emit geometryChanged();
+    return added.front();
+}
+
+int PlateDocument::importSceneObject(const Slic3r::Domain::ModelObject& source,
+                                     const Slic3r::Domain::ModelInstance* instance,
+                                     const QString& local, const QString& label, bool placeOnBed,
+                                     bool deferPush)
+{
+    TriangleMesh mesh = source.raw_mesh();
+    const QString name = source.name.empty() ? QFileInfo(local).fileName()
+                                             : QString::fromStdString(source.name);
+
+    QVector3D fileMin;
+    QVector3D fileMax;
+    if (!meshBounds(mesh, fileMin, fileMax)) {
+        fail(QStringLiteral("%1: %2 has no vertices").arg(QFileInfo(local).fileName(), name));
         return -1;
     }
 
@@ -1026,37 +1098,36 @@ int PlateDocument::importObject(const QString& path, const QString& label, bool 
     object.id = m_nextId++;
     object.plate = m_activePlate;
     object.path = local;
-    object.name = QFileInfo(local).fileName();
+    object.name = name;
     object.label = label;
 
-    auto mesh = std::make_shared<TriangleMesh>(*loaded);
-    QVector3D fileMin;
-    QVector3D fileMax;
-    if (!meshBounds(*mesh, fileMin, fileMax)) {
-        m_nextId--;
-        fail(QStringLiteral("%1: the mesh has no vertices").arg(object.name));
-        return -1;
+    if (instance != nullptr && !placeOnBed)
+        object.trafo = instance->get_transformation();
+
+    if (placeOnBed) {
+        normalise(mesh, fileMin, fileMax);
+        object.mesh = std::make_shared<TriangleMesh>(mesh);
+        meshBounds(*object.mesh, object.localMin, object.localMax);
+        placeNext(object);
+    } else {
+        object.mesh = std::make_shared<TriangleMesh>(mesh);
+        meshBounds(*object.mesh, object.localMin, object.localMax);
+        if (instance == nullptr)
+            object.trafo.set_offset(Vec3d((fileMin.x() + fileMax.x()) * 0.5,
+                                          (fileMin.y() + fileMax.y()) * 0.5, fileMin.z()));
     }
 
-    normalise(*mesh, fileMin, fileMax);
-    object.mesh = mesh;
-    meshBounds(*mesh, object.localMin, object.localMax);
-
-    if (placeOnBed)
-        placeNext(object);
-    else
-        object.trafo.set_offset(Vec3d((fileMin.x() + fileMax.x()) * 0.5,
-                                      (fileMin.y() + fileMax.y()) * 0.5,
-                                      fileMin.z()));
-
-    pushUndo(QStringLiteral("Add %1").arg(object.displayName()));
+    if (!deferPush)
+        pushUndo(QStringLiteral("Add %1").arg(object.displayName()));
     m_objects.push_back(std::move(object));
-    m_selectedIds = {m_objects.back().id};
-    m_error.clear();
-    emit errorChanged();
-    emit selectionChanged();
-    changed();
-    emit geometryChanged();
+    if (!deferPush) {
+        m_selectedIds = {m_objects.back().id};
+        m_error.clear();
+        emit errorChanged();
+        emit selectionChanged();
+        changed();
+        emit geometryChanged();
+    }
     return m_objects.back().id;
 }
 
@@ -2595,5 +2666,12 @@ QString PlateDocument::stagedPlatePath()
         fail(QStringLiteral("could not stage the plate for slicing"));
         return QString();
     }
+    m_stagedPlates.append(path);
+    // A staged plate is megabytes, this runs again on every edit, and a long
+    // session was filling the scratch directory with every revision it ever
+    // made. The previous one is kept because a slice in flight may still hold
+    // it; anything older has no reader left.
+    while (m_stagedPlates.size() > 2)
+        QFile::remove(m_stagedPlates.takeFirst());
     return path;
 }

@@ -310,6 +310,7 @@ the *Calibration Guide* entry (a wiki link) and the AMS-specific flows.
 | Feature | Status |
 | --- | --- |
 | Open STL by dialog or drag-and-drop | done |
+| Open OBJ, 3MF, STEP and SVG by dialog or drag-and-drop | done — every format goes through the engine's own reader (`FileLoadingLogic::read_model_from_file`), and the dialog's filter is built from its extension list, so a format the reader accepts is never missing from the dialog. A file holding several objects imports all of them in its own coordinates (measured: an 18-object 3MF project opens as 18 objects; a 568-object one as 568). A multi-plate project file lands on the current plate: the plate assignment lives in `Metadata/plate_N.json`, which this does not read yet |
 | Empty bed with no model | done |
 | Multiple plates (app-level, one document each) | done |
 | Object position survives slicing | done — an import is centred once, then slices run with dont_arrange; before this the engine's arrange re-centred every slice and moves were discarded |

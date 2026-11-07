@@ -25,6 +25,11 @@
 
 class QTemporaryDir;
 
+namespace Slic3r::Domain {
+class ModelInstance;
+class ModelObject;
+} // namespace Slic3r::Domain
+
 // The build plate: an ordered list of objects, each with its own position,
 // rotation and scale, and one of them selected. Geometry is normalised on import
 // the way the engine's own loader normalises it -- XY centred on the origin,
@@ -218,6 +223,11 @@ public:
     Q_INVOKABLE QVariantList volumes(int objectId) const;
     Q_INVOKABLE bool renameObject(int id, const QString& name);
     Q_INVOKABLE void clear();
+
+    /// The file-open filter for every format the engine's reader accepts. It is
+    /// derived from the engine's own list so a format cannot be offered that the
+    /// reader would refuse, or silently missing from the dialog once it can.
+    Q_INVOKABLE QString importWildcards() const;
     Q_INVOKABLE void selectObject(int id, bool additive = false);
     Q_INVOKABLE void selectRange(int id);
     Q_INVOKABLE void selectAll();
@@ -386,6 +396,9 @@ private:
     const Object* find(int id) const;
     QString displayNameOf(int id) const;
     int importObject(const QString& path, const QString& label, bool placeOnBed);
+    int importSceneObject(const Slic3r::Domain::ModelObject& source,
+                          const Slic3r::Domain::ModelInstance* instance, const QString& local,
+                          const QString& label, bool placeOnBed, bool deferPush);
     void placeNext(Object& object) const;
     void fail(const QString& message);
     int applyPlacements(const std::vector<next_layer::PlaceableObject>& placeables);
@@ -420,5 +433,6 @@ private:
     int m_version = 0;
     QString m_error;
     std::unique_ptr<QTemporaryDir> m_scratch;
+    QStringList m_stagedPlates;
     int m_stagedRevision = 0;
 };

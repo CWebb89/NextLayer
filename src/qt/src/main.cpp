@@ -681,6 +681,23 @@ int sliceToFile(const QString& model, const QString& config, const QString& outp
 
 }
 
+// The application stages a plate as a temporary directory and lets Qt remove it
+// on exit; a crash, a SIGKILL or a killed cockpit session leaves it behind, and
+// on this machine /tmp is a small tmpfs, so a handful of those ran it out of
+// space and broke every other program that writes there. Anything of ours older
+// than a day cannot belong to a running instance.
+void sweepOrphanedScratch()
+{
+    const QDir scratch(QDir::tempPath());
+    const QDateTime cutoff = QDateTime::currentDateTime().addDays(-1);
+    const QFileInfoList stale = scratch.entryInfoList({QStringLiteral("next-layer-*")},
+                                                       QDir::Dirs | QDir::NoDotAndDotDot);
+    for (const QFileInfo& entry : stale) {
+        if (entry.lastModified() < cutoff)
+            QDir(entry.absoluteFilePath()).removeRecursively();
+    }
+}
+
 int main(int argc, char* argv[])
 {
     // QtWayland 6.12 logs on every v3 text-input disable, including for surfaces
@@ -714,10 +731,11 @@ int main(int argc, char* argv[])
     QGuiApplication app(argc, argv);
     QGuiApplication::setOrganizationName(QStringLiteral("next-layer"));
     QGuiApplication::setApplicationName(QStringLiteral("next-layer"));
+    sweepOrphanedScratch();
 
     QCommandLineParser parser;
     parser.setApplicationDescription("next-layer: a slicer for tool changers");
-    parser.addPositionalArgument("model", "STL model to open (optional: the window opens with an empty bed)");
+    parser.addPositionalArgument("model", "Model to open: STL, OBJ, 3MF, STEP or SVG (optional: the window opens with an empty bed)");
     const QCommandLineOption qml_option("qml", "QML entry point.", "path");
     const QCommandLineOption smoke_option("smoke", "Render one frame, report coverage, exit.");
     const QCommandLineOption paint_test_option("paint-test",
