@@ -11,6 +11,8 @@
 #include <QByteArray>
 #include <QFile>
 #include <QFileInfo>
+
+#include "Scratch.hpp"
 #include <QList>
 #include <QMetaObject>
 
@@ -71,7 +73,7 @@ SliceController::SliceController(std::string modelPath, SettingsModel* settings,
     : QObject(parent)
     , m_modelPath(std::move(modelPath))
     , m_settings(settings)
-    , m_configPath(m_tempDir.filePath(QStringLiteral("config.json")))
+    , m_configPath(m_tempDir->filePath(QStringLiteral("config.json")))
 {
 }
 
@@ -146,7 +148,7 @@ void SliceController::slice()
     }
 
     const QString modelPath = QString::fromStdString(m_modelPath);
-    const QString outputPath = m_tempDir.filePath(QStringLiteral("slice-%1.gcode").arg(++m_sliceIndex));
+    const QString outputPath = m_tempDir->filePath(QStringLiteral("slice-%1.gcode").arg(++m_sliceIndex));
 
     m_busy = true;
     emit busyChanged();

@@ -4,11 +4,13 @@
 #pragma once
 
 #include "SliceRuntime.hpp"
+#include "Scratch.hpp"
 
 #include <QObject>
 #include <QString>
 #include <QTemporaryDir>
 
+#include <memory>
 #include <string>
 #include <thread>
 
@@ -70,7 +72,7 @@ private:
     SettingsModel* m_settings;
     PlateDocument* m_document = nullptr;
     next_layer::SliceRuntime m_runtime;
-    QTemporaryDir m_tempDir;
+    std::unique_ptr<QTemporaryDir> m_tempDir = next_layer::makeScratchDir();
     QString m_configPath;
     std::thread m_worker;
     int m_sliceIndex = 0;

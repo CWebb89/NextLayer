@@ -19,6 +19,8 @@
 #include <QFileInfo>
 #include <QTemporaryDir>
 
+#include "Scratch.hpp"
+
 #include <array>
 
 namespace next_layer {
@@ -222,7 +224,8 @@ QByteArray serialiseProject(const std::vector<ProjectObject>& objects,
     }
     root["layer_gcodes"] = std::move(markers);
 
-    QTemporaryDir scratch;
+    const auto scratchDir = next_layer::makeScratchDir();
+    QTemporaryDir& scratch = *scratchDir;
     ordered_json list = ordered_json::array();
     for (const ProjectObject& object : objects) {
         ordered_json entry = ordered_json::object();
@@ -317,7 +320,8 @@ bool parseProject(const QByteArray& body, std::vector<ProjectObject>& objects,
             metadata.layerGcodes.push_back(std::move(entry));
     }
 
-    QTemporaryDir scratch;
+    const auto scratchDir = next_layer::makeScratchDir();
+    QTemporaryDir& scratch = *scratchDir;
     objects.clear();
     for (const ordered_json& entry : root.value("objects", ordered_json::array())) {
         ProjectObject object;

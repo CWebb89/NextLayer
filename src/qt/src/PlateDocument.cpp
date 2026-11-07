@@ -3,6 +3,7 @@
 
 #include "PlateDocument.hpp"
 
+#include "Scratch.hpp"
 #include "ThreeMfPlates.hpp"
 
 #include "Arranger.hpp"
@@ -2712,7 +2713,7 @@ QString PlateDocument::stagedPlatePath()
         return QString();
 
     if (!m_scratch)
-        m_scratch = std::make_unique<QTemporaryDir>();
+        m_scratch = next_layer::makeScratchDir();
     if (!m_scratch->isValid()) {
         fail(QStringLiteral("could not create a scratch directory for slicing"));
         return QString();

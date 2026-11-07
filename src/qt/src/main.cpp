@@ -16,6 +16,7 @@
 #include "Updater.hpp"
 #include "PlateDocument.hpp"
 #include "PlateScene.hpp"
+#include "Scratch.hpp"
 #include "QtPlatform.hpp"
 #include "SceneSelftest.hpp"
 #include "SliceRuntime.hpp"
@@ -684,19 +685,9 @@ int sliceToFile(const QString& model, const QString& config, const QString& outp
 // The application stages a plate as a temporary directory and lets Qt remove it
 // on exit; a crash, a SIGKILL or a killed cockpit session leaves it behind, and
 // on this machine /tmp is a small tmpfs, so a handful of those ran it out of
-// space and broke every other program that writes there. Anything of ours older
-// than a day cannot belong to a running instance.
-void sweepOrphanedScratch()
-{
-    const QDir scratch(QDir::tempPath());
-    const QDateTime cutoff = QDateTime::currentDateTime().addDays(-1);
-    const QFileInfoList stale = scratch.entryInfoList({QStringLiteral("next-layer-*")},
-                                                       QDir::Dirs | QDir::NoDotAndDotDot);
-    for (const QFileInfo& entry : stale) {
-        if (entry.lastModified() < cutoff)
-            QDir(entry.absoluteFilePath()).removeRecursively();
-    }
-}
+// space and broke every other program that writes there. Scratch directories are
+// named for the process that owns them, so one whose owner is gone can be removed
+// now rather than after a day.
 
 int main(int argc, char* argv[])
 {
@@ -731,7 +722,7 @@ int main(int argc, char* argv[])
     QGuiApplication app(argc, argv);
     QGuiApplication::setOrganizationName(QStringLiteral("next-layer"));
     QGuiApplication::setApplicationName(QStringLiteral("next-layer"));
-    sweepOrphanedScratch();
+    next_layer::sweepScratchDirs();
 
     QCommandLineParser parser;
     parser.setApplicationDescription("next-layer: a slicer for tool changers");

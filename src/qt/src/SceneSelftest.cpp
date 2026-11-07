@@ -12,6 +12,8 @@
 #include <QFileInfo>
 #include <QTemporaryDir>
 
+#include "Scratch.hpp"
+
 #include <Slic3r/App/CLI/CLIRuntime.hpp>
 #include <Slic3r/App/Init.hpp>
 #include <Slic3r/Biz/Config/ConfigLoad.hpp>
@@ -636,7 +638,8 @@ int runSliceFeaturesSelftest(const QString& model,
 
     const auto sliceNow = [&document, &configPath](int& layers, int& moves, int& supports) {
         next_layer::SliceRuntime& slicer = next_layer::SliceRuntime::instance();
-        QTemporaryDir directory;
+        const auto directoryScratch = next_layer::makeScratchDir();
+        QTemporaryDir& directory = *directoryScratch;
         const QString gcode = directory.filePath(QStringLiteral("slice.gcode"));
         QString error;
         if (!slicer.slicePlate(document.sliceObjects(), configPath, gcode, error)) {
@@ -790,7 +793,8 @@ int runSliceFeaturesSelftest(const QString& model,
         std::fprintf(stderr, "the plate did not slice with a custom G-code marker\n");
         return 1;
     }
-    QTemporaryDir markerDir;
+    const auto markerDirScratch = next_layer::makeScratchDir();
+    QTemporaryDir& markerDir = *markerDirScratch;
     const QString markerGcode = markerDir.filePath(QStringLiteral("marker.gcode"));
     {
         QString error;
@@ -885,7 +889,8 @@ struct SliceResult
 /// directly.
 bool slicePlate(PlateDocument& document, const QString& configPath, SliceResult& result)
 {
-    QTemporaryDir directory;
+    const auto directoryScratch = next_layer::makeScratchDir();
+    QTemporaryDir& directory = *directoryScratch;
     const QString gcode = directory.filePath(QStringLiteral("shapes.gcode"));
     QString error;
     if (!next_layer::SliceRuntime::instance().slicePlate(document.sliceObjects(), configPath,
@@ -941,7 +946,8 @@ int runMultiToolSelftest(const QString& configPath, const QString& dataDir)
 
     const auto sliceNow = [&document, &configPath](int& toolChanges, QList<int>& tools,
                                                    QList<QByteArray>& colours) {
-        QTemporaryDir directory;
+        const auto directoryScratch = next_layer::makeScratchDir();
+        QTemporaryDir& directory = *directoryScratch;
         const QString gcode = directory.filePath(QStringLiteral("multi.gcode"));
         QString error;
         if (!next_layer::SliceRuntime::instance().slicePlate(document.sliceObjects(), configPath,
@@ -1338,7 +1344,8 @@ int runCalibrationSelftest(const QString& configPath, const QString& dataDir)
         }
         ++built;
 
-        QTemporaryDir directory;
+        const auto directoryScratch = next_layer::makeScratchDir();
+        QTemporaryDir& directory = *directoryScratch;
         const QString gcode = directory.filePath(QStringLiteral("calibration.gcode"));
         QString error;
         if (!next_layer::SliceRuntime::instance().slicePlate(document.sliceObjects(), configPath,
@@ -1595,7 +1602,8 @@ int runProjectSelftest(const QString& model, const QString& configPath, const QS
     const int beforePaint = document.paintedFacetCount(first, QStringLiteral("supports"));
     const int beforeToolPaint = document.paintedFacetCount(first, QStringLiteral("tool"));
 
-    QTemporaryDir directory;
+    const auto directoryScratch = next_layer::makeScratchDir();
+    QTemporaryDir& directory = *directoryScratch;
     const QString path = directory.filePath(QStringLiteral("plate.nextproj"));
     QString error = document.saveProject(path);
     if (!error.isEmpty()) {

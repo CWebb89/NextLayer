@@ -3,6 +3,8 @@
 
 #include "TransformController.hpp"
 
+#include "Scratch.hpp"
+
 #include <Slic3r/App/CLI/CLIApp.hpp>
 #include <Slic3r/App/Init.hpp>
 #include <Slic3r/Domain/Types.hpp>
@@ -14,10 +16,15 @@
 
 namespace {
 
+QTemporaryDir& jobDirectory()
+{
+    static const std::unique_ptr<QTemporaryDir> directory = next_layer::makeScratchDir();
+    return *directory;
+}
+
 QString jobPath(const QString& tag)
 {
-    static QTemporaryDir directory;
-    return directory.filePath(QStringLiteral("transform-%1.stl").arg(tag));
+    return jobDirectory().filePath(QStringLiteral("transform-%1.stl").arg(tag));
 }
 
 }

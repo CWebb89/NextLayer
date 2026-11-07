@@ -55,6 +55,8 @@
 #include <QStandardPaths>
 #include <QTemporaryDir>
 
+#include "Scratch.hpp"
+
 #include <boost/filesystem/path.hpp>
 
 #include <algorithm>
@@ -396,7 +398,7 @@ bool SliceRuntime::slicePlate(const QVector<PlateSliceObject>& objects, const QS
     Runtime& runtime = runtimeLocked();
 
     if (!m_plateDir.has_value() || !m_plateDir->isValid()) {
-        m_plateDir.emplace();
+        m_plateDir.emplace(next_layer::scratchTemplate());
         if (!m_plateDir->isValid()) {
             error = QStringLiteral("could not create a scratch directory for the plate");
             return false;
