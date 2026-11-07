@@ -24,7 +24,7 @@ import subprocess
 import sys
 import tempfile
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -119,20 +119,51 @@ def start_marker(config: Path) -> str:
     return ""
 
 
+def defaults_manifest(bundle: Path) -> dict:
+    """The process and filament each machine is meant to resolve with.
+
+    Written by generate.py next to the vendor's presets. A missing entry is
+    reported rather than guessed: checking a Voron against a Creality process
+    would pass and prove nothing.
+    """
+    wanted = {}
+    for path in sorted(bundle.glob("*/defaults.json")):
+        wanted.update(json.loads(path.read_text(encoding="utf-8")))
+    return wanted
+
+
+def slicing_error(result: subprocess.CompletedProcess) -> str:
+    """The engine's own reason for writing nothing.
+
+    The slice command prints `(code, [option, ...])` on failure and exits 0, so a
+    failure a bare exit code hides is still reported here with its code.
+    """
+    for line in (result.stdout + result.stderr).splitlines():
+        text = line.strip()
+        if text.startswith("(") and "[" in text:
+            return text
+    return "(no reason reported)"
+
+
 def slice_one(binary: Path, data_home: Path, name: str, process: str, filament: str) -> tuple[str, bool]:
     with tempfile.TemporaryDirectory() as tmp:
         config = Path(tmp) / "config.json"
         gcode = Path(tmp) / "out.gcode"
-        resolve = subprocess.run([str(binary), "--printer", name, "--process", process,
-                                  "--filament", filament, "--dump-config", str(config)],
+        chosen = ["--printer", name]
+        if process:
+            chosen += ["--process", process]
+        if filament:
+            chosen += ["--filament", filament]
+        resolve = subprocess.run([str(binary)] + chosen + ["--dump-config", str(config)],
                                  env=app_environment(data_home), capture_output=True, timeout=600)
         if not config.is_file():
             return f"no config (exit {resolve.returncode})", False
         marker = start_marker(config)
-        subprocess.run([str(binary), str(MODEL), "--slice", f"{config},{gcode}"],
-                       env=app_environment(data_home), capture_output=True, timeout=600)
+        run = subprocess.run([str(binary), str(MODEL), "--slice", f"{config},{gcode}"],
+                             env=app_environment(data_home), capture_output=True, timeout=600,
+                             text=True)
         if not gcode.is_file():
-            return "no G-code written", bool(marker)
+            return "no G-code written " + slicing_error(run), bool(marker)
         size = gcode.stat().st_size
         if size < MINIMUM_BYTES:
             return f"{size} bytes of G-code", bool(marker)
@@ -146,11 +177,14 @@ def main() -> int:
     parser.add_argument("--bin", type=Path, default=BIN)
     parser.add_argument("--nozzle", default="0.4",
                         help="tool name the catalog appends to a printer name")
-    parser.add_argument("--process", default="Standard")
-    parser.add_argument("--filament", default="Generic")
+    parser.add_argument("--process", default="",
+                        help="process preset to slice with; empty resolves the printer's own")
+    parser.add_argument("--filament", default="",
+                        help="filament preset to slice with; empty resolves the printer's own")
     parser.add_argument("--vendor", default=None,
                         help="only printers whose name starts with this vendor")
-    parser.add_argument("--jobs", type=int, default=4, help="slices in flight at once")
+    parser.add_argument("--jobs", type=int, default=1,
+                        help="slices in flight at once; each peaks near 1.7 GB, so 1 is the safe default")
     parser.add_argument("--names-only", action="store_true",
                         help="check that no two hardware configs share a name, slice nothing")
     parser.add_argument("--data-home", type=Path, default=None,
@@ -175,22 +209,32 @@ def main() -> int:
         return 1 if duplicates else 0
     bundle_names = catalog_names(BUNDLE, args.nozzle)
     names = bundle_names or names
+    defaults = defaults_manifest(BUNDLE)
     if args.vendor:
         names = [name for name in names if name.lower().startswith(args.vendor.lower())]
     print(f"validating {len(names)} printer(s) against {MODEL.name}", flush=True)
 
     def run(indexed: tuple[int, str]) -> tuple[int, str, str, bool]:
         index, name = indexed
-        reason, checked = slice_one(args.bin, data_home, name, args.process, args.filament)
+        chosen = defaults.get(name, {})
+        process = args.process or chosen.get("process", "")
+        filament = args.filament or chosen.get("filament", "")
+        if not process or not filament:
+            return index, name, "no default preset recorded for it", False
+        reason, checked = slice_one(args.bin, data_home, name, process, filament)
         return index, name, reason, checked
 
     outcomes = []
     with ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool:
-        for outcome in pool.map(run, enumerate(names, 1)):
+        pending = {pool.submit(run, pair): pair for pair in enumerate(names, 1)}
+        for done, future in enumerate(as_completed(pending), 1):
+            outcome = future.result()
             outcomes.append(outcome)
             index, name, reason, _ = outcome
             if reason:
                 print(f"  {index:>3}/{len(names)} FAIL {name}: {reason}", flush=True)
+            if done % 25 == 0:
+                print(f"  … {done}/{len(names)} checked", flush=True)
 
     failures = [(name, reason) for _, name, reason, _ in outcomes if reason]
     unchecked = sum(0 if checked else 1 for _, _, _, checked in outcomes)

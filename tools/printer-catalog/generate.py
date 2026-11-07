@@ -51,6 +51,19 @@ NOZZLE = "0.4"
 # bundle already, so the catalog does not publish them a second time.
 SKIPPED_VENDORS = {"Prusa"}
 
+# A vendor's filament list is mostly machine-specific colour and material
+# combinations. The generic entries are the ones a printer needs to slice out of
+# the box, and they are the same family the app's own bundle lists.
+GENERIC_FILAMENT = re.compile(r"generic", re.IGNORECASE)
+FILAMENT_SUFFIX = re.compile(r"\s*@.*$")
+# A printer's first-run filament should be the one most of them use. The
+# reference lists them alphabetically, so the fallback alone would hand a PLA
+# machine a spool of ABS at 260 °C.
+FILAMENT_PREFERENCE = (re.compile(r"generic pla\b", re.IGNORECASE),
+                       re.compile(r"generic petg\b", re.IGNORECASE),
+                       re.compile(r"generic\b", re.IGNORECASE))
+NOZZLE_TOKEN = re.compile(r"0\.[0-9]+")
+
 # Display names that would shadow a machine next-layer's own fixtures ship. The
 # custom Voron 2.4 350 bundle is the default machine, so the reference's profiles for the
 # same printer are kept but named apart.
@@ -186,7 +199,7 @@ def index_of(source_root, vendor):
     path = source_root / (vendor + ".json")
     if not path.is_file():
         return {}
-    return json.loads(path.read_text(errors="replace"))
+    return json.loads(path.read_text(encoding="utf-8-sig", errors="replace"))
 
 
 def entries(index, key):
@@ -280,7 +293,8 @@ PRINTER_DROP = {
 POINT_LIST = {"extruder_offset"}
 
 GCODE_KEYS = ("start_gcode", "end_gcode", "before_layer_gcode", "layer_gcode",
-              "toolchange_gcode", "between_objects_gcode")
+              "toolchange_gcode", "between_objects_gcode",
+              "start_filament_gcode", "end_filament_gcode")
 
 PLACEHOLDER_RENAMES = {
     "bed_temperature_initial_layer_single": "first_layer_bed_temperature",
@@ -304,20 +318,78 @@ SPECIAL_PLACEHOLDERS = {
 TOKEN = re.compile(r"\[(?:([a-z0-9_]+)|([^\[\]]*))\]")
 BRACE = re.compile(r"\{([^{}]*)\}")
 IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+QUOTED = re.compile(r'"[^"]*"|\'[^\']*\'')
+LEGACY_DECLARATION = re.compile(r'this->add\("([a-z0-9_]+)",\s*(co[A-Za-z]+)\)')
+VECTOR_TYPES = {"coFloats", "coInts", "coStrings", "coBools", "coEnums", "coPercents",
+                "coPoints"}
+ENGINE_OPTIONS = (Path(__file__).resolve().parents[2] / "upstream/src/slic3r-shared/src/Slic3r"
+                  / "Biz/Config/Legacy/PrintConfig.cpp")
+_VECTOR_SETTINGS = None
 EXPRESSION_WORDS = {
-    "if", "else", "endif", "and", "or", "not", "true", "false",
+    "if", "elsif", "else", "endif", "then", "and", "or", "not", "true", "false",
     "min", "max", "random", "digits", "zdigits", "int", "round", "ceil",
     "is_nil", "one_of", "empty", "size", "interpolate_table", "repeat",
 }
 
 
+def vector_settings():
+    """Settings that hold one value per tool, plus the two print-extent placeholders.
+
+    An expression may only read one of these with an index: the engine's parser
+    refuses a bare reference to a vector-valued setting and writes no G-code at
+    all, which is how a whole machine ends up unsliceable over one macro. The
+    reference writes the bare form where its own parser tolerates it.
+
+    Which settings are per-tool is not in the domain declarations — those name a
+    per-tool option by its scalar element type — so it is read from the legacy
+    option table, where the plural ``coInts``/``coFloats``/... spelling is the
+    vector one.
+    """
+    global _VECTOR_SETTINGS
+    if _VECTOR_SETTINGS is None:
+        types = {}
+        if ENGINE_OPTIONS.is_file():
+            for match in LEGACY_DECLARATION.finditer(ENGINE_OPTIONS.read_text(errors="replace")):
+                types[match.group(1)] = match.group(2)
+        _VECTOR_SETTINGS = {name for name, kind in types.items() if kind in VECTOR_TYPES}
+        _VECTOR_SETTINGS |= {"first_layer_print_min", "first_layer_print_max"}
+    return _VECTOR_SETTINGS
+
+
 def translate_placeholders(text):
-    def replace(match):
+    """Rename the reference's setting names to the ones this engine declares.
+
+    A setting is named in two ways: ``[name]`` in G-code text and bare ``name``
+    inside a ``{expression}``. Both have to be renamed, or a conditional over a
+    renamed setting is dropped as if it referenced something unknown. A bare
+    reference to a vector-valued setting is given index 0, because an unindexed
+    one is a parse error and the first tool is the only one these profiles mean.
+    """
+    def rename(name):
+        renamed = PLACEHOLDER_RENAMES.get(name)
+        return name if renamed is None else renamed
+
+    def replace_token(match):
         name = match.group(1)
         if name is None:
             return match.group(0)
-        return "[" + PLACEHOLDER_RENAMES.get(name, name) + "]"
-    return TOKEN.sub(replace, text)
+        return "[" + rename(name) + "]"
+
+    def replace_expression(match):
+        body = match.group(1)
+        pieces = []
+        last = 0
+        for found in IDENTIFIER.finditer(body):
+            pieces.append(body[last:found.start()])
+            name = rename(found.group(0))
+            following = body[found.end():found.end() + 1]
+            pieces.append(name + "[0]" if name in vectors and following != "[" else name)
+            last = found.end()
+        pieces.append(body[last:])
+        return "{" + "".join(pieces) + "}"
+
+    vectors = vector_settings()
+    return BRACE.sub(replace_expression, TOKEN.sub(replace_token, text))
 
 
 def unknown_placeholders(text, known):
@@ -335,7 +407,8 @@ def unknown_placeholders(text, known):
 def unknown_expression_names(text, known):
     names = set()
     for body in BRACE.findall(text):
-        for identifier in IDENTIFIER.findall(body):
+        code = QUOTED.sub('""', body)
+        for identifier in IDENTIFIER.findall(code):
             if identifier in known or identifier in SPECIAL_PLACEHOLDERS:
                 continue
             if identifier in EXPRESSION_WORDS:
@@ -349,26 +422,45 @@ def as_point_list(value):
     return [str(item) for item in items]
 
 
-def printer_values(data, machine_name, vendor, nozzle_float, allowed, enums,
-                   known_placeholders, defaults):
-    values, bucket = converted(data, "printer", allowed, enums, PRINTER_DROP)
-    printable = data.get("printable_area")
-    if printable:
-        values["bed_shape"] = bed_points(printable)
-    values["printer_model"] = machine_name
-    values["printer_technology"] = "FFF"
-    values["printer_vendor"] = vendor
-    # Absolute E distances make this build export nothing at all, and relative E
-    # is what Klipper and current Marlin expect anyway; the engine's own default.
-    values["use_relative_e_distances"] = True
-    # An extruder offset is written in the engine's own `0x0` spelling even though its
-    # reader reports a type mismatch for it on every load: the value is required for a
-    # multi-extruder machine to slice at all (dropping it fails with "error 5
-    # extruder_offset"), and the bundle loader rejects the nested-list spelling that
-    # would avoid the warning. A warning beats a tool changer that cannot slice.
-    for key in POINT_LIST & set(values):
-        values[key] = as_point_list(values[key])
-    dropped = set()
+EXTRUDER_RESET_LINE = re.compile(r"^[ \t]*[gG]92[ \t]*[eE](0(\.0*)?|\.0+)[ \t]*(;.*)?$")
+
+
+def is_extruder_reset(line):
+    return EXTRUDER_RESET_LINE.match(line) is not None
+
+
+def align_extruder_reset(values):
+    """Keep G92 E0 where the addressing mode allows it.
+
+    The engine refuses to export at all when ``G92 E0`` sits in
+    ``before_layer_gcode`` with absolute extruder addressing, or when relative
+    addressing finds no reset anywhere. Both are one line in a vendor template,
+    so the template is repaired rather than the machine dropped. A reset counts
+    as its own line, which is how the engine reads it, so ``G92 E0.0`` and a
+    trailing comment are resets too.
+    """
+    def without_reset(text):
+        return "\n".join(line for line in text.splitlines() if not is_extruder_reset(line))
+
+    if "use_relative_e_distances" in values and not values["use_relative_e_distances"]:
+        for key in ("before_layer_gcode", "layer_gcode"):
+            values[key] = without_reset(str(values.get(key, "")))
+        return
+    layer = str(values.get("layer_gcode", ""))
+    before = str(values.get("before_layer_gcode", ""))
+    if not any(is_extruder_reset(line) for line in (layer + "\n" + before).splitlines()):
+        values["layer_gcode"] = (layer.rstrip() + "\nG92 E0\n").lstrip("\n")
+
+
+def repair_gcode(values, known_placeholders):
+    """Drop custom G-code this engine's placeholder parser would refuse.
+
+    A template is kept only when every placeholder in it resolves, because the
+    engine reports one unresolvable name as a slicing error and writes no
+    G-code at all. Returns which template went missing and why, so the run report
+    says what a machine lost rather than that it lost something.
+    """
+    dropped = {}
     for key in GCODE_KEYS:
         if not isinstance(values.get(key), str):
             continue
@@ -379,16 +471,47 @@ def printer_values(data, machine_name, vendor, nozzle_float, allowed, enums,
         unknown = (unknown_placeholders(translated, known_placeholders)
                    | unknown_expression_names(translated, known_placeholders))
         if unknown:
-            dropped.update(unknown)
+            dropped[key] = sorted(unknown)
             del values[key]
             continue
         values[key] = translated
+    return dropped
+
+
+def printer_values(data, machine_name, vendor, nozzle_float, allowed, enums,
+                   known_placeholders, defaults):
+    values, bucket = converted(data, "printer", allowed, enums, PRINTER_DROP)
+    printable = data.get("printable_area")
+    if printable:
+        values["bed_shape"] = bed_points(printable)
+    values["printer_model"] = machine_name
+    values["printer_technology"] = "FFF"
+    values["printer_vendor"] = vendor
+    # Relative E is what most of these machines want, and this build writes no
+    # G-code at all with absolute E on a Klipper flavour. The Marlin flavours
+    # are the exception: relative E with them writes no G-code either, so the
+    # flavour decides and a machine that states its own preference keeps it.
+    flavor = str(values.get("gcode_flavor", ""))
+    values.setdefault("use_relative_e_distances", flavor not in ("marlin", "marlin2"))    # The reference sets this to mean "this machine can carry a multi-material
+    # unit", a capability. In this engine it turns MMU printing on, and an MMU
+    # slice with one tool writes no G-code at all. This app drives tool
+    # changers, never an MMU.
+    values["single_extruder_multi_material"] = False
+    # An extruder offset is written in the engine's own `0x0` spelling even though its
+    # reader reports a type mismatch for it on every load: the value is required for a
+    # multi-extruder machine to slice at all (dropping it fails with "error 5
+    # extruder_offset"), and the bundle loader rejects the nested-list spelling that
+    # would avoid the warning. A warning beats a tool changer that cannot slice.
+    for key in POINT_LIST & set(values):
+        values[key] = as_point_list(values[key])
+    dropped = repair_gcode(values, known_placeholders)
     # An empty layer-change template stops this build exporting at all, so where
     # the vendor has none, keep the engine's own.
     for key in ("before_layer_gcode", "layer_gcode"):
         if not str(values.get(key, "")).strip() and defaults.get(key):
             values[key] = defaults[key]
-    return values, bucket, sorted(dropped)
+    align_extruder_reset(values)
+    return values, bucket, dropped
 
 
 def vendor_manifest(vendor_id, vendor_label, machines, nozzle):
@@ -487,23 +610,83 @@ def unique_slug(machines, slug):
     published under the other one's name.
     """
     taken = {machine["slug"] for machine in machines}
+    return free_slug(taken, slug)
+
+
+def free_slug(taken, slug):
+    """A file stem no earlier preset of this kind already claimed."""
     if slug not in taken:
+        taken.add(slug)
         return slug
     index = 2
     while "%s-%d" % (slug, index) in taken:
         index += 1
-    return "%s-%d" % (slug, index)
+    candidate = "%s-%d" % (slug, index)
+    taken.add(candidate)
+    return candidate
+
+
+def retitle(document, name, condition):
+    """One of the borrowed template files, published under its own name."""
+    lines = [line for line in document.splitlines()
+             if not line.startswith("name: ") and not line.startswith("condition: ")]
+    lines[1:1] = ["name: " + scalar(name)]
+    if condition:
+        lines.insert(2, "condition: " + condition)
+    return "\n".join(lines) + "\n"
+
+
+def process_name_for(machine_name, data, procs):
+    """The vendor's own process for a machine, by the machine's own default.
+
+    The reference names the default process on the machine, and that name is
+    usually a key of the vendor's own process list: exact, then with the nozzle
+    suffix the machine name carries and the process name does not, then the
+    first process in the family. Nothing is guessed past that; the caller falls
+    back to this app's own standard profile and says so.
+    """
+    seed = str(data.get("default_print_profile") or "")
+    candidates = [part.strip() for part in seed.split(";") if part.strip()]
+    for candidate in candidates:
+        if candidate in procs:
+            return candidate
+    lowered = {key.lower(): key for key in procs}
+    for candidate in candidates:
+        trimmed = re.sub(r"\s*\(?0\.[0-9]+ nozzle\)?", "", candidate).strip().lower()
+        if trimmed in lowered:
+            return lowered[trimmed]
+    family = re.sub(r"\s*0\.[0-9]+ nozzle$", "", machine_name).strip().lower()
+    for name in procs:
+        if "@" in name and name.rsplit("@", 1)[1].strip().lower() == family:
+            return name
+    return None
+
+
+def inherits_lookup(source_root):
+    """Resolve an ``inherits`` name anywhere under the profile checkout.
+
+    The reference keeps a vendor's generic filament inheriting the system preset
+    another vendor's directory defines, so a sibling-only lookup resolves such a
+    preset to its own handful of overrides and nothing else.
+    """
+    by_name = {}
+    for path in sorted(source_root.glob("*/**/*.json")):
+        by_name.setdefault(path.stem, path)
+    def lookup(name):
+        return by_name.get(name)
+    return lookup
 
 
 def build_vendor(source_root, vendor_dir, vendor, out_root, nozzle, nozzle_float, allowed,
-                 enums, borrowed, placeholders, engine_defaults, report, machines_filter=None):
+                 enums, borrowed, placeholders, engine_defaults, report, machines_filter=None,
+                 lookup=None):
     index = index_of(source_root, vendor)
     vendor_slug = slugify(vendor)
     cache = {}
     machines, unsupported = [], Counter()
 
     for preset_name, path in machine_presets(vendor_dir, vendor, index, nozzle, machines_filter):
-        data = preset_convert.resolve_inherits(path, cache)
+        data = preset_convert.resolve_inherits(path, cache, lookup)
         name = NAME_OVERRIDES.get(strip_nozzle(preset_name, nozzle),
                                   strip_nozzle(preset_name, nozzle))
         slug = slugify(name)
@@ -513,9 +696,9 @@ def build_vendor(source_root, vendor_dir, vendor, out_root, nozzle, nozzle_float
         values, bucket, dropped_gcode = printer_values(data, name, vendor, nozzle_float,
                                                       allowed["printer"], enums, placeholders,
                                                       engine_defaults)
-        if dropped_gcode:
-            report.append("%s: start/end G-code not imported (unknown placeholders: %s)"
-                          % (name, ", ".join(dropped_gcode)))
+        for key, unknown in dropped_gcode.items():
+            report.append("%s: %s not imported (unknown placeholders: %s)"
+                          % (name, key, ", ".join(unknown)))
         if "bed_shape" not in values:
             report.append("skip %s: no printable area" % name)
             continue
@@ -524,7 +707,8 @@ def build_vendor(source_root, vendor_dir, vendor, out_root, nozzle, nozzle_float
             continue
         unsupported.update(bucket["unsupported"])
         machines.append({"name": name, "slug": slug, "values": values,
-                         "id": "NL_" + slug, "config_id": "nl-" + slug})
+                         "id": "NL_" + slug, "config_id": "nl-" + slug,
+                         "data": data})
 
     if not machines:
         return None
@@ -535,22 +719,131 @@ def build_vendor(source_root, vendor_dir, vendor, out_root, nozzle, nozzle_float
         vendor_manifest(vendor, vendor, machines, nozzle))
     (out_root / (vendor + ".idx")).write_text(
         "min_slic3r_version = 3.0.0-alpha0\n1.0.0 Generated from reference slicer profiles\n")
+
+    (directory / "preset-tool-standard.yaml").write_text(borrowed["tool_print"])
+
+    procs = entries(index, "process_list")
+    published_processes = {}
+    process_slugs = set()
+    for machine in machines:
+        machine["process"] = process_name_for(machine["name"], machine.pop("data"), procs)
+
+    for name in sorted({machine["process"] for machine in machines if machine["process"]}):
+        path = vendor_dir / procs[name]
+        if not path.is_file():
+            continue
+        values, bucket = converted(preset_convert.resolve_inherits(path, cache, lookup),
+                                   "print", allowed["print"], enums)
+        if not values:
+            continue
+        for key, unknown in repair_gcode(values, placeholders).items():
+            report.append("%s process %s: %s not imported (unknown placeholders: %s)"
+                          % (vendor, name, key, ", ".join(unknown)))
+        unsupported.update(bucket["unsupported"])
+        published_processes[name] = values
+
+    # A print preset's condition is evaluated without a printer, so a condition
+    # referencing the machine drops the preset instead of scoping it. Every
+    # vendor process is therefore published once, under its own name, shared by
+    # the machines whose own default points at it.
+    for name, values in published_processes.items():
+        (directory / ("preset-print-" + free_slug(process_slugs, slugify(name)) + ".yaml")).write_text(
+            preset_document("print", name, values))
+
+    fallback = 0
+    for machine in machines:
+        if machine["process"] in published_processes:
+            continue
+        fallback += 1
+        report.append("%s: no convertible vendor process, publishing this app's "
+                      "standard profile for it" % machine["name"])
+        (directory / ("preset-print-" + free_slug(process_slugs, slugify(machine["name"] +
+                                                                         " Standard")) + ".yaml")).write_text(
+            retitle(borrowed["print"], machine["name"] + " Standard", ""))
+
+    filaments = 0
+    published_filaments = set()
+    filament_names = []
+    filament_slugs = set()
+    for name, sub in entries(index, "filament_list").items():
+        if not GENERIC_FILAMENT.search(name):
+            continue
+        # The reference repeats one material once per nozzle and per machine
+        # family. This bundle ships 0.4 machines, so a variant belonging to
+        # another nozzle is another machine's filament, and the first variant
+        # of a material is the one published under its plain name.
+        nozzles = NOZZLE_TOKEN.findall(name)
+        if nozzles and nozzle not in nozzles:
+            continue
+        base = FILAMENT_SUFFIX.sub("", name).strip()
+        if base in published_filaments:
+            continue
+        path = vendor_dir / sub
+        if not path.is_file():
+            continue
+        values, bucket = converted(preset_convert.resolve_inherits(path, cache, lookup),
+                                   "filament", allowed["filament"], enums)
+        if not values:
+            continue
+        for key, unknown in repair_gcode(values, placeholders).items():
+            report.append("%s filament %s: %s not imported (unknown placeholders: %s)"
+                          % (vendor, name, key, ", ".join(unknown)))
+        published_filaments.add(base)
+        unsupported.update(bucket["unsupported"])
+        unique = base if vendor.lower() in base.lower() else "%s (%s)" % (base, vendor)
+        (directory / ("preset-filament-" + free_slug(filament_slugs, slugify(unique)) + ".yaml")).write_text(
+            preset_document("filament", unique, values))
+        filament_names.append(unique)
+        filaments += 1
+    if not filaments:
+        (directory / "preset-filament-generic.yaml").write_text(borrowed["filament"])
+
+    # Which process and filament each machine resolves with, for validate.py: the
+    # bundle loader reads YAML, so this record cannot be mistaken for a preset,
+    # and a machine is never checked against another vendor's process.
+    default_filament = filament_names[0] if filament_names else "Generic"
+    for pattern in FILAMENT_PREFERENCE:
+        preferred = [name for name in filament_names if pattern.search(name)]
+        if preferred:
+            default_filament = sorted(preferred)[0]
+            break
+    defaults = {}
+    for machine in machines:
+        name = machine["process"] if machine["process"] in published_processes \
+            else machine["name"] + " Standard"
+        defaults[machine["name"] + " " + nozzle] = {"process": name,
+                                                     "filament": default_filament}
+    (directory / "defaults.json").write_text(json.dumps(defaults, indent=1, sort_keys=True) + "\n")
+
+    # The engine's PrinterSettings has no slot for a machine's default process or
+    # filament, so they are published in defaults.json for the tools instead;
+    # writing them onto the printer preset logs "Invalid key" once per load.
     for machine in machines:
         (directory / ("preset-printer-" + machine["slug"] + ".yaml")).write_text(
             preset_document("printer", machine["name"], machine["values"],
                             'printer.model == "%s_MODEL"' % machine["id"]))
 
-    (directory / "preset-print-standard.yaml").write_text(borrowed["print"])
-    (directory / "preset-filament-generic.yaml").write_text(borrowed["filament"])
-    (directory / "preset-tool-standard.yaml").write_text(borrowed["tool_print"])
+    return {"vendor": vendor, "machines": len(machines),
+            "own_processes": len(published_processes), "fallback": fallback,
+            "filaments": filaments, "unsupported": unsupported}
 
-    return {"vendor": vendor, "machines": len(machines), "unsupported": unsupported}
+
+REFERENCE_ONLY_VENDORS = {"Custom"}
 
 
 def vendor_directories(source_root):
+    """Vendor directories worth publishing as the app's own machines.
+
+    The reference's ``Custom`` vendor holds printer templates for a user to copy
+    (``MyKlipper``, ``MyMarlin``) rather than hardware, and next-layer already
+    owns that name: it publishes its own custom bundle there and blocks the
+    engine's samples, so a machine published under it can never resolve.
+    """
     found = []
     for directory in sorted(source_root.iterdir()):
         if not directory.is_dir():
+            continue
+        if directory.name in REFERENCE_ONLY_VENDORS:
             continue
         if not (source_root / (directory.name + ".json")).is_file():
             continue
@@ -608,6 +901,7 @@ def main():
         placeholders |= keys
     engine_defaults = plain_values(
         engine_config(args.bin, args.model, ["--dump-config"]).get("printer_settings", {}))
+    lookup = inherits_lookup(source_root)
 
     for directory in directories:
         vendor = directory.name
@@ -623,7 +917,7 @@ def main():
                                   float(args.nozzle.split()[0]), allowed, enums, borrowed,
                                   placeholders, engine_defaults, report,
                                   [token.strip() for token in (args.machines or "").split(",")
-                                   if token.strip()])
+                                   if token.strip()], lookup)
         except Exception as error:  # a broken profile must not stop the catalog
             failed.append("%s: %s" % (vendor, error))
             continue
@@ -632,8 +926,9 @@ def main():
             continue
         totals["machines"] += result["machines"]
         totals["vendors"] += 1
-        print("%-22s %3d printers  %3d dropped keys"
-              % (vendor, result["machines"], len(result["unsupported"])))
+        print("%-22s %3d printers  %3d own processes  %3d filaments  %3d dropped keys"
+              % (vendor, result["machines"], result["own_processes"], result["filaments"],
+                 len(result["unsupported"])))
 
     print("\n%d vendors, %d printers into %s" % (totals["vendors"], totals["machines"], out_root))
     for line in report:
@@ -641,15 +936,28 @@ def main():
     for line in failed:
         print("  FAILED " + line)
 
-    published = Counter()
-    for path in sorted(out_root.glob("*/preset-printer-*.yaml")):
-        for line in path.read_text().splitlines():
-            if line.startswith("name: "):
-                published[line[len("name: "):].strip("'")] += 1
-                break
-    duplicates = sorted(name for name, count in published.items() if count > 1)
-    for name in duplicates:
-        print("  DUPLICATE name %s (%d machines)" % (name, published[name]))
+    kinds = {"printer": "*/preset-printer-*.yaml", "print": "*/preset-print-*.yaml",
+             "filament": "*/preset-filament-*.yaml"}
+    duplicates = []
+    counts = {}
+    for kind, pattern in kinds.items():
+        published = {}
+        for path in sorted(out_root.glob(pattern)):
+            text = path.read_text()
+            name = next((line[len("name: "):].strip("'")
+                         for line in text.splitlines() if line.startswith("name: ")), path.stem)
+            published.setdefault(name, set()).add(text)
+        counts[kind] = sum(len(paths) for paths in published.values())
+        # The same name over byte-identical settings is one preset published
+        # twice, which resolution handles; the same name over different
+        # settings is the defect that made a machine resolve differently from
+        # run to run.
+        duplicates.extend("%s preset %s (%d different settings)" % (kind, name, len(texts))
+                          for name, texts in sorted(published.items()) if len(texts) > 1)
+    print("\n%d printer, %d process and %d filament presets"
+          % (counts["printer"], counts["print"], counts["filament"]))
+    for line in duplicates:
+        print("  DUPLICATE " + line)
     return 1 if failed or duplicates else 0
 
 

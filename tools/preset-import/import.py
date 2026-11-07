@@ -48,7 +48,7 @@ def preset_index(source_root, vendor):
     for pattern in ("system/**/*.json", "user/default/*/*.json"):
         for path in sorted(glob.glob(str(source_root / pattern), recursive=True)):
             try:
-                data = json.loads(Path(path).read_text(errors="replace"))
+                data = json.loads(Path(path).read_text(encoding="utf-8-sig", errors="replace"))
             except (OSError, ValueError):
                 continue
             for entry in data if isinstance(data, list) else [data]:
@@ -76,7 +76,7 @@ def user_presets(source_root):
     found = []
     for kind, target in USER_KINDS:
         for path in sorted(glob.glob(str(source_root / "user/default" / kind / "*.json"))):
-            data = json.loads(Path(path).read_text(errors="replace"))
+            data = json.loads(Path(path).read_text(encoding="utf-8-sig", errors="replace"))
             if isinstance(data, dict) and data.get("name"):
                 found.append((kind, target, data["name"]))
     return found
@@ -232,7 +232,7 @@ def main():
             shutil.copytree(source_root / "system" / args.vendor, staged_root / args.vendor)
             index_path = staged_root / (args.vendor + ".json")
             shutil.copy(source_root / "system" / (args.vendor + ".json"), index_path)
-            vendor_index = json.loads(index_path.read_text())
+            vendor_index = json.loads(index_path.read_text(encoding="utf-8-sig"))
             for name, data in machines:
                 relative = "machine/%s.json" % name
                 target = staged_root / args.vendor / relative

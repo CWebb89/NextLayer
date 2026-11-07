@@ -559,8 +559,16 @@ QString PresetStore::presetPrefix(const QString& kind)
 QString PresetStore::presetPathFor(const BundleLocation& bundle, const QString& kind,
                                    const QString& name)
 {
+    // A preset's full name carries the tags of the preset it inherits, so one
+    // saved as "Check Profile" on a vendor machine is listed as
+    // "Check Profile@Anycubic Kobra2". The file is written and looked up under
+    // the name the person typed, so everything from the first tag on is dropped
+    // here: without that, renaming or deleting the preset it was just listed as
+    // cannot find it.
+    const int tag = name.indexOf(QLatin1Char('@'));
+    const QString stem = (tag > 0 ? name.left(tag) : name).trimmed();
     return presetsRoot() + QStringLiteral("/user/") + bundle.repo + QLatin1Char('/')
-         + bundle.vendor + QLatin1Char('/') + presetPrefix(kind) + name + QStringLiteral(".yaml");
+         + bundle.vendor + QLatin1Char('/') + presetPrefix(kind) + stem + QStringLiteral(".yaml");
 }
 
 bool PresetStore::validPresetName(const QString& name)
@@ -789,9 +797,11 @@ QString PresetStore::renameUserPreset(const QString& kind, const QString& oldNam
     input.close();
 
     bool renamed = false;
+    const int tag = newName.indexOf(QLatin1Char('@'));
+    const QString storedName = (tag > 0 ? newName.left(tag) : newName).trimmed();
     for (QString& line : lines) {
         if (line.startsWith(QLatin1String("name:")) && !line.startsWith(QLatin1Char(' '))) {
-            line = QStringLiteral("name: ") + next_layer::yaml::quoted(newName);
+            line = QStringLiteral("name: ") + next_layer::yaml::quoted(storedName);
             renamed = true;
         } else if (line.startsWith(QLatin1String("id:")) && !line.startsWith(QLatin1Char(' '))) {
             line = QStringLiteral("id: ") + freshId();

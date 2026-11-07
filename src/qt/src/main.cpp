@@ -396,6 +396,33 @@ void prepareDataDir()
         }
     }
 
+    // The engine copies a vendor bundle into the local bundle once and then leaves
+    // it alone: it skips any vendor whose destination already holds a vendor.yaml.
+    // A regenerated bundle in the resources tree would therefore never reach this
+    // machine, and every run would slice with the profiles that were shipped the
+    // first time. Each vendor's index is its stamp, so a newer one means the
+    // vendor is dropped here and recopied by the engine on this same load. A
+    // bundle linked into the local tree is skipped: removing it would delete the
+    // link's target.
+    const QString appBundles = QString::fromLatin1(NEXT_LAYER_RESOURCES_DIR) + "/presets";
+    const QString localBundles = data + "/presets/local";
+    for (const QFileInfo& repo : QDir(appBundles).entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+        if (QFileInfo(localBundles + "/" + repo.fileName()).isSymLink())
+            continue;
+        const QStringList vendors = QDir(repo.filePath()).entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+        for (const QString& vendor : vendors) {
+            const QFileInfo srcIndex(repo.filePath() + "/" + vendor + ".idx");
+            if (!srcIndex.isFile())
+                continue;
+            const QString dstIndex = localBundles + "/" + repo.fileName() + "/" + vendor + ".idx";
+            const QFileInfo dst(dstIndex);
+            if (dst.isFile() && dst.lastModified() >= srcIndex.lastModified())
+                continue;
+            QDir(localBundles + "/" + repo.fileName() + "/" + vendor).removeRecursively();
+            QFile::remove(dstIndex);
+        }
+    }
+
     // The engine's bundle carries a sample vendor whose six printer presets name
     // their id differently from the hardware config they belong to
     // (`nl-myklipper` against `NL_custom-myklipper`), so none of them ever
@@ -1237,6 +1264,15 @@ int main(int argc, char* argv[])
         }
         return true;
     };
+
+    if (!preset_action && parser.isSet(preset_printer_option) && parser.isSet(dump_config_option)
+        && !(parser.isSet(preset_process_option) && parser.isSet(preset_filament_option))) {
+        // Resolution needs all three names: with only a machine, the engine keeps
+        // whatever preset it happened to hold and the dump is of some other
+        // printer's config, which reads as a pass and measures nothing.
+        std::fprintf(stderr, "--printer with --dump-config needs --process and --filament\n");
+        return 2;
+    }
 
     if (!preset_action && parser.isSet(preset_printer_option) && parser.isSet(preset_process_option)
         && parser.isSet(preset_filament_option)) {

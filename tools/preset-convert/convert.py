@@ -31,7 +31,10 @@ from pathlib import Path
 #   "float"    coerce to float
 #   "bed_shape"  ["0x0","350x0",...] -> [[0,0],[350,0],...]
 #   "bool"     "1"/"0" -> true/false
+#   "bool_not"  "1"/"0" -> the engine's inverse switch
+#   "float_or_percent"  "80%" -> {"value": 80.0, "is_percent": true}, a number stays a number
 #   "enum:<target>"  look up the value in ENUMS[target]
+#   "bool_enum:<target>"  a reference on/off switch -> ENUMS[target]["true"/"false"]
 RENAMES = {
     # Shells and walls
     "bottom_shell_layers": ("bottom_solid_layers", "int"),
@@ -89,8 +92,8 @@ RENAMES = {
     "bridge_infill_acceleration": ("bridge_acceleration", "float"),
     # Supports
     "enable_support": ("support_material", "enum:support_material_on"),
-    "support_type": ("support_material_auto", "enum_bool:support_type_auto"),
     "support_style": ("support_material_style", "enum:support_material_style"),
+    "support_type": ("support_material_style", "enum:support_type_style"),
     "support_on_build_plate_only": ("support_material_buildplate_only", "bool"),
     "support_top_z_distance": ("support_material_contact_distance", "float"),
     "support_bottom_z_distance": ("support_material_bottom_contact_distance", "float"),
@@ -206,7 +209,87 @@ RENAMES = {
     "flush_into_infill": ("wipe_into_infill", "bool"),
     "reduce_infill_retraction": ("wipe_into_infill", "bool"),
     "wall_infill_order": ("infill_first", "bool"),
+    # The print-wide switches the reference sets in every process preset. Each
+    # target was checked against the engine's own option definition: a name that
+    # matched by spelling but carried another type or another meaning (a boolean
+    # where the engine has an enum of four, a 0 that means "auto") is not here.
+    "layer_height": ("layer_height", "float"),
+    "initial_layer_print_height": ("first_layer_height", "float"),
+    "brim_width": ("brim_width", "float"),
+    "brim_type": ("brim_type", "enum:brim_type"),
+    "skirt_distance": ("skirt_distance", "float"),
+    "skirt_height": ("skirt_height", "int"),
+    "raft_layers": ("raft_layers", "int"),
+    "raft_first_layer_expansion": ("raft_first_layer_expansion", "float"),
+    "raft_first_layer_density": ("raft_first_layer_density", "percent"),
+    "raft_contact_distance": ("raft_contact_distance", "float"),
+    "seam_position": ("seam_position", "enum:seam_position"),
+    "travel_speed": ("travel_speed", "float"),
+    "travel_speed_z": ("travel_speed_z", "float"),
+    "default_acceleration": ("default_acceleration", "float"),
+    "travel_acceleration": ("travel_acceleration", "float"),
+    "bridge_acceleration": ("bridge_acceleration", "float"),
+    "interface_shells": ("interface_shells", "bool"),
+    "standby_temperature_delta": ("standby_temperature_delta", "int"),
+    "wipe_tower_no_sparse_layers": ("wipe_tower_no_sparse_layers", "bool"),
+    "enable_prime_tower": ("wipe_tower", "bool"),
+    "prime_tower_width": ("wipe_tower_width", "float"),
+    "prime_tower_brim_width": ("wipe_tower_brim_width", "float"),
+    "enable_arc_fitting": ("arc_fitting", "bool_enum:arc_fitting"),
+    "gcode_label_objects": ("gcode_label_objects", "bool_enum:gcode_label_objects"),
+    "max_travel_detour_distance": ("avoid_crossing_perimeters_max_detour", "float"),
+    "support_angle": ("support_material_angle", "float"),
+    "tree_support_branch_diameter": ("support_tree_branch_diameter", "float"),
+    "tree_support_tip_diameter": ("support_tree_tip_diameter", "float"),
+    "small_perimeter_speed": ("small_perimeter_speed", "float_or_percent"),
+    "infill_anchor": ("infill_anchor", "float_or_percent"),
+    "infill_anchor_max": ("infill_anchor_max", "float_or_percent"),
+    "min_bead_width": ("min_bead_width", "float_or_percent"),
+    "min_feature_size": ("min_feature_size", "float_or_percent"),
+    "thick_bridges": ("thick_bridges", "bool"),
+    "only_one_wall_top": ("top_one_perimeter_type", "bool_enum:top_one_perimeter_type"),
+    "filter_out_gap_fill": ("gap_fill_enabled", "bool_not"),
+    "prime_tower_extra_spacing": ("wipe_tower_extra_spacing", "percent_obj"),
+    "prime_tower_extra_flow": ("wipe_tower_extra_flow", "percent_obj"),
+    "tree_support_branch_distance": ("support_tree_branch_distance", "float"),
+    "tree_support_top_rate": ("support_tree_top_rate", "percent_obj"),
+    "infill_combination_max_layer_height":
+        ("automatic_infill_combination_max_layer_height", "percent_obj"),
+    "scarf_seam_placement": ("scarf_seam_placement", "enum:scarf_seam_placement"),
+    "scarf_seam_length": ("scarf_seam_length", "float"),
+    "scarf_seam_start_height": ("scarf_seam_start_height", "percent_obj"),
+    "enable_pressure_advance": ("pressure_advance", "enum:pressure_advance_on"),
+    "pressure_advance": ("pressure_advance_value", "float"),
+    # A filament preset carries its own retraction, which is where this engine
+    # keeps it too: the same names as the print settings, in this engine's
+    # per-filament list shape.
+    "filament_retraction_length": ("retract_length", "float_list"),
+    "filament_retraction_speed": ("retract_speed", "float_list"),
+    "filament_retraction_minimum_travel": ("retract_before_travel", "float_list"),
+    "filament_retract_before_wipe": ("retract_before_wipe", "float_list"),
+    "filament_retract_restart_extra": ("retract_restart_extra", "float_list"),
+    "filament_retract_when_changing_layer": ("retract_layer_change", "bool"),
+    "filament_z_hop": ("retract_lift", "float_list"),
+    "filament_wipe": ("wipe", "bool"),
+    "reduce_crossing_wall": ("avoid_crossing_perimeters", "bool"),
+    "min_skirt_length": ("min_skirt_length", "float"),
+    "enforce_support_layers": ("support_material_enforce_layers", "int"),
+    "slice_closing_radius": ("slice_closing_radius", "float"),
+    "raft_expansion": ("raft_expansion", "float"),
+    "slow_down_layer_time": ("slowdown_below_layer_time", "int_list"),
+    "slow_down_min_speed": ("min_print_speed", "float_list"),
+    "cool_plate_temp": ("bed_temperature", "int_list"),
+    "cool_plate_temp_initial_layer": ("first_layer_bed_temperature", "int_list"),
+    "eng_plate_temp": ("bed_temperature", "int_list"),
+    "eng_plate_temp_initial_layer": ("first_layer_bed_temperature", "int_list"),
+    "textured_plate_temp": ("bed_temperature", "int_list"),
+    "textured_plate_temp_initial_layer": ("first_layer_bed_temperature", "int_list"),
+    "filament_start_gcode": ("start_filament_gcode", None),
+    "filament_end_gcode": ("end_filament_gcode", None),
+    "filament_deretraction_speed": ("deretract_speed", "float_list"),
+    "close_fan_the_first_x_layers": ("disable_fan_first_layers", "int_list"),
 }
+
 
 ENUMS = {
     "fill_pattern": {
@@ -241,7 +324,31 @@ ENUMS = {
                      "all solid": "solid", "all": "solid"},
     "fuzzy_skin": {"none": "none", "outside": "external", "all": "all", "external": "external"},
     "draft_shield": {"disabled": "disabled", "limited": "limited", "enabled": "enabled"},
+    "seam_position": {"nearest": "nearest", "aligned": "aligned", "back": "rear",
+                      "rear": "rear", "random": "random"},
+    "brim_type": {"no_brim": "no_brim", "outer_only": "outer_only",
+                  "inner_only": "inner_only", "outer_and_inner": "outer_and_inner"},
+    "gcode_label_objects": {"true": "octoprint", "false": "disabled",
+                            "1": "octoprint", "0": "disabled"},
+    "arc_fitting": {"true": "emit_center", "false": "disabled",
+                    "1": "emit_center", "0": "disabled"},
+    "top_one_perimeter_type": {"true": "top", "false": "none"},
+    "support_type_style": {
+        "normal(auto)": "snug", "normal(manual)": "snug", "normal": "snug",
+        "tree(auto)": "organic", "tree(manual)": "organic", "tree": "organic",
+        "tree(organic)": "organic", "organic": "organic", "tree_slim": "tree_slim",
+        "tree_strong": "tree_strong", "tree_hybrid": "tree_hybrid",
+    },
+    "pressure_advance_on": {"0": "disabled", "1": "enabled",
+                            "false": "disabled", "true": "enabled"},
+    "scarf_seam_placement": {"none": "nowhere", "nowhere": "nowhere",
+                             "contour": "contours", "contours": "contours",
+                             "aligned": "everywhere", "everywhere": "everywhere"},
 }
+
+
+class Untranslatable(ValueError):
+    """A value that does not fit its target: dropped and reported, never guessed at."""
 
 
 def head_of(value):
@@ -250,28 +357,64 @@ def head_of(value):
     return str(scalar).split(",")[0].strip().rstrip("%").replace(",", "")
 
 
+def head(value):
+    """The value itself, or the first entry of a one-element per-extruder list."""
+    return value[0] if isinstance(value, list) and value else value
+
+
+def number(value):
+    digits = head_of(value)
+    if digits.lower().endswith("mm"):
+        digits = digits[:-2].strip()
+    try:
+        return float(digits)
+    except ValueError:
+        raise Untranslatable("%r is not a number" % (value,))
+
+
 def transform_value(value, transform):
     if transform is None:
         return value
     scalar = value[0] if isinstance(value, list) and value else value
     if transform == "percent":
-        return float(head_of(value))
+        return number(value)
     if transform == "percent_obj":
-        return {"value": float(head_of(value)), "is_percent": True}
+        return {"value": number(value), "is_percent": True}
+    if transform == "float_or_percent":
+        text = str(head_of(value))
+        raw = str(value[0] if isinstance(value, list) and value else value).strip()
+        if raw.endswith("%"):
+            return {"value": number(raw), "is_percent": True}
+        return number(text)
     if transform == "int":
-        return int(float(head_of(value)))
+        return int(number(value))
     if transform == "float":
-        return float(head_of(value))
+        # A reference width written as a percentage of the nozzle keeps that
+        # meaning: flattening "110%" to 110 makes it 110 mm, which the engine
+        # rejects as unprintable. fit_value decides the shape from the engine's
+        # own declared type, so a plain number stays a plain number.
+        raw = str(scalar).strip()
+        if raw.endswith("%"):
+            return {"value": number(raw), "is_percent": True}
+        return number(value)
+    if transform == "bool":
+        return str(head(value)) in ("1", "true", "True", "on")
+    if transform == "bool_not":
+        return str(head(value)) not in ("1", "true", "True", "on")
     if transform == "float_list":
         items = value if isinstance(value, list) else [value]
         numbers = []
         for item in items:
-            head = str(item).split(",")[0].strip()
-            if head:
-                numbers.append(float(head))
+            token = str(item).split(",")[0].strip()
+            if not token:
+                continue
+            try:
+                numbers.append(number(token))
+            except Untranslatable:
+                continue
         return numbers or [0.0]
-    if transform == "bool":
-        return str(value) in ("1", "true", "True", "on")
+    if transform == "int_list":
+        return [int(round(item)) for item in transform_value(value, "float_list")]
     if transform == "bed_shape":
         points = []
         for token in value if isinstance(value, list) else str(value).split(","):
@@ -282,38 +425,162 @@ def transform_value(value, transform):
         return max(1, int(float(head_of(value) or 0)))
     if transform.startswith("enum_bool:"):
         table = ENUMS.get(transform[10:], {})
-        return str(table.get(str(value), "0")) in ("1", "true", "True", "on")
+        return str(table.get(str(head(value)), "0")) in ("1", "true", "True", "on")
+    if transform.startswith("bool_enum:"):
+        table = ENUMS.get(transform[10:], {})
+        on = str(head(value)) in ("1", "true", "True", "on")
+        return table.get("true" if on else "false", str(head(value)))
     if transform.startswith("enum:"):
         table = ENUMS.get(transform[5:], {})
-        return table.get(str(value), value)
+        return table.get(str(head(value)), head(value))
     return value
 
 
+_ENGINE_NAMES = None
+_ENGINE_TYPES = None
+
+
+def engine_option_names():
+    """The engine's own setting names, read once from its option definitions."""
+    global _ENGINE_NAMES
+    if _ENGINE_NAMES is None:
+        _ENGINE_NAMES = engine_names(None)
+    return _ENGINE_NAMES
+
+
+def engine_option_types():
+    """Setting name -> the engine's declared type for it.
+
+    A preset value has to be the shape the option declares: this engine logs a
+    type mismatch and keeps its own default otherwise, which is how a filament
+    carrying its density as a one-element list sliced with a density of 0.
+    """
+    global _ENGINE_TYPES
+    if _ENGINE_TYPES is None:
+        domain = Path(__file__).resolve().parents[2] / "upstream/src/slic3r-domain/src/Slic3r/Domain"
+        types = {}
+        for name in ("ConfigCommon.cpp", "ConfigDefsFDM.cpp"):
+            path = domain / name
+            if not path.is_file():
+                continue
+            for match in TYPE_DECLARATION.finditer(path.read_text(errors="replace")):
+                types[match.group(1)] = match.group(2)
+        _ENGINE_TYPES = types
+    return _ENGINE_TYPES
+
+
+TYPE_DECLARATION = re.compile(r'defs\.add\("([a-z0-9_]+)",\s*typeid\((.+?)\)\)\s*;', re.S)
+
+SCALAR_TYPES = {"double", "int", "bool", "std::string", "EnumWrapper",
+                "FloatOrPercentage", "Percentage", "std::optional<int>"}
+NUMERIC_TYPES = {"double", "int", "Percentage"}
+
+
+def as_number(text):
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def fit_value(kind, value):
+    """Shape a converted value the way the engine's option declares it."""
+    if kind is None or value is None:
+        return value
+    if isinstance(value, dict) and "value" in value:
+        percent = bool(value.get("is_percent"))
+        if kind == "FloatOrPercentage":
+            return "%g%%" % value["value"] if percent else value["value"]
+        value = value["value"]
+    if kind not in SCALAR_TYPES:
+        # A vector option arrives as a list, as a comma-joined string (the
+        # reference writes "0,0" for a two-extruder machine), or as one scalar.
+        if isinstance(value, str):
+            items = [part.strip() for part in value.split(",") if part.strip()]
+        elif isinstance(value, list):
+            items = value
+        else:
+            items = [value]
+        if kind == "std::vector<double>":
+            numbers = []
+            for item in items:
+                token = str(item).split(",")[0].strip()
+                number_value = as_number(token[:-1] if token.endswith("%") else token)
+                numbers.append(number_value if number_value is not None else 0.0)
+            return numbers
+        if kind == "std::vector<std::string>":
+            return [str(item) for item in items]
+        return items
+    if isinstance(value, list):
+        value = value[0] if value else None
+        if value is None:
+            return None
+    if isinstance(value, str):
+        text = value.strip()
+        if kind == "bool":
+            return text in ("1", "true", "True", "on")
+        number_text = text[:-1] if text.endswith("%") else text
+        number_value = as_number(number_text)
+        if kind in NUMERIC_TYPES and number_value is not None:
+            return int(round(number_value)) if kind == "int" else number_value
+        if kind == "FloatOrPercentage" and number_value is not None:
+            return text if text.endswith("%") else number_value
+        return value
+    return value
+
+
+# Same spelling in both programs, different meaning. These need an explicit
+# transform and never the identity fallback.
+IDENTITY_EXCLUDED = {"gap_fill_enabled"}
+
+
 def convert_profile(profile, bucket):
-    """Apply the keymap to one flat profile dict, routing to the right block."""
+    """Apply the keymap to one flat profile dict, routing to the right block.
+
+    A value the transform cannot read is reported in ``bucket["failed"]`` and
+    skipped: these profiles come from another program and a single odd value
+    (a temperature of ``"V"``) must not take the whole preset down.
+    """
     for key, value in profile.items():
         if key in RENAMES:
             target, transform = RENAMES[key]
+            try:
+                converted = transform_value(value, transform)
+            except (Untranslatable, TypeError, ValueError) as error:
+                bucket.setdefault("failed", {})[key] = str(error)
+                continue
             bucket.setdefault("renamed", {})[key] = target
-            yield target, transform_value(value, transform)
+            yield target, fit_value(engine_option_types().get(target), converted)
+        elif key in engine_option_names() and key not in IDENTITY_EXCLUDED:
+            bucket.setdefault("identity", set()).add(key)
+            yield key, fit_value(engine_option_types().get(key), value)
         else:
             bucket.setdefault("unsupported", []).append(key)
             yield None, None
 
 
-def resolve_inherits(path, cache=None):
-    """Merge a profile with its ``inherits`` ancestors, child values winning."""
+def resolve_inherits(path, cache=None, lookup=None):
+    """Merge a profile with its ``inherits`` ancestors, child values winning.
+
+    A parent is normally a sibling file, but the reference also inherits across
+    vendor directories: a vendor's generic filament inherits the system one that
+    another vendor's bundle defines. ``lookup`` resolves a name anywhere in the
+    tree; without it a cross-directory parent is silently missed and the child
+    arrives carrying only its own few overrides.
+    """
     if cache is None:
         cache = {}
     resolved_path = str(path)
     if resolved_path in cache:
         return dict(cache[resolved_path])
-    data = json.loads(path.read_text(errors="replace"))
+    data = json.loads(path.read_text(encoding="utf-8-sig", errors="replace"))
     parent_name = data.get("inherits")
     if parent_name:
         parent_path = path.parent / f"{parent_name}.json"
-        if parent_path.is_file():
-            merged = resolve_inherits(parent_path, cache)
+        if not parent_path.is_file() and lookup is not None:
+            parent_path = lookup(parent_name)
+        if parent_path is not None and parent_path.is_file():
+            merged = resolve_inherits(parent_path, cache, lookup)
             merged.update(data)
             data = merged
     cache[resolved_path] = dict(data)
@@ -387,7 +654,8 @@ META = {
     "compatible_prints", "compatible_prints_condition",
     "compatible_filaments", "compatible_filaments_condition",
     "is_custom_defined", "version", "renamed_from", "upward_compatible",
-    "inherits_prints",
+    "inherits_prints", "filament_settings_id", "print_settings_id", "printer_settings_id",
+    "filament_id",
 }
 
 # Keys whose reference value shape has no engine equivalent: the reference stores one entry per

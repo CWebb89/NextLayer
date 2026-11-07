@@ -22,6 +22,16 @@ set -l code $root/src/qt/src
 set -l spike $root/src/cli
 set -l baseline $root/tools/qmllint-baseline
 
+# A catalog machine slices with the vendor's own process and filament, which the
+# bundle names per vendor, so a gate that hardcodes a name measures nothing. The
+# catalog publishes each machine's pair in defaults.json.
+set -l catalog_vendor Anycubic
+set -l catalog_machine 'Anycubic Kobra 2 0.4'
+set -l catalog_pair (python3 -c "import json,sys; v=json.load(open(sys.argv[1]))[sys.argv[2]]; print(v['process']); print(v['filament'])" \
+    $root/upstream/resources/presets/vendor-catalog/$catalog_vendor/defaults.json $catalog_machine)
+set -l catalog_process $catalog_pair[1]
+set -l catalog_filament $catalog_pair[2]
+
 set -g passed 0
 set -g failed 0
 set -g failures
@@ -303,7 +313,7 @@ end
 set -l tools_home (mktemp -d /tmp/nl-check-tools-XXXXXX)
 set -l tools_cfg /tmp/nl-check-tools.json
 rm -f $tools_cfg
-env XDG_DATA_HOME=$tools_home $bin --printer 'Anycubic Kobra 2 0.4' --process Standard --filament Generic --dump-config $tools_cfg >/dev/null 2>&1
+env XDG_DATA_HOME=$tools_home $bin --printer 'Anycubic Kobra 2 0.4' --process $catalog_process --filament $catalog_filament --dump-config $tools_cfg >/dev/null 2>&1
 set -l tools_out (env QT_QPA_PLATFORM=eglfs XDG_DATA_HOME=$tools_home $bin $model --plate-tools $tools_cfg 2>&1)
 set -l tools_rc $status
 set -l arrange_line (string match -r 'arrange: two overlapping cubes separated.*' -- $tools_out)
@@ -360,7 +370,14 @@ end
 # only place that shows up is the toolpath. The knob slices a box, cuts a hole
 # through it, removes the hole again and adds a second shape, and refuses to pass
 # unless each step moved the extruding move count the way it must.
-set -l shape_out (env QT_QPA_PLATFORM=eglfs XDG_DATA_HOME=$tools_home $bin --shape-test $tools_cfg 2>&1)
+set -l shape_cfg /tmp/nl-check-shape.json
+# Solid infill and no supports, because the measurement is the volume the boolean
+# removes: at a sparse infill the hole's own walls add more filament than the hole
+# takes away, and the gate then reports a good cut as a broken one.
+rm -f $shape_cfg
+env XDG_DATA_HOME=$tools_home $bin --printer 'Anycubic Kobra 2 0.4' --process $catalog_process --filament $catalog_filament \
+    --set fill_density=100% --set support_material=none --dump-config $shape_cfg >/dev/null 2>&1
+set -l shape_out (env QT_QPA_PLATFORM=eglfs XDG_DATA_HOME=$tools_home $bin --shape-test $shape_cfg 2>&1)
 set -l shape_rc $status
 set -l shape_box (string match -r 'added box .*: ([0-9]+) layer\(s\), ([0-9]+) extruding move\(s\), ([0-9.]+) mm' -- $shape_out)
 set -l shape_cut (string match -r 'negative cylinder .*: ([0-9]+) move\(s\), ([0-9.]+) mm filament \(was ([0-9.]+) mm\)' -- $shape_out)
@@ -413,12 +430,16 @@ end
 # used to fail outright for every catalog printer -- "no preset bundle is loaded"
 # for the machines people actually own.
 set -l preset_home (mktemp -d /tmp/nl-check-userpresets-XXXXXX)
-env XDG_DATA_HOME=$preset_home $bin --printer 'Anycubic Kobra 2 0.4' --process Standard --filament Generic --set layer_height=0.25 --save-preset 'print,Check Profile' >/tmp/nl-check-preset.out 2>&1
+env XDG_DATA_HOME=$preset_home $bin --printer 'Anycubic Kobra 2 0.4' --process $catalog_process --filament $catalog_filament --set layer_height=0.25 --save-preset 'print,Check Profile' >/tmp/nl-check-preset.out 2>&1
 set -l preset_save_rc $status
 set -l preset_file (find $preset_home -name 'print-Check Profile.yaml' 2>/dev/null | head -n 1)
+# The engine scopes a user preset to the machine family it was saved against and
+# lists it as 'Check Profile@<family>', so the name a resolve takes is that
+# listing rather than the name that was typed.
+set -l preset_saved (env XDG_DATA_HOME=$preset_home $bin --dump-presets --printer 'Anycubic Kobra 2 0.4' 2>/dev/null | python3 -c "import sys; print(next((line.strip() for line in sys.stdin if line.strip().startswith('Check Profile')), 'Check Profile'))")
 set -l preset_cfg /tmp/nl-check-preset.json
 rm -f $preset_cfg
-env XDG_DATA_HOME=$preset_home $bin --printer 'Anycubic Kobra 2 0.4' --process 'Check Profile' --filament Generic --dump-config $preset_cfg >/tmp/nl-check-preset2.out 2>&1
+env XDG_DATA_HOME=$preset_home $bin --printer 'Anycubic Kobra 2 0.4' --process "$preset_saved" --filament $catalog_filament --dump-config $preset_cfg >/tmp/nl-check-preset2.out 2>&1
 set -l preset_resolve_rc $status
 set -l preset_layer ""
 if test -f $preset_cfg
@@ -426,21 +447,22 @@ if test -f $preset_cfg
 end
 # Sharing, before the rename: the preset comes out as a file, and that file goes
 # back in under a name that does not overwrite what is already there.
-env XDG_DATA_HOME=$preset_home $bin --printer 'Anycubic Kobra 2 0.4' --process 'Check Profile' --filament Generic --export-preset 'print,Check Profile,/tmp/nl-check-shared.yaml' >/tmp/nl-check-share.out 2>&1
+env XDG_DATA_HOME=$preset_home $bin --printer 'Anycubic Kobra 2 0.4' --process "$preset_saved" --filament $catalog_filament --export-preset "print,$preset_saved,/tmp/nl-check-shared.yaml" >/tmp/nl-check-share.out 2>&1
 set -l preset_export_rc $status
 set -l preset_shared (find /tmp -maxdepth 1 -name 'nl-check-shared.yaml' 2>/dev/null | wc -l)
-env XDG_DATA_HOME=$preset_home $bin --printer 'Anycubic Kobra 2 0.4' --process 'Check Profile' --filament Generic --rename-preset 'print,Check Profile,Check Renamed' >/dev/null 2>&1
+env XDG_DATA_HOME=$preset_home $bin --printer 'Anycubic Kobra 2 0.4' --process "$preset_saved" --filament $catalog_filament --rename-preset "print,$preset_saved,Check Renamed" >/dev/null 2>&1
 set -l preset_rename_rc $status
 set -l preset_renamed (find $preset_home -name 'print-Check Renamed.yaml' 2>/dev/null | head -n 1)
-env XDG_DATA_HOME=$preset_home $bin --printer 'Anycubic Kobra 2 0.4' --process 'Check Renamed' --filament Generic --delete-preset 'print,Check Renamed' >/dev/null 2>&1
+set -l preset_renamed_name (env XDG_DATA_HOME=$preset_home $bin --dump-presets --printer 'Anycubic Kobra 2 0.4' 2>/dev/null | python3 -c "import sys; print(next((line.strip() for line in sys.stdin if line.strip().startswith('Check Renamed')), 'Check Renamed'))")
+env XDG_DATA_HOME=$preset_home $bin --printer 'Anycubic Kobra 2 0.4' --process "$preset_renamed_name" --filament $catalog_filament --delete-preset "print,$preset_renamed_name" >/dev/null 2>&1
 set -l preset_delete_rc $status
 set -l preset_left (find $preset_home -name 'print-Check*.yaml' 2>/dev/null | wc -l)
 # The same file twice: the second must not overwrite the first.
 set -l preset_imported ""
 set -l preset_imported_again ""
 if test -f /tmp/nl-check-shared.yaml
-    set preset_imported (env XDG_DATA_HOME=$preset_home $bin --printer 'Anycubic Kobra 2 0.4' --process Standard --filament Generic --import-preset 'print,/tmp/nl-check-shared.yaml' 2>/dev/null | sed -n 's/^imported //p')
-    set preset_imported_again (env XDG_DATA_HOME=$preset_home $bin --printer 'Anycubic Kobra 2 0.4' --process Standard --filament Generic --import-preset 'print,/tmp/nl-check-shared.yaml' 2>/dev/null | sed -n 's/^imported //p')
+    set preset_imported (env XDG_DATA_HOME=$preset_home $bin --printer 'Anycubic Kobra 2 0.4' --process $catalog_process --filament $catalog_filament --import-preset 'print,/tmp/nl-check-shared.yaml' 2>/dev/null | sed -n 's/^imported //p')
+    set preset_imported_again (env XDG_DATA_HOME=$preset_home $bin --printer 'Anycubic Kobra 2 0.4' --process $catalog_process --filament $catalog_filament --import-preset 'print,/tmp/nl-check-shared.yaml' 2>/dev/null | sed -n 's/^imported //p')
 end
 set -l preset_import_file ""
 if test -n "$preset_imported_again"
@@ -611,7 +633,7 @@ end
 # marker that never reaches the G-code is a calibration tower that prints flat.
 set -l cal_cfg /tmp/nl-check-calibration.json
 rm -f $cal_cfg
-$bin --printer 'Anycubic Kobra 2 0.4' --process Standard --filament Generic \
+env XDG_DATA_HOME=$tools_home $bin --printer 'Anycubic Kobra 2 0.4' --process $catalog_process --filament $catalog_filament \
     --dump-config $cal_cfg >/dev/null 2>&1
 set -l cal_out (env $bin --calibration-test $cal_cfg 2>&1 | grep -E '^(temperature|pressure_advance|flow|max_flow|vfa|cornering|input_shaping_freq|input_shaping_damp|retraction|first_layer|calibration):')
 set -l cal_rc $status
@@ -751,7 +773,7 @@ set -l sample '(Anycubic Kobra 2 0.4)'
 set -l sample_cfg /tmp/nl-check-catalog.json
 set -l sample_gcode /tmp/nl-check-catalog.gcode
 rm -f $sample_cfg $sample_gcode
-env XDG_DATA_HOME=$catalog_home $bin --printer 'Anycubic Kobra 2 0.4' --process Standard --filament Generic --dump-config $sample_cfg >/dev/null 2>&1
+env XDG_DATA_HOME=$catalog_home $bin --printer 'Anycubic Kobra 2 0.4' --process $catalog_process --filament $catalog_filament --dump-config $sample_cfg >/dev/null 2>&1
 set -l sample_rc $status
 if test $names_rc -ne 0 -o (count $names_match) -eq 0 -o "$names_match[3]" != "0"
     __bad "printer catalog: duplicate printer names, so resolution picks whichever config the map happens to list first ("(string join ' ' (string match -r 'DUPLICATE .*' -- $names_out | head -n 2))
