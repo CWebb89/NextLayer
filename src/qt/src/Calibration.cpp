@@ -4,6 +4,7 @@
 #include "Calibration.hpp"
 
 #include "PlateDocument.hpp"
+#include "SettingsModel.hpp"
 
 #include <QVector3D>
 
@@ -70,6 +71,7 @@ QVariantMap flagParam(const char* name, const char* label, bool value)
     return param;
 }
 
+
 QVariantMap option(const char* value, const char* label)
 {
     QVariantMap entry;
@@ -91,10 +93,10 @@ QVariantMap filamentOption(const char* name, double start, double end)
 QVariantList filamentChoices()
 {
     return {
-        filamentOption("PLA", 230, 190),      filamentOption("ABS/ASA", 260, 230),
-        filamentOption("PETG", 250, 220),     filamentOption("PCTG", 260, 230),
-        filamentOption("TPU", 230, 200),      filamentOption("PA-CF", 290, 260),
-        filamentOption("PET-CF", 300, 270),   option("Custom", "Custom"),
+        filamentOption("PLA", 230, 190),      filamentOption("ABS/ASA", 270, 230),
+        filamentOption("PETG", 250, 230),     filamentOption("PCTG", 280, 240),
+        filamentOption("TPU", 240, 210),      filamentOption("PA-CF", 320, 280),
+        filamentOption("PET-CF", 320, 280),   option("Custom", "Custom"),
     };
 }
 
@@ -104,6 +106,170 @@ QVariantList shaperChoices()
             option("ei", "EI"),       option("2hump_ei", "2HUMP_EI"),
             option("3hump_ei", "3HUMP_EI")};
 }
+
+/// What the generated toolpaths need from the profile that is about to slice
+/// them: the bead the nozzle lays, the layer it sits on, and the flavour whose
+/// pressure-advance command the firmware understands.
+struct Machine
+{
+    Family family = Family::Klipper;
+    double nozzle = 0.4;
+    double filament = 1.75;
+    double flow = 1.0;
+    double lineWidth = 0.45;
+    double layer = 0.2;
+    double firstLayer = 0.2;
+
+    double ePerMm(double width, double height) const
+    {
+        const double radius = filament / 2.0;
+        return width * height * flow / (M_PI * radius * radius);
+    }
+};
+
+double firstNumber(const QVariant& value, double fallback)
+{
+    if (value.canConvert<QVariantList>()) {
+        const QVariantList list = value.toList();
+        if (!list.isEmpty()) {
+            bool ok = false;
+            const double parsed = list.front().toDouble(&ok);
+            if (ok)
+                return parsed;
+        }
+    }
+    if (value.canConvert<QVariantMap>()) {
+        const QVariantMap map = value.toMap();
+        bool ok = false;
+        const double parsed = map.value(QStringLiteral("value")).toDouble(&ok);
+        if (ok)
+            return parsed;
+    }
+    bool ok = false;
+    const double parsed = value.toDouble(&ok);
+    return ok ? parsed : fallback;
+}
+
+/// A width or height is either a number in millimetres or a percentage of the
+/// nozzle (widths) or of the layer height (heights), which is how the engine
+/// stores the `FloatOrPercent` settings.
+double absoluteLength(const QVariant& value, double fallback, double base)
+{
+    if (value.canConvert<QVariantMap>()) {
+        const QVariantMap map = value.toMap();
+        const double number = map.value(QStringLiteral("value")).toDouble();
+        if (map.value(QStringLiteral("is_percent")).toBool())
+            return number / 100.0 * base;
+        return number > 0.0 ? number : fallback;
+    }
+    const double parsed = firstNumber(value, 0.0);
+    return parsed > 0.0 ? parsed : fallback;
+}
+
+Machine machineProfile(SettingsModel* settings)
+{
+    Machine machine;
+    if (settings == nullptr)
+        return machine;
+
+    const auto get = [settings](const char* key) {
+        return settings->value(QString::fromLatin1(key));
+    };
+
+    machine.nozzle = firstNumber(get("nozzle_diameter"), machine.nozzle);
+    machine.filament = firstNumber(get("filament_diameter"), machine.filament);
+    machine.flow = firstNumber(get("extrusion_multiplier"), machine.flow);
+    machine.lineWidth = absoluteLength(get("perimeter_extrusion_width"),
+                                       machine.nozzle * 1.125, machine.nozzle);
+    machine.layer = absoluteLength(get("layer_height"), 0.2, machine.nozzle);
+    machine.firstLayer = absoluteLength(get("first_layer_height"), machine.layer,
+                                        machine.layer);
+    machine.family = familyOf(get("gcode_flavor").toString());
+    return machine;
+}
+
+QString pressureAdvanceCommand(Family family, double value)
+{
+    switch (family) {
+    case Family::Klipper:
+        return QStringLiteral("SET_PRESSURE_ADVANCE ADVANCE=%1").arg(number(value, 3));
+    case Family::RepRap:
+        return QStringLiteral("M572 D0 S%1").arg(number(value, 3));
+    case Family::Marlin:
+        break;
+    }
+    return QStringLiteral("M900 K%1").arg(number(value, 3));
+}
+
+/// Writes a bead that does not care whether the profile counts E in absolute
+/// or relative millimetres: every extrusion is preceded by a G92 E0 and carries
+/// its own volume, which is a length in relative mode and a position from zero
+/// in absolute mode. The engine resets E at the layer boundary where this block
+/// lands, so the closing G92 costs nothing either way.
+class Toolpath
+{
+public:
+    Toolpath(Family family, double layerZ, double flowPerMm3)
+        : m_family(family), m_z(layerZ), m_flowPerMm3(flowPerMm3)
+    {
+        m_text += QStringLiteral("G92 E0\n");
+        m_text += QStringLiteral("G1 Z%1 F600\n").arg(m_z, 0, 'f', 3);
+    }
+
+    void finish()
+    {
+        m_text += pressureAdvanceCommand(m_family, 0.0) + QLatin1Char('\n');
+        m_text += QStringLiteral("G92 E0\n");
+    }
+
+    void pressureAdvance(double value)
+    {
+        m_text += pressureAdvanceCommand(m_family, value) + QLatin1Char('\n');
+    }
+
+    void role(const char* name)
+    {
+        m_text += QStringLiteral(";TYPE:%1\n").arg(QString::fromLatin1(name));
+    }
+
+    void travel(double x, double y)
+    {
+        m_text += QStringLiteral("G1 E-0.8 F2400\n");
+        m_text += QStringLiteral("G1 Z%1 F600\n").arg(m_z + 0.4, 0, 'f', 3);
+        m_text += QStringLiteral("G1 X%1 Y%2 F12000\n")
+                      .arg(x, 0, 'f', 3)
+                      .arg(y, 0, 'f', 3);
+        m_text += QStringLiteral("G1 Z%1 F600\n").arg(m_z, 0, 'f', 3);
+        m_text += QStringLiteral("G1 E0.8 F2400\n");
+        m_text += QStringLiteral("G92 E0\n");
+        m_x = x;
+        m_y = y;
+    }
+
+    void line(double x, double y, double feed, double width, double height)
+    {
+        const double length = std::hypot(x - m_x, y - m_y);
+        const double volume = length * width * height * m_flowPerMm3;
+        m_text += QStringLiteral("G92 E0\n");
+        m_text += QStringLiteral("G1 X%1 Y%2 E%3 F%4\n")
+                      .arg(x, 0, 'f', 3)
+                      .arg(y, 0, 'f', 3)
+                      .arg(volume, 0, 'f', 5)
+                      .arg(feed, 0, 'f', 0);
+        m_x = x;
+        m_y = y;
+    }
+
+    const QString& text() const { return m_text; }
+
+private:
+    Family m_family;
+    double m_z;
+    double m_flowPerMm3;
+    double m_x = 0.0;
+    double m_y = 0.0;
+    QString m_text;
+};
 
 class Params
 {
@@ -161,57 +327,61 @@ QVariantList testCatalogue()
         list.append(entry);
     };
 
-    add("temperature", "Temperature tower",
+    add("temperature", "Temperature",
         "Stacked bands, each printed at its own nozzle temperature, with the value printed on the "
         "bed beside it. Take the band with the cleanest overhangs and strongest layer bonding.",
         "first_layer_temperature", 1.0,
         {choiceParam("filament", "Filament type", "PLA", filamentChoices()),
-         numberParam("start", "Start temperature", 230, "C", 150, 320, 5, 0),
-         numberParam("end", "End temperature", 190, "C", 140, 320, 5, 0),
-         numberParam("step", "Temperature step", 5, "C", 1, 30, 1, 0),
-         flagParam("auto_scale", "Scale the model for the nozzle", true),
+         numberParam("start", "Start temp", 230, "C", 155, 500, 5, 0),
+         numberParam("end", "End temp", 190, "C", 155, 500, 5, 0),
+         flagParam("auto_scale", "Resize the model to the nozzle diameter", true),
          numberParam("nozzle", "Nozzle diameter", 0.4, "mm", 0.2, 1.2, 0.05, 2)});
 
     add("pressure_advance", "Pressure advance",
-        "Bands whose corners are square without bulging give the pressure advance to save. "
-        "Direct drive starts near 0.03, Bowden near 0.3.",
+        "PA Tower prints one tower with the value raised every layer. PA Line prints one line per value, "
+        "fast then slow, all on the first layer. PA Pattern prints a fan of square corners, one pattern "
+        "per value, four layers high. Take the line or pattern without gaps at the corners.",
         "pressure_advance", 1.0,
-        {choiceParam("extruder", "Extruder type", "dd",
-                     {option("dd", "Direct drive"), option("bowden", "Bowden")}),
-         numberParam("start", "Start advance", 0, "", 0, 2, 0.01, 3),
-         numberParam("end", "End advance", 0.08, "", 0, 2, 0.01, 3),
-         numberParam("step", "Advance step", 0.008, "", 0.001, 0.5, 0.001, 3),
-         flagParam("numbers", "Print the value beside each band", true)});
+        {choiceParam("method", "Method", "tower",
+                     {option("tower", "PA Tower"), option("line", "PA Line"),
+                      option("pattern", "PA Pattern")}),
+         choiceParam("extruder", "Extruder type", "dde",
+                     {option("dde", "DDE"), option("bowden", "Bowden")}),
+         numberParam("start", "Start PA", 0, "", 0, 2, 0.001, 3),
+         numberParam("end", "End PA", 0.1, "", 0, 2, 0.001, 3),
+         numberParam("step", "PA step", 0.002, "", 0.001, 0.5, 0.001, 3),
+         flagParam("numbers", "Print numbers", true)});
 
     add("flow", "Flow ratio",
         "Measure a wall on each patch and divide what you measured by what it should be. Pass 1 "
-        "finds the neighbourhood, pass 2 refines it.",
+        "finds the neighbourhood, pass 2 refines it. YOLO prints a graded linear flow test.",
         "extrusion_multiplier", 0.01,
-        {choiceParam("pass", "Pass", "coarse",
-                     {option("coarse", "Pass 1 (coarse)"), option("fine", "Pass 2 (fine)"),
-                      option("finer", "Pass 3 (very fine)")}),
+        {choiceParam("pass", "Calibration Test Type", "yolo",
+                     {option("pass1", "Pass 1 (Coarse)"), option("pass2", "Pass 2 (Fine)"),
+                      option("yolo", "YOLO (Recommended)"),
+                      option("yolo_fine", "YOLO (Perfectionist)")}),
+         choiceParam("pattern", "Top Surface Pattern", "archimedean",
+                     {option("archimedean", "Archimedean Chords"),
+                      option("monotonic", "Monotonic")}),
          numberParam("size", "Patch size", 50, "mm", 20, 120, 5, 0),
          flagParam("numbers", "Print the value beside each patch", true)});
 
-    add("max_flow", "Max volumetric speed",
+    add("max_flow", "Max flowrate",
         "Rising volumetric flow per tower. The first one whose walls thin out or gap is past what "
         "the hot end can melt; save the step below it.",
         "filament_max_volumetric_speed", 1.0,
         {numberParam("start", "Start volumetric speed", 5, "mm3/s", 0.5, 60, 0.5, 1),
          numberParam("end", "End volumetric speed", 20, "mm3/s", 1, 80, 0.5, 1),
-         numberParam("step", "Step", 2.5, "mm3/s", 0.5, 20, 0.5, 1),
-         numberParam("width", "Line width", 0.45, "mm", 0.2, 1.5, 0.05, 2),
-         numberParam("layer", "Layer height", 0.2, "mm", 0.05, 1, 0.05, 2),
-         numberParam("speed", "Print speed at 100 %", 100, "mm/s", 10, 800, 5, 0),
+         numberParam("step", "Step", 0.5, "mm3/s", 0.5, 20, 0.5, 1),
          flagParam("numbers", "Print the value beside each tower", true)});
 
     add("retraction", "Retraction",
         "Two towers a gap apart, each band at its own retraction length. Raise the length until "
         "the string between them stops.",
         "retract_length", 1.0,
-        {numberParam("start", "Start length", 0, "mm", 0, 10, 0.1, 1),
-         numberParam("end", "End length", 2, "mm", 0.1, 12, 0.1, 1),
-         numberParam("step", "Step", 0.4, "mm", 0.05, 5, 0.05, 2),
+        {numberParam("start", "Start retraction length", 0, "mm", 0, 10, 0.1, 1),
+         numberParam("end", "End retraction length", 2, "mm", 0.1, 12, 0.1, 1),
+         numberParam("step", "Step", 0.1, "mm", 0.05, 5, 0.05, 2),
          flagParam("numbers", "Print the value beside each band", true)});
 
     add("first_layer", "First layer squish",
@@ -222,48 +392,56 @@ QVariantList testCatalogue()
          numberParam("size", "Patch size", 20, "mm", 10, 60, 5, 0),
          flagParam("numbers", "Print the offset beside each patch", true)});
 
-    add("vfa", "VFA tower",
+    add("vfa", "VFA",
         "Rings at rising speed. Vertical fine artefacts show as banding on one speed range; that "
         "is the range to keep out of.",
         "", 1.0,
         {numberParam("start", "Start speed", 40, "mm/s", 10, 500, 5, 0),
          numberParam("end", "End speed", 200, "mm/s", 20, 600, 5, 0),
-         numberParam("step", "Step", 20, "mm/s", 5, 100, 5, 0),
+         numberParam("step", "Step", 10, "mm/s", 5, 100, 5, 0),
+         flagParam("auto_scale", "Resize the model to the nozzle diameter", true),
+         flagParam("auto_adjust", "Auto-adjust to max volumetric speed", true),
+         numberParam("nozzle", "Nozzle diameter", 0.4, "mm", 0.2, 1.2, 0.05, 2),
          numberParam("layer", "Layer height", 0.2, "mm", 0.05, 1, 0.05, 2),
          numberParam("speed", "Print speed at 100 %", 100, "mm/s", 10, 800, 5, 0),
          flagParam("numbers", "Print the speed beside each ring", true)});
 
-    add("input_shaping_freq", "Input shaping: frequency",
+    add("input_shaping_freq", "Input Shaping Frequency",
         "A tall tower whose bands carry different shaper frequencies. The band with the least "
         "ringing after a corner gives the frequency.",
         "", 1.0,
-        {choiceParam("shaper", "Shaper type", "mzv", shaperChoices()),
-         numberParam("start_x", "Frequency X start", 15, "Hz", 5, 300, 1, 0),
-         numberParam("end_x", "Frequency X end", 80, "Hz", 5, 300, 1, 0),
-         numberParam("start_y", "Frequency Y start", 15, "Hz", 5, 300, 1, 0),
-         numberParam("end_y", "Frequency Y end", 80, "Hz", 5, 300, 1, 0),
-         numberParam("damping", "Damping ratio", 0.1, "", 0.01, 1, 0.01, 2),
+        {choiceParam("model", "Test model", "ringing",
+                     {option("ringing", "Ringing Tower"), option("fast", "Fast Tower")}),
+         choiceParam("shaper", "Input shaper type", "mzv", shaperChoices()),
+         numberParam("start_x", "X start", 15, "Hz", 5, 500, 1, 0),
+         numberParam("end_x", "X end", 110, "Hz", 5, 500, 1, 0),
+         numberParam("start_y", "Y start", 15, "Hz", 5, 500, 1, 0),
+         numberParam("end_y", "Y end", 110, "Hz", 5, 500, 1, 0),
+         numberParam("damping", "Damp", 0.15, "", 0, 1, 0.01, 3),
          flagParam("numbers", "Print the frequency beside each band", true)});
 
-    add("input_shaping_damp", "Input shaping: damping",
+    add("input_shaping_damp", "Input Shaping Damping/zeta factor",
         "Frequency fixed at what you measured, damping varied per band. Pick the band where "
         "ringing decays fastest without overshooting.",
         "", 1.0,
-        {choiceParam("shaper", "Shaper type", "mzv", shaperChoices()),
-         numberParam("freq_x", "Frequency X", 30, "Hz", 5, 300, 1, 0),
-         numberParam("freq_y", "Frequency Y", 30, "Hz", 5, 300, 1, 0),
-         numberParam("start", "Damping start", 0.05, "", 0.01, 1, 0.01, 2),
-         numberParam("end", "Damping end", 0.25, "", 0.01, 1, 0.01, 2),
-         numberParam("step", "Damping step", 0.05, "", 0.01, 0.5, 0.01, 2),
+        {choiceParam("model", "Test model", "ringing",
+                     {option("ringing", "Ringing Tower"), option("fast", "Fast Tower")}),
+         choiceParam("shaper", "Input shaper type", "mzv", shaperChoices()),
+         numberParam("freq_x", "Frequency X", 30, "Hz", 5, 500, 1, 0),
+         numberParam("freq_y", "Frequency Y", 30, "Hz", 5, 500, 1, 0),
+         numberParam("start", "Damp start", 0.0, "", 0, 1, 0.01, 3),
+         numberParam("end", "Damp end", 0.40, "", 0, 1, 0.01, 3),
          flagParam("numbers", "Print the damping beside each band", true)});
 
     add("cornering", "Cornering",
         "Bands at rising square-corner velocity. Lower values give sharper corners and slower "
         "printing; the band that stops rounding is the value to keep.",
         "", 1.0,
-        {numberParam("start", "Start velocity", 1, "mm/s", 0, 60, 1, 1),
-         numberParam("end", "End velocity", 10, "mm/s", 1, 60, 1, 1),
-         numberParam("step", "Step", 1, "mm/s", 0.5, 20, 0.5, 2),
+        {choiceParam("model", "Test model", "ringing",
+                     {option("ringing", "Ringing Tower"), option("fast", "Fast Tower"),
+                      option("scv", "SCV-V2")}),
+         numberParam("start", "Start", 1.0, "mm/s", 0, 100, 0.5, 3),
+         numberParam("end", "End", 15.0, "mm/s", 0.1, 100, 0.5, 3),
          flagParam("numbers", "Print the value beside each band", true)});
 
     return list;
@@ -271,8 +449,8 @@ QVariantList testCatalogue()
 
 } // namespace
 
-Calibration::Calibration(PlateDocument* document, QObject* parent)
-    : QObject(parent), m_document(document)
+Calibration::Calibration(PlateDocument* document, SettingsModel* settings, QObject* parent)
+    : QObject(parent), m_document(document), m_settings(settings)
 {
 }
 
@@ -310,7 +488,8 @@ QString Calibration::build(const QString& kind, const QVariantMap& values)
         return QStringLiteral("there is no plate to build on");
 
     const Params params(values);
-    const Family family = familyOf(params.text("flavour", "klipper"));
+    const Machine machine = machineProfile(m_settings);
+    const Family family = machine.family;
 
     auto failure = [this](const char* what) {
         const QString message = m_document->error();
@@ -337,8 +516,13 @@ QString Calibration::build(const QString& kind, const QVariantMap& values)
                            const char* prefix,
                            const std::function<QString(int)>& value,
                            const std::function<QString(int)>& command) {
+        // Orca interpolates these tests across a fixed tower; our bands carry one
+        // command each, so the tower has to fit the machine. A finer step than the
+        // reference therefore shortens the bands rather than growing the tower past
+        // the print height.
+        const double bandHeight = std::min(height, std::max(0.4, 200.0 / double(count)));
         for (int band = 0; band < count; ++band) {
-            const int id = m_document->addShape(QString::fromLatin1(shape), size, size, height);
+            const int id = m_document->addShape(QString::fromLatin1(shape), size, size, bandHeight);
             if (id < 0)
                 return false;
             m_document->renameObject(id, QStringLiteral("%1 %2 (%3)")
@@ -346,10 +530,10 @@ QString Calibration::build(const QString& kind, const QVariantMap& values)
                                               .arg(band + 1)
                                               .arg(value(band)));
             m_document->setPosition(id, QVector3D(float(centre.x() + x), float(centre.y()),
-                                                  float(band * height)));
+                                                  float(band * bandHeight)));
         }
         for (int band = 0; band < count; ++band)
-            m_document->addLayerGcode(band * height + 0.2, QStringLiteral("gcode"),
+            m_document->addLayerGcode(band * bandHeight + 0.2, QStringLiteral("gcode"),
                                       command(band)
                                           + QStringLiteral(" ; calibration band %1").arg(band + 1));
         return true;
@@ -435,52 +619,169 @@ QString Calibration::build(const QString& kind, const QVariantMap& values)
     }
 
     if (kind == QLatin1String("pressure_advance")) {
-        const bool bowden = params.text("extruder", "dd") == QLatin1String("bowden");
+        const bool bowden = params.text("extruder", "dde") == QLatin1String("bowden");
         const double start = params.number("start", 0);
-        double end = params.number("end", bowden ? 0.5 : 0.08);
-        const double step = std::max(0.001, params.number("step", bowden ? 0.05 : 0.008));
+        double end = params.number("end", bowden ? 1.0 : 0.08);
+        const double step = std::max(0.001, params.number("step", bowden ? 0.02 : 0.008));
         if (end <= start)
             end = start + step * 5.0;
-        const int count = bandCount(start, end, step, 20);
+        const QString method = params.text("method", "tower");
+        const int count = bandCount(start, end, step, method == QLatin1String("line") ? 48 : 32);
         const auto advance = [start, step](int band) { return start + step * band; };
-        const auto command = [family](double value) {
-            switch (family) {
-            case Family::Klipper:
-                return QStringLiteral("SET_PRESSURE_ADVANCE ADVANCE=%1").arg(number(value, 3));
-            case Family::RepRap:
-                return QStringLiteral("M572 D0 S%1").arg(number(value, 3));
-            case Family::Marlin:
-                break;
-            }
-            return QStringLiteral("M900 K%1").arg(number(value, 3));
+        const QVector3D bed = m_document->plateSize();
+        const double radius = machine.filament / 2.0;
+        const double flowPerMm3 = machine.flow / (M_PI * radius * radius);
+        const auto anchorHeight = std::max(machine.firstLayer, machine.layer);
+
+        auto addAnchor = [this, centre, bed](double height) {
+            const int id = m_document->addShape(QStringLiteral("box"), 10.0, 10.0, height);
+            if (id < 0)
+                return false;
+            m_document->renameObject(id, QStringLiteral("Test anchor"));
+            m_document->setPosition(id, QVector3D(centre.x(),
+                                                  centre.y() + bed.y() / 2.0 - 25.0,
+                                                  0.0f));
+            return true;
         };
-        if (!addBands(count, 15.0, 25.0, 0.0, "box", "Band",
-                      [&](int band) { return number(advance(band), 3); },
-                      [&](int band) { return command(advance(band)); }))
-            return failure("could not build a pressure advance band");
-        if (params.flag("numbers", true))
-            addLabels(count, -26.5, [&](int band) { return number(advance(band), 3); });
-        return QStringLiteral("pressure advance tower: %1 bands from %2 to %3 (%4)")
+
+        if (method == QLatin1String("line")) {
+            const double spacing = 3.5;
+            const double shortLength = 20.0;
+            const double longLength = 40.0;
+            const double totalLength = shortLength * 2.0 + longLength;
+            const double x0 = centre.x() - totalLength / 2.0;
+            const double y0 = centre.y() - (count - 1) * spacing / 2.0;
+
+            Toolpath path(machine.family, machine.firstLayer, flowPerMm3);
+            path.role("External perimeter");
+            for (int line = 0; line < count; ++line) {
+                const double y = y0 + line * spacing;
+                path.pressureAdvance(advance(line));
+                path.travel(x0, y);
+                path.line(x0 + shortLength, y, 1200.0, machine.lineWidth, machine.firstLayer);
+                path.line(x0 + shortLength + longLength, y, 6000.0, machine.lineWidth,
+                          machine.firstLayer);
+                path.line(x0 + totalLength, y, 1200.0, machine.lineWidth, machine.firstLayer);
+            }
+            path.finish();
+            if (!addAnchor(anchorHeight))
+                return failure("could not build the PA line test");
+            m_document->addLayerGcode(machine.firstLayer, QStringLiteral("gcode"), path.text());
+
+            if (params.flag("numbers", true)) {
+                for (int line = 0; line < count; line += 2) {
+                    const int id = m_document->addText(number(advance(line), 3), 3.0, 0.6,
+                                                       QString());
+                    if (id < 0)
+                        continue;
+                    m_document->setPosition(id, QVector3D(float(x0 + totalLength + 12.0),
+                                                          float(y0 + line * spacing), 0.0f));
+                }
+            }
+            return QStringLiteral("PA line: %1 lines from %2 to %3 (%4)")
+                .arg(count)
+                .arg(number(start, 3), number(advance(count - 1), 3),
+                     bowden ? QStringLiteral("Bowden") : QStringLiteral("direct drive"));
+        }
+
+        if (method == QLatin1String("pattern")) {
+            const double side = 30.0;
+            const double cosine = std::cos(M_PI / 4.0);
+            const double sine = std::sin(M_PI / 4.0);
+            const double lineSpacing = std::max(0.1, machine.lineWidth
+                                                         - machine.layer * (1.0 - M_PI / 4.0));
+            const double wallAdvance = lineSpacing / sine;
+            const double patternAdvance = wallAdvance * 3.0 + 2.0 + machine.lineWidth;
+            const double extent = (count - 1) * patternAdvance + wallAdvance * 2.0
+                                  + side * cosine;
+            const double x0 = centre.x() - extent / 2.0;
+            const double y0 = centre.y() - 20.0;
+            const int layers = 4;
+
+            for (int layer = 0; layer < layers; ++layer) {
+                const double layerHeight = layer == 0 ? machine.firstLayer : machine.layer;
+                const double z = machine.firstLayer + layer * machine.layer;
+                Toolpath path(machine.family, z, flowPerMm3);
+                path.role("External perimeter");
+                for (int pattern = 0; pattern < count; ++pattern) {
+                    const double base = x0 + pattern * patternAdvance;
+                    path.pressureAdvance(advance(pattern));
+                    for (int wall = 0; wall < 3; ++wall) {
+                        const double x = base + (wall + 1) * wallAdvance;
+                        path.travel(x, y0);
+                        path.line(x + side * cosine, y0 + side * sine, 6000.0,
+                                  machine.lineWidth, layerHeight);
+                        path.line(x, y0 + side * sine * 2.0, 6000.0, machine.lineWidth,
+                                  layerHeight);
+                    }
+                }
+                path.finish();
+                m_document->addLayerGcode(z, QStringLiteral("gcode"), path.text());
+            }
+            if (!addAnchor(machine.firstLayer + (layers - 1) * machine.layer + 0.01))
+                return failure("could not build the PA pattern test");
+
+            for (int pattern = 0; pattern < count; pattern += 2) {
+                const int id = m_document->addText(number(advance(pattern), 3), 3.0, 0.6,
+                                                   QString());
+                if (id < 0)
+                    continue;
+                m_document->setPosition(id, QVector3D(float(x0 + pattern * patternAdvance
+                                                            + wallAdvance),
+                                                      float(y0 - 12.0), 0.0f));
+            }
+            return QStringLiteral("PA pattern: %1 patterns from %2 to %3, %4 layers")
+                .arg(count)
+                .arg(number(start, 3), number(advance(count - 1), 3))
+                .arg(layers);
+        }
+
+        const double height = count * machine.layer;
+        const int id = m_document->addShape(QStringLiteral("box"), 20.0, 20.0, height);
+        if (id < 0)
+            return failure("could not build the PA tower");
+        m_document->renameObject(id, QStringLiteral("PA Tower"));
+        m_document->setPosition(id, QVector3D(centre.x(), centre.y(), 0.0f));
+        for (int layer = 0; layer < count; ++layer) {
+            m_document->addLayerGcode(machine.firstLayer + layer * machine.layer,
+                                      QStringLiteral("gcode"),
+                                      pressureAdvanceCommand(machine.family, advance(layer))
+                                          + QStringLiteral(" ; calibration layer %1").arg(layer + 1));
+        }
+        if (params.flag("numbers", true)) {
+            const int label = m_document->addText(
+                QStringLiteral("%1-%2").arg(number(start, 3), number(advance(count - 1), 3)),
+                4.0, 0.6, QString());
+            if (label >= 0)
+                m_document->setPosition(label, QVector3D(float(centre.x()),
+                                                         float(centre.y() - 20.0), 0.0f));
+        }
+        return QStringLiteral("PA tower: %1 layers from %2 to %3 (%4)")
             .arg(count)
             .arg(number(start, 3), number(advance(count - 1), 3),
                  bowden ? QStringLiteral("Bowden") : QStringLiteral("direct drive"));
     }
 
     if (kind == QLatin1String("flow")) {
-        const QString pass = params.text("pass", "coarse");
+        const QString pass = params.text("pass", "yolo");
         double start = 90.0;
         double end = 110.0;
         double step = 5.0;
         double height = 2.0;
-        if (pass == QLatin1String("fine")) {
+        if (pass == QLatin1String("pass2")) {
             start = 98.0;
             end = 102.0;
             step = 1.0;
             height = 1.0;
-        } else if (pass == QLatin1String("finer")) {
+        } else if (pass == QLatin1String("yolo")) {
             start = 99.0;
             end = 101.0;
             step = 0.5;
+            height = 1.0;
+        } else if (pass == QLatin1String("yolo_fine")) {
+            start = 99.5;
+            end = 100.5;
+            step = 0.1;
             height = 1.0;
         }
         const int count = bandCount(start, end, step, 21);
@@ -506,7 +807,7 @@ QString Calibration::build(const QString& kind, const QVariantMap& values)
         const double width = std::max(0.1, params.number("width", 0.45));
         const double layer = std::max(0.05, params.number("layer", 0.2));
         const double base = std::max(1.0, params.number("speed", 100));
-        const int count = bandCount(start, end, step, 20);
+        const int count = bandCount(start, end, step, 40);
         const auto flow = [start, step](int band) { return start + step * band; };
         const auto percent = [&](int band) {
             return std::min(300.0, flow(band) / (width * layer) / base * 100.0);
@@ -530,7 +831,7 @@ QString Calibration::build(const QString& kind, const QVariantMap& values)
         const double step = std::max(0.05, params.number("step", 0.4));
         if (end <= start)
             end = start + step * 5.0;
-        const int count = bandCount(start, end, step, 20);
+        const int count = bandCount(start, end, step, 32);
         const auto length = [start, step](int band) { return start + step * band; };
         const auto command = [family](double value) {
             switch (family) {
@@ -594,7 +895,7 @@ QString Calibration::build(const QString& kind, const QVariantMap& values)
         const double end = params.number("end", 200);
         const double step = std::max(1.0, params.number("step", 20));
         const double base = std::max(1.0, params.number("speed", 100));
-        const int count = bandCount(start, end, step, 16);
+        const int count = bandCount(start, end, step, 24);
         const auto speed = [start, step](int band) { return start + step * band; };
         if (!addBands(count, 10.0, 20.0, 0.0, "cylinder", "Ring",
                       [&](int band) { return number(speed(band), 0) + QStringLiteral(" mm/s"); },

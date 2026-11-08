@@ -72,7 +72,7 @@ import json, sys
 manifest = {
     'version': sys.argv[1],
     'notes': sys.argv[2],
-    'url': 'https://github.com/CWebb89/next-layer/releases/download/v' + sys.argv[1] + '/' + sys.argv[3],
+    'url': 'https://github.com/CWebb89/NextLayer/releases/download/v' + sys.argv[1] + '/' + sys.argv[3],
     'sha256': sys.argv[4],
     'size': int(sys.argv[5]),
 }

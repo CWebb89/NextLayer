@@ -4,6 +4,8 @@ A 3D printer slicer. An application of our own on top of an open-source slicing
 engine, used as a library: the engine does the geometry and the G-code, this
 repository is the program you look at.
 
+Source: <https://github.com/CWebb89/NextLayer>
+
 ![The application with a printer set up and a model on the plate](docs/screenshots/model.png)
 
 Alpha, `0.1.0`, source-only. It slices and prints, and it does not yet do
@@ -63,8 +65,8 @@ is the last line only.
 Two things worth knowing:
 
 - The engine tree under `upstream/` is a dependency, never a place to keep work.
-  It is gitignored, and our entire footprint in it is two `add_subdirectory`
-  lines applied from `patches/`.
+  It is gitignored, and our entire footprint in it is the patches in `patches/`
+  (the build hook and one preview role the engine does not carry).
 - Compiling this saturates memory before it saturates cores. `-j4` is deliberate;
   on a 16 GB machine with no swap beyond zram, a higher job count has frozen the
   desktop.

@@ -66,6 +66,7 @@ const char* const kRoleNames[kRoleCount] = {
     "Support material interface",
     "Wipe tower",
     "Custom",
+    "Bottom surface",
 };
 
 pg::ProcessorConfig configFor(const std::string& gcode)
@@ -190,6 +191,56 @@ void terminateLastLine(std::string& gcode)
         gcode.push_back('\n');
 }
 
+// The engine emits one role for every solid layer: `Solid infill` covers the
+// visible bottom, internal solid layers and anything else. Orca separates the
+// bottom, and the legend has a row for it, so the G-code is re-tagged here from
+// the layer index and the same `bottom_solid_layers` the slicer used. The
+// processor reads `;TYPE:` comments, so this is a text pass, not a second slice.
+int bottomSolidLayers(const std::string& gcode)
+{
+    const std::string key = "bottom_solid_layers =";
+    std::size_t position = gcode.find(key);
+    while (position != std::string::npos) {
+        std::size_t lineStart = gcode.rfind('\n', position);
+        lineStart = lineStart == std::string::npos ? 0 : lineStart + 1;
+        std::size_t prefix = lineStart;
+        while (prefix < position && (gcode[prefix] == ' ' || gcode[prefix] == '\t'))
+            ++prefix;
+        if (prefix < position && gcode[prefix] == ';') {
+            ++prefix;
+            while (prefix < position && gcode[prefix] == ' ')
+                ++prefix;
+            if (prefix == position)
+                return std::atoi(gcode.c_str() + position + key.size());
+        }
+        position = gcode.find(key, position + key.size());
+    }
+    return 0;
+}
+
+void classifyBottomSurface(std::string& gcode)
+{
+    const int bottomLayers = bottomSolidLayers(gcode);
+    if (bottomLayers <= 0)
+        return;
+
+    int layer = -1;
+    std::size_t position = 0;
+    while (position < gcode.size()) {
+        std::size_t end = gcode.find('\n', position);
+        if (end == std::string::npos)
+            end = gcode.size();
+        const std::string_view line(gcode.data() + position, end - position);
+        if (line.rfind(";LAYER_CHANGE", 0) == 0) {
+            ++layer;
+        } else if (layer >= 0 && layer < bottomLayers
+                   && line.rfind(";TYPE:Solid infill", 0) == 0) {
+            gcode.replace(position, line.size(), ";TYPE:Bottom surface");
+        }
+        position = end + 1;
+    }
+}
+
 }
 
 bool renderPreviewWithVgcode(const QString& gcodePath, const QString& outPath,
@@ -203,6 +254,7 @@ bool renderPreviewWithVgcode(const QString& gcodePath, const QString& outPath,
     if (gcode.empty())
         return false;
     terminateLastLine(gcode);
+    classifyBottomSurface(gcode);
 
     pg::ProcessorConfig config = configFor(gcode);
     pg::Processor processor(std::move(config));
@@ -520,6 +572,7 @@ static bool processFile(const QString& gcodePath, PreviewData& data,
     if (gcode.empty())
         return false;
     terminateLastLine(gcode);
+    classifyBottomSurface(gcode);
 
     pg::ProcessorConfig config = configFor(gcode);
     const double filamentCostPerKg =

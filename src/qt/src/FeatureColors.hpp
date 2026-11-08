@@ -28,6 +28,8 @@ inline QColor featureColor(const QString& feature, const QVariantMap& roles)
     if (feature.startsWith(QLatin1String("Solid infill")) || feature.startsWith(QLatin1String("Top solid infill"))
         || feature.startsWith(QLatin1String("Bottom solid infill")))
         return QColor("#b8442f");
+    if (feature == QLatin1String("Bottom surface"))
+        return QColor("#2fb6d6");
     if (feature.startsWith(QLatin1String("Bridge infill")))
         return QColor("#4f9ee8");
     if (feature == QLatin1String("Support material"))

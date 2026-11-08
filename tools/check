@@ -663,8 +663,8 @@ if test $cal_rc -ne 0
     __bad "calibration: "(string join '; ' -- $cal_out)
 else if test (count $cal_summary) -lt 2
     __bad "calibration: the summary line is missing from "(string join '; ' -- $cal_out)
-else if test $cal_summary[2] -lt 10
-    __bad "calibration: only $cal_summary[2] of the 10 tests built"
+else if test $cal_summary[2] -lt 12
+    __bad "calibration: only $cal_summary[2] of the 12 tests built"
 else
     __ok "calibration: $cal_summary[2] test(s) built and sliced, every band command in the G-code"
 end

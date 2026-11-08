@@ -39,6 +39,8 @@ Item {
     signal addRequested(real x, real y)
     signal sliceRequested()
     signal sliceAllRequested()
+    /// The slice button's chevron: the same two actions plus the whole project.
+    signal sliceMenuRequested(real x, real y)
     /// The export button's own menu, whose entries live in the window: a menu at the
     /// top of the strip has to be drawn over the whole window, not cropped by it.
     signal exportMenuRequested(real x, real y)
@@ -232,44 +234,25 @@ Item {
         anchors.verticalCenter: plateRow.verticalCenter
         spacing: Metrics.sm
 
-        Button {
+        SplitButton {
             text: root.slicing ? "Slicing…" : "Slice plate"
             primary: true
+            hint: root.slicing ? "Slicing the plate" : "Slice the active plate (Ctrl+B)"
+            menuHint: root.plates.length > 1
+                      ? "Slice the active plate, or all " + root.plates.length + " plates"
+                      : "Slice the active plate"
             enabled: root.canSlice && !root.slicing
             onClicked: root.sliceRequested()
+            onMenuRequested: (x, y) => root.sliceMenuRequested(x, y)
         }
 
-        // The other half of the slice action: a project of fourteen plates is
-        // sliced as one job from here, and each plate keeps its own toolpath.
-        ToolButton {
-            icon: "layers"
-            hint: root.plates.length > 1
-                  ? "Slice all " + root.plates.length + " plates"
-                  : "Slice all plates"
-            enabled: root.canSlice && !root.slicing && root.plates.length > 1
-            onClicked: root.sliceAllRequested()
-        }
-
-        Button {
+        SplitButton {
             text: "Export G-code"
+            hint: "Write the sliced G-code to a file (Ctrl+E)"
+            menuHint: "Export the G-code to a file, or send it to the printer"
             enabled: root.canSlice
             onClicked: root.actionTriggered("export")
-        }
-
-        // The other half of the export action, the way every slicer with a printer
-        // behind it does it: the button writes a file, the arrow offers sending it
-        // instead. Which one a person wants depends on whether the machine is on
-        // the network, and that is not something to guess at.
-        Button {
-            id: exportArrow
-            text: "\u25be"
-            hint: "Export the G-code, or send it to the printer"
-            enabled: root.canSlice
-            onClicked: {
-                const point = exportArrow.mapToItem(null, exportArrow.width / 2,
-                                                   exportArrow.height)
-                root.exportMenuRequested(point.x, point.y)
-            }
+            onMenuRequested: (x, y) => root.exportMenuRequested(x, y)
         }
     }
 }

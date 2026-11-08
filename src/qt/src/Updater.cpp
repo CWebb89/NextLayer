@@ -26,7 +26,7 @@ namespace next_layer {
 
 namespace {
 
-constexpr const char* kChannelDefault = "https://github.com/CWebb89/next-layer";
+constexpr const char* kChannelDefault = "https://github.com/CWebb89/NextLayer";
 constexpr const char* kManifestPath = "/releases/latest/download/update.json";
 constexpr const char* kBinaryName = "next-layer-qt";
 

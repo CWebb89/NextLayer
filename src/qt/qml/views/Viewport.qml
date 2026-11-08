@@ -68,6 +68,10 @@ Item {
     property bool paintErase: false
     property int paintTool: 2
     property bool selected: false
+    /// What the pointer is over: the cursor is a hand only on a model, and an
+    /// arrow everywhere else, so the viewport reads as a canvas rather than a
+    /// control that swallows every click.
+    property bool hoveringObject: false
 
     // Rows reserved at the viewport's bottom by chrome that spans it. Everything
     // anchored to the bottom adds this, so two bands cannot land on each other.
@@ -1100,6 +1104,7 @@ Item {
                    : (root.moveEnabled || (root.dragSelectedEnabled && plateDocument.selectedCount > 0))
                      && input.containsMouse ? Qt.SizeAllCursor
                    : (pressed && input.panning) ? Qt.ClosedHandCursor
+                   : root.hoveringObject ? Qt.PointingHandCursor
                    : Qt.ArrowCursor
 
         property real pointerX: 0
@@ -1114,6 +1119,8 @@ Item {
         property var gizmoStart: null
         property vector3d gizmoDelta: Qt.vector3d(0, 0, 0)
         property bool banding: false
+
+        onExited: root.hoveringObject = false
 
         onPressed: (mouse) => {
             input.forceActiveFocus()
@@ -1292,6 +1299,13 @@ Item {
                 band.endY = mouse.y
                 return
             }
+
+            // The cursor is a hand only over a model: the viewport is a canvas,
+            // and a hand on the empty bed promises a click that does nothing.
+            if (!input.dragging && !input.panning && root.mode === "model" && session.hasModel)
+                root.hoveringObject = root.hitAt(mouse.x, mouse.y).w > 0
+            else
+                root.hoveringObject = false
 
             // With the lay-on-face tool armed, the face under the pointer is tinted
             // before the click: that is the difference between aiming and guessing.

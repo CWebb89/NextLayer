@@ -1,0 +1,27 @@
+name: Feature request
+description: A workflow, setting or file the slicer does not support yet.
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `docs/features.md` is the feature ledger: check it first, and say whether the
+        request is a *done* row that falls short or a row that is missing.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: The print or workflow, not the implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: What the application does now
+      description: Where you looked, and what it said. A screenshot of the viewport or settings panel is useful.
+  - type: textarea
+    id: reference
+    attributes:
+      label: How another slicer does it
+      description: Name the slicer, the menu path and the settings it exposes, if there is a reference behaviour to match.

@@ -1,6 +1,6 @@
 #!/usr/bin/env fish
 # Fetches the slicing engine next-layer links, at the commit it was last verified
-# against, and applies the single patch that lets that engine build our sources.
+# against, and applies the patches in patches/ in name order.
 #
 #   tools/bootstrap            prepare upstream/ to a buildable state
 #   tools/bootstrap --status   report what is there, change nothing
@@ -11,7 +11,7 @@
 
 set -l root (realpath (dirname (status filename))/..)
 set -l checkout $root/upstream
-set -l patch $root/patches/0001-app-subdirectories.patch
+set -l patches $root/patches/*.patch
 set -l engine_repo https://github.com/prusa3d/PrusaSlicer.git
 set -l engine_commit 30ef59195e0f3ee6f270b185bb5f9fb5f349f81f
 
@@ -29,9 +29,15 @@ for arg in $argv
     end
 end
 
-if not test -f $patch
-    echo "tools/bootstrap: $patch is missing" >&2
+if test (count $patches) -eq 0
+    echo "tools/bootstrap: no patches in $root/patches" >&2
     exit 1
+end
+for patch in $patches
+    if not test -f $patch
+        echo "tools/bootstrap: $patch is missing" >&2
+        exit 1
+    end
 end
 
 function __report --argument-names checkout commit
@@ -92,14 +98,19 @@ if test "$head" != "$engine_commit"
     git -C $checkout checkout -q -B engine $engine_commit; or exit 1
 end
 
-if not git -C $checkout am -q $patch
-    git -C $checkout am --abort 2>/dev/null
-    echo "tools/bootstrap: the patch does not apply to $engine_commit" >&2
-    echo "the engine's CMakeLists changed; re-export patches/ against the new commit" >&2
+for patch in $patches
+    if not git -C $checkout apply --index $patch
+        echo "tools/bootstrap: $(basename $patch) does not apply to $engine_commit" >&2
+        echo "re-export patches/ against the new commit" >&2
+        exit 1
+    end
+end
+if not git -C $checkout commit -q -m 'build: build the next-layer app from outside the engine tree'
+    echo "tools/bootstrap: could not commit the applied patches" >&2
     exit 1
 end
 
-echo "engine bootstrapped at $engine_commit with our patch"
+echo "engine bootstrapped at $engine_commit with our patches"
 echo
 echo "next, build it (the first configure fetches the engine's dependencies and"
 echo "takes hours; a memory-capped scope is required on this machine):"

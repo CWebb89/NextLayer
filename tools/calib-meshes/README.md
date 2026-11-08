@@ -1,14 +1,15 @@
 # Calibration meshes
 
-**Nothing uses these files any more.** The temperature test is built from primitives
-inside the app (`Calibration::build`, one block per band with a shelf cantilevered out
-of its top, the temperature printed on the bed beside it), because the reference
-slicer's test meshes carry that project's logo embossed in the geometry -- a printed
-"ORCA" on the test piece -- and cutting a temperature range out of a fixed 700 mm
-stack left the top band sliced through its own number.
+**The four `.stl` files are no longer in the tree.** They were removed on
+2026-11-08. The temperature test is built from primitives inside the app
+(`Calibration::build`, one block per band with a shelf cantilevered out of its
+top, the temperature printed on the bed beside it), because the reference
+slicer's test meshes carry that project's logo embossed in the geometry -- a
+printed "ORCA" on the test piece -- and cutting a temperature range out of a
+fixed 700 mm stack left the top band sliced through its own number.
 
-The three other meshes were never wired up. They stay in the tree until someone
-decides to drop them; see the note at the end.
+The three other meshes were never wired up. What remains here is the history of
+how they were produced, for anyone who needs the provenance note.
 
 ---
 
@@ -20,12 +21,12 @@ in that project's own resources as Draco-compressed meshes
 (`resources/calib/**.drc`), which this engine cannot read, so they are exported
 once and committed here as STL.
 
-| File | From | Used by |
+| File | From | Was used by |
 |---|---|---|
-| `temperature_tower.stl` | `calib/temperature_tower/temperature_tower.drc` | the temperature test |
-| `retraction_tower.stl` | `calib/retraction/retraction_tower.drc` | (asset, not wired yet) |
-| `pressure_advance_tower.stl` | `calib/pressure_advance/pressure_advance_test.drc` | (asset, not wired yet) |
-| `vfa.stl` | `calib/vfa/vfa.drc` | (asset, not wired yet) |
+| `temperature_tower.stl` | `calib/temperature_tower/temperature_tower.drc` | the temperature test, until it was rebuilt from primitives |
+| `retraction_tower.stl` | `calib/retraction/retraction_tower.drc` | never wired up |
+| `pressure_advance_tower.stl` | `calib/pressure_advance/pressure_advance_test.drc` | never wired up |
+| `vfa.stl` | `calib/vfa/vfa.drc` | never wired up |
 
 ## Regenerating
 
@@ -55,10 +56,10 @@ band printable at all.
 
 ## Licence
 
-These meshes come from another AGPL-3.0 project; `THIRD-PARTY.md` carries the
+The meshes came from another AGPL-3.0 project; `THIRD-PARTY.md` carries the
 attribution, alongside the engine this application links.
 
 They are also the reason the temperature test stopped using them: the reference
 prints its own name on its test models, and a test piece that carries another
-slicer's logo is not something this app should ship. Nothing references the files
-now; deleting the four `.stl` files (8 MB) would remove the last of it.
+slicer's logo is not something this app should ship. The `.stl` files were
+deleted; this note is the provenance record.

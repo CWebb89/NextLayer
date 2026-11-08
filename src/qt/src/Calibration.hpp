@@ -8,6 +8,7 @@
 #include <QVariantMap>
 
 class PlateDocument;
+class SettingsModel;
 
 /// The calibration suite: the test plates a slicer ships, built from
 /// the engine's own primitives and the plate's layer G-code rather than from a
@@ -22,7 +23,8 @@ class Calibration : public QObject
     Q_PROPERTY(QVariantList tests READ tests CONSTANT)
 
 public:
-    explicit Calibration(PlateDocument* document, QObject* parent = nullptr);
+    explicit Calibration(PlateDocument* document, SettingsModel* settings,
+                         QObject* parent = nullptr);
 
     /// Every test with its title, its instruction, the setting its measurement
     /// becomes and the parameters it takes.
@@ -40,6 +42,7 @@ public:
 
 private:
     PlateDocument* m_document = nullptr;
+    SettingsModel* m_settings = nullptr;
 };
 
 } // namespace next_layer

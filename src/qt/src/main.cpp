@@ -1600,7 +1600,7 @@ int main(int argc, char* argv[])
     // A different machine is a different bed, and the plate's objects are stored in
     // bed coordinates: without this an object placed for a 350 mm bed sits off the
     // edge of a 235 mm one after the setup flow switches machine.
-    auto resolvedModel = std::make_shared<QString>(printer.model);
+    auto resolvedModel = std::make_shared<QString>();
     // A tool changer paints by tool, so the palette comes from the printer's own
     // filament colours: what the overlay shows is what the machine prints.
     QObject::connect(presets, &PresetStore::resolved, document, [settings, document] {
@@ -1619,14 +1619,21 @@ int main(int argc, char* argv[])
         document->setToolColours(colours);
     });
 
+    // A machine's bed is part of where its objects may sit, but the first
+    // resolve of a session is not a machine change: it is the preset store
+    // catching up with the template the window started on. Centring every object
+    // there stacked a plate of freshly loaded models on the middle of the bed, so
+    // only a later change of machine packs the plate again -- and packing keeps
+    // the spacing a load gave them instead of collapsing it.
     QObject::connect(presets, &PresetStore::resolved, document,
-                     [presets, document, resolvedModel] { 
-        if (presets->resolvedPrinterModel() == *resolvedModel)
+                     [presets, document, resolvedModel] {
+        const QString model = presets->resolvedPrinterModel();
+        if (model.isEmpty() || model == *resolvedModel)
             return;
-        *resolvedModel = presets->resolvedPrinterModel();
-        const QVariantList objects = document->objects();
-        for (const QVariant& value : objects)
-            document->centreObject(value.toMap().value(QStringLiteral("id")).toInt());
+        const bool known = !resolvedModel->isEmpty();
+        *resolvedModel = model;
+        if (known)
+            document->arrangePlate();
     });
 
     if (!files.isEmpty()) {
@@ -1850,7 +1857,7 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty("meshGeometry", geometry);
     engine.rootContext()->setContextProperty("plateDocument", document);
     engine.rootContext()->setContextProperty("calibration",
-                                             new next_layer::Calibration(document, &engine));
+                                             new next_layer::Calibration(document, settings, &engine));
     engine.rootContext()->setContextProperty("plateScene", scene);
     engine.rootContext()->setContextProperty("bedPlateGeometry", bedPlate);
     engine.rootContext()->setContextProperty("settingsModel", settings);

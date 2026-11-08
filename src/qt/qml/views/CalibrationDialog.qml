@@ -270,6 +270,24 @@ Popup {
                                     currentValue: root.values[paramRow.modelData.name]
                                     onSelected: (choice) => {
                                         root.setParam(paramRow.modelData.name, choice)
+                                        if (paramRow.modelData.name === "method") {
+                                            const bowden = root.values.extruder === "bowden"
+                                            if (choice === "pattern") {
+                                                root.setParam("end", bowden ? 1.0 : 0.08)
+                                                root.setParam("step", bowden ? 0.05 : 0.005)
+                                            } else {
+                                                root.setParam("end", bowden ? 1.0 : 0.1)
+                                                root.setParam("step", bowden ? 0.02 : 0.002)
+                                            }
+                                            root.setParam("numbers", choice !== "tower")
+                                            return
+                                        }
+                                        if (paramRow.modelData.name === "extruder") {
+                                            const bowden = choice === "bowden"
+                                            root.setParam("end", bowden ? 1.0 : 0.1)
+                                            root.setParam("step", bowden ? 0.02 : 0.002)
+                                            return
+                                        }
                                         const entry = paramRow.modelData.choices.find(
                                                         c => c.value === choice)
                                         if (entry === undefined || entry.start === undefined)

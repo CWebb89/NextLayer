@@ -225,13 +225,14 @@ nothing is not a roadmap.
 
 | Feature | Status |
 | --- | --- |
-| Toolpath preview with per-layer slider | done — vertical two-handle slider down the right edge of the viewport, the expected placement and shape |
+| Toolpath preview with per-layer slider | done — vertical two-handle slider down the right edge of the viewport, the expected placement and shape; when both handles sit on layer 1 the first drag direction expands the range instead of trapping it |
 | Move slider (scrubs the moves inside the current layer) | done — horizontal bar along the bottom of the viewport, two handles, one tick per move; libvgcode's visible range is a move interval |
 | Extruded ribbon geometry per path (not 1 px GL lines) | done — engine extrusion width per move, moves joined into one polyline per path with mitred corners, top face plus side walls spanning the layer height, fixed feature palette |
 | Single-layer / whole-part preview modes | done — footer toggle |
 | Line-type panel with time, share and filament per type, plus totals | done — time from the engine's per-move estimates; totals match the sliced file's footer (970.60/970.61 mm, 2.895/2.89 g, 0.081/0.08 cost, 810.9/812 s) |
 | Panel placement and shape | done — top-right of the viewport, folding to its header row; columns are Line type / Time / % / Usage (length and mass), then the Options rows, then Total estimation (filament, cost, prepare time, model printing time, total time) |
 | Colouring mode picker (feature type, height, width, speed, actual speed, fan, temperature, flow, layer time, tool) | done — the engine's own `ViewType`s; the numeric modes list their colour bands with the band's value |
+| Bottom surface in the feature-type legend | done — the engine has one `Solid infill` role for every solid layer, so the preview re-tags `Solid infill` on the first `bottom_solid_layers` layers as `Bottom surface` (its own colour, 12.5 % of a 20 mm cube) instead of folding first-layer and bottom skin into solid infill |
 | G-code window at the current move | done — numbered monospace lines with the producing line boxed, as many lines as fit; the current vertex's `gcode_id` indexes the file, so the boxed line is the one that asked for the move |
 | Nothing overlaps in the viewport | done — the moves slider owns the bottom edge and publishes its height, the camera card and the right-hand column offset by it, and the layer slider publishes its width so the legend and g-code window stop left of it |
 | Slider drags one layer at a time | done — verified headlessly by `--slider-test`, which drags both sliders with synthetic pointer events and reports the layer after every step |
@@ -303,26 +304,26 @@ removes the test you just built rather than nothing.
 
 | Test | Reference parameters | Ours |
 | --- | --- | --- |
-| Temperature tower | filament type (sets the range), start / end / step, model | done — same ranges (PLA 230-190, ABS 260-230, PETG 250-220, PCTG, TPU, PA-CF, PET-CF, Custom), auto-scale for the nozzle. Built from primitives (a block per band with a shelf cantilevered out of its top, so each temperature shows overhang, bridging and stringing), not from the reference's mesh: that mesh has the reference's own logo embossed in the geometry, and cutting a temperature range out of a fixed 700 mm stack sliced the top band through the middle of its number |
-| Pressure advance | extruder type (DDE / Bowden), method (tower / line / pattern), start / end / step, print numbers | tower: done. **Line and pattern are not built** -- see below |
-| Flow ratio | pass 1 (coarse) / pass 2 (fine) / YOLO, top-surface pattern | done — coarse 90-110 %, fine 98-102 %, very fine 99-101 %; patch size |
-| Max volumetric speed | start / end / step in mm³/s | done — converted per band to a feed override from the line width, layer height and base speed |
-| Retraction | start / end / step in mm | done — two towers 60 mm apart, one band per length |
-| VFA | start / end / step in mm/s, auto-adjust, model | done — feed override per ring; auto-adjust is the base-speed parameter |
-| Cornering | model (Ringing / Fast / SCV-V2), start / end | done — `SET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY` on Klipper, `M205 J` on Marlin, `M566` on RepRap |
-| Input shaping: frequency | model, shaper type, X / Y frequency start and end, damping | done — `SET_INPUT_SHAPER` per band, five Klipper shaper types |
-| Input shaping: damping | model, shaper type, frequency X / Y, damping start and end | done |
+| Temperature | filament type (sets the range), start / end, model | done — same ranges (PLA 230-190, ABS/ASA 270-230, PETG 250-230, PCTG 280-240, TPU 240-210, PA-CF 320-280, PET-CF 320-280, Custom) and the same 5 °C step, auto-scale for the nozzle. Built from primitives (a block per band with a shelf cantilevered out of its top, so each temperature shows overhang, bridging and stringing), not from the reference's mesh: that mesh has the reference's own logo embossed in the geometry, and cutting a temperature range out of a fixed 700 mm stack sliced the top band through the middle of its number |
+| Pressure advance | extruder type (DDE / Bowden), method (tower / line / pattern), start / end / step, print numbers | done — all three methods. Tower: one tower, the value raised every layer (DDE 0-0.1 step 0.002, Bowden 0-1.0 step 0.02). Line: one line per value on the first layer, a slow 20 mm lead-in, a 40 mm fast centre and a slow 20 mm lead-out, value labels beside the lines. Pattern: a fan of 90° chevrons, three walls per pattern, one pattern per value, four layers high, value labels under the fan |
+| Flow ratio | pass 1 (coarse) / pass 2 (fine) / YOLO, top-surface pattern | partial — the four types are offered with the reference names; YOLO and YOLO (Perfectionist) map to 99-101 % (step 0.5) and 99.5-100.5 % (step 0.1) patch towers, not to the reference's linear-flow asset. Patch size still configurable |
+| Max flowrate | start / end / step in mm³/s | done — defaults 5 / 20 / 0.5, converted per band to a feed override from the line width, layer height and base speed |
+| Retraction | start / end / step in mm | done — defaults 0 / 2 / 0.1, two towers 60 mm apart, one band per length |
+| VFA | start / end / step in mm/s, auto-adjust, model | done — defaults 40 / 200 / 10; feed override per ring. Auto-adjust and auto-scale are accepted but adjust nothing yet |
+| Cornering | model (Ringing / Fast / SCV-V2), start / end | done — defaults 1 / 15, `SET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY` on Klipper, `M205 J` on Marlin, `M566` on RepRap |
+| Input shaping: frequency | model, shaper type, X / Y frequency start and end, damping | done — defaults 15-110 Hz on both axes, damp 0.15; `SET_INPUT_SHAPER` per band, five Klipper shaper types |
+| Input shaping: damping | model, shaper type, frequency X / Y, damping start and end | done — frequency 30 Hz, damp 0.00-0.40 |
 | First layer squish | No reference equivalent; first-layer calibration elsewhere is a single line | done — six patches, each at its own `SET_GCODE_OFFSET Z`, so the ladder is a real Z test rather than six identical patches |
 | Numbers printed on the plate | always on for PA and the towers | done — the value is extruded as geometry (the app's own text object) in a row in front of the tower, so a band is identifiable in the preview and on the bed |
 | Save the measured value | The reference four-step wizard ends by writing the value into a preset and re-slicing | partly — "Apply to `<setting>`" writes the measurement into the live settings (temperature, pressure advance, flow ratio, max volumetric flow, retract length), where it shows as modified in the panel and rides the next preset save. The wizard's own coarse-then-fine re-run is not automated |
 
-**What is still missing here.** The PA-line and PA-pattern tests are a
-*g-code generator*, not a plate: `CalibPressureAdvance::generate_test` writes one
-layer's worth of lines with a `SET_PRESSURE_ADVANCE` between each, bypassing the
-slicer's layers entirely. This app's only channel into a running print is the
-engine's `CustomGCode::Info`, which injects at layer changes. A per-object band
-therefore needs one layer range per value, which is the tower. Line and pattern
-stay unbuilt until the app can emit G-code of its own.
+**How the generator works.** PA line and PA pattern are generated toolpaths, not
+parameterised plates: `Toolpath` writes extrusion moves with a `G92 E0` before
+every segment, so the same bytes are correct whether the profile counts E in
+absolute or relative millimetres, and the block is injected through the engine's
+`CustomGCode::Info` at the layer it belongs to. The tower is one solid box
+with the value raised at every layer boundary. There is no borrowed mesh
+anywhere in the suite.
 
 Calibration counts as coverage of the reference menu; what it does not cover is
 the *Calibration Guide* entry (a wiki link) and the AMS-specific flows.
@@ -486,7 +487,6 @@ and the engine's plater.
 | Rotation and scale gizmo handles, snapping | the Move tool draws axis arrows; rotate/scale stay numeric | the gizmo half of the render-module host |
 | Sequential printing | the settings exist, nothing arranges objects for it | arrange with a clearance pass |
 | `.3mf` project | `store_3mf`/`load_3mf` exist but need a live `ProjectInteractor` beside the worker-thread slice | the plater host, again |
-| PA line and PA pattern calibration | they are a G-code generator, not a plate; the app's only channel into a print is per-layer custom G-code | an in-layer G-code writer |
 | Calibration wizard: save to preset, then re-run fine | "Apply to setting" writes the live value; the re-slice step is manual | a second pass over the same test |
 | Travel / retraction as legend categories, G-code colour schemes | they are lines in the toolpath, not legend rows | preview legend model |
 | SVG embossing | text is built through `Biz::Emboss::text2shapes`; SVG needs a contour source | an SVG importer into the same emboss path |

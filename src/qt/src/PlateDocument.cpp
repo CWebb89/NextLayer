@@ -1111,7 +1111,12 @@ int PlateDocument::importObject(const QString& path, const QString& label, bool 
         return -1;
     }
 
-    layoutProject(added, project);
+    const bool hasPlates = project.valid && project.plateCount > 0
+                           && project.buildOrder.size() == added.size();
+    if (hasPlates)
+        layoutProject(added, project);
+    else if (added.size() > 1)
+        arrangePlate();
     m_selectedIds = std::vector<int>(added.begin(), added.end());
     m_error.clear();
     emit errorChanged();

@@ -1,0 +1,110 @@
+diff --git a/src/libpgcode/src/Slic3r/Biz/libpgcode/ProcessorImpl.cpp b/src/libpgcode/src/Slic3r/Biz/libpgcode/ProcessorImpl.cpp
+index 07d2e0a..24033f4 100644
+--- a/src/libpgcode/src/Slic3r/Biz/libpgcode/ProcessorImpl.cpp
++++ b/src/libpgcode/src/Slic3r/Biz/libpgcode/ProcessorImpl.cpp
+@@ -1820,6 +1820,8 @@ GCodeExtrusionRole string_to_gcode_extrusion_role(const std::string_view role)
+         return GCodeExtrusionRole::WipeTower;
+     else if (role == "Custom")
+         return GCodeExtrusionRole::Custom;
++    else if (role == "Bottom surface")
++        return GCodeExtrusionRole::BottomSurface;
+     else
+         return GCodeExtrusionRole::None;
+ }
+@@ -2040,7 +2042,7 @@ void ProcessorImpl::process_bambustudio_tags(const std::string_view comment)
+     // see: BambuStudio-01.09.07.52\src\libslic3r\ExtrusionEntity.cpp
+     //
+     static const std::vector<std::pair<std::string_view, GCodeExtrusionRole>> ROLE_DICTIONARY = {
+-        { "Bottom surface"sv,        GCodeExtrusionRole::None },
++        { "Bottom surface"sv,        GCodeExtrusionRole::BottomSurface },
+         { "Bridge"sv,                GCodeExtrusionRole::BridgeInfill },
+         { "Brim"sv,                  GCodeExtrusionRole::Skirt},
+         { "Custom"sv,                GCodeExtrusionRole::Custom},
+@@ -2394,7 +2396,7 @@ void ProcessorImpl::process_orcaslicer_tags(const std::string_view comment)
+     // see: OrcaSlicer-2.1.1\src\libslic3r\ExtrusionEntity.cpp
+     //
+     static const std::vector<std::pair<std::string_view, GCodeExtrusionRole>> ROLE_DICTIONARY = {
+-        { "Bottom surface"sv,        GCodeExtrusionRole::None },
++        { "Bottom surface"sv,        GCodeExtrusionRole::BottomSurface },
+         { "Bridge"sv,                GCodeExtrusionRole::BridgeInfill },
+         { "Brim"sv,                  GCodeExtrusionRole::Skirt},
+         { "Custom"sv,                GCodeExtrusionRole::Custom},
+diff --git a/src/libslic3r/src/libslic3r/ExtrusionRole.cpp b/src/libslic3r/src/libslic3r/ExtrusionRole.cpp
+index 460be35..a59e3de 100644
+--- a/src/libslic3r/src/libslic3r/ExtrusionRole.cpp
++++ b/src/libslic3r/src/libslic3r/ExtrusionRole.cpp
+@@ -50,6 +50,7 @@ std::string gcode_extrusion_role_to_string(GCodeExtrusionRole role)
+         case GCodeExtrusionRole::SupportMaterialInterface     : return L("Support material interface");
+         case GCodeExtrusionRole::WipeTower                    : return L("Wipe tower");
+         case GCodeExtrusionRole::Custom                       : return L("Custom");
++        case GCodeExtrusionRole::BottomSurface                : return L("Bottom surface");
+         default                             : assert(false);
+     }
+     return {};
+diff --git a/src/libvgcode/include/Slic3r/App/libvgcode/Settings.hpp b/src/libvgcode/include/Slic3r/App/libvgcode/Settings.hpp
+index 233530f..fc9cabf 100644
+--- a/src/libvgcode/include/Slic3r/App/libvgcode/Settings.hpp
++++ b/src/libvgcode/include/Slic3r/App/libvgcode/Settings.hpp
+@@ -54,7 +54,8 @@ struct Settings
+ 				true, // SupportMaterial
+ 				true, // SupportMaterialInterface
+ 				true, // WipeTower
+-				true  // Custom
++				true, // Custom
++				true  // BottomSurface
+ 		};
+ };
+ 
+diff --git a/src/libvgcode/src/Slic3r/App/libvgcode/FdmViewer.cpp b/src/libvgcode/src/Slic3r/App/libvgcode/FdmViewer.cpp
+index 402f43b..937ad95 100644
+--- a/src/libvgcode/src/Slic3r/App/libvgcode/FdmViewer.cpp
++++ b/src/libvgcode/src/Slic3r/App/libvgcode/FdmViewer.cpp
+@@ -105,7 +105,8 @@ static const std::array<ColorRGB, GCODE_EXTRUSION_ROLES_COUNT> DEFAULT_EXTRUSION
+     { 0.00f, 1.00f, 0.00f }, // SupportMaterial
+     { 0.00f, 0.50f, 0.00f }, // SupportMaterialInterface
+     { 0.70f, 0.89f, 0.67f }, // WipeTower
+-    { 0.37f, 0.82f, 0.58f }  // Custom
++    { 0.37f, 0.82f, 0.58f }, // Custom
++    { 0.24f, 0.62f, 0.94f }  // BottomSurface
+ }};
+ 
+ static const std::array<ColorRGB, OPTION_TYPES_COUNT> DEFAULT_OPTIONS_COLORS{{
+diff --git a/src/libvgcode/src/Slic3r/App/libvgcode/ViewerImpl.cpp b/src/libvgcode/src/Slic3r/App/libvgcode/ViewerImpl.cpp
+index f243f57..4e0cd9f 100644
+--- a/src/libvgcode/src/Slic3r/App/libvgcode/ViewerImpl.cpp
++++ b/src/libvgcode/src/Slic3r/App/libvgcode/ViewerImpl.cpp
+@@ -93,7 +93,8 @@ static const std::array<ColorRGB, GCODE_EXTRUSION_ROLES_COUNT> DEFAULT_EXTRUSION
+     { 0.00f, 1.00f, 0.00f }, // SupportMaterial
+     { 0.00f, 0.50f, 0.00f }, // SupportMaterialInterface
+     { 0.70f, 0.89f, 0.67f }, // WipeTower
+-    { 0.37f, 0.82f, 0.58f }  // Custom
++    { 0.37f, 0.82f, 0.58f }, // Custom
++    { 0.24f, 0.62f, 0.94f }  // BottomSurface
+ }};
+ 
+ static const std::array<ColorRGB, OPTION_TYPES_COUNT> DEFAULT_OPTIONS_COLORS{{
+diff --git a/src/slic3r-domain/include/Slic3r/Domain/GCodeExtrusionRole.hpp b/src/slic3r-domain/include/Slic3r/Domain/GCodeExtrusionRole.hpp
+index c591929..6ce90e7 100644
+--- a/src/slic3r-domain/include/Slic3r/Domain/GCodeExtrusionRole.hpp
++++ b/src/slic3r-domain/include/Slic3r/Domain/GCodeExtrusionRole.hpp
+@@ -23,6 +23,8 @@ enum class GCodeExtrusionRole : uint8_t {
+     WipeTower,
+     // Custom (user defined) G-code block, for example start / end G-code.
+     Custom,
++    // Visible bottom surface, the first `bottom_solid_layers` layers.
++    BottomSurface,
+     // Stopper to count number of enums.
+     Count
+ };
+diff --git a/src/slic3r-shared/src/Slic3r/App/Preview/Types.cpp b/src/slic3r-shared/src/Slic3r/App/Preview/Types.cpp
+index fa49b09..9e612e7 100644
+--- a/src/slic3r-shared/src/Slic3r/App/Preview/Types.cpp
++++ b/src/slic3r-shared/src/Slic3r/App/Preview/Types.cpp
+@@ -52,6 +52,7 @@ std::string to_string(GCodeExtrusionRole role)
+     case GCodeExtrusionRole::SupportMaterialInterface: { return _u8L("Support material interface"); }
+     case GCodeExtrusionRole::WipeTower:                { return _u8L("Wipe tower"); }
+     case GCodeExtrusionRole::Custom:                   { return _u8L("Custom"); }
++    case GCodeExtrusionRole::BottomSurface:            { return _u8L("Bottom surface"); }
+     }
+ }
+ 

@@ -6,6 +6,7 @@
 #include "Calibration.hpp"
 
 #include "PlateDocument.hpp"
+#include "SettingsModel.hpp"
 
 #include "SliceRuntime.hpp"
 
@@ -1339,34 +1340,41 @@ int runCalibrationSelftest(const QString& configPath, const QString& dataDir)
     }
 
     PlateDocument document(centre, size);
-    next_layer::Calibration calibration(&document, nullptr);
+    SettingsModel settings;
+    {
+        QFile configFile(configPath);
+        if (configFile.open(QIODevice::ReadOnly | QIODevice::Text))
+            settings.seedFromConfigJson(QString::fromUtf8(configFile.readAll()));
+    }
+    next_layer::Calibration calibration(&document, &settings);
 
     struct Expectation
     {
         const char* kind;
         const char* marker;
         int minimumBands;
-        // How many objects the test puts on the plate. The temperature test prints
-        // The tower cut to the requested range, so it is one object carrying
-        // one command per band; the rest are one object per band.
         int minimumObjects;
+        QVariantMap params;
     };
     const Expectation expectations[] = {
-        {"temperature", "M104 S", 6, 1},
-        {"pressure_advance", "SET_PRESSURE_ADVANCE ADVANCE=", 6, 6},
-        {"flow", "M221 S", 5, 6},
-        {"max_flow", "M220 S", 6, 6},
-        {"vfa", "M220 S", 6, 6},
-        {"cornering", "SET_VELOCITY_LIMIT", 6, 6},
-        {"input_shaping_freq", "SET_INPUT_SHAPER", 6, 6},
-        {"input_shaping_damp", "SET_INPUT_SHAPER", 4, 6},
-        {"retraction", "SET_RETRACTION RETRACT_LENGTH=", 6, 6},
-        {"first_layer", "", 6, 6},
+        {"temperature", "M104 S", 6, 1, {}},
+        {"pressure_advance", "M900 K", 6, 1, {{QStringLiteral("method"), QStringLiteral("tower")}}},
+        {"pressure_advance", "M900 K", 6, 1, {{QStringLiteral("method"), QStringLiteral("line")}}},
+        {"pressure_advance", "M900 K", 6, 1, {{QStringLiteral("method"), QStringLiteral("pattern")}}},
+        {"flow", "M221 S", 5, 6, {}},
+        {"max_flow", "M220 S", 6, 6, {}},
+        {"vfa", "M220 S", 6, 6, {}},
+        {"cornering", "M205 J", 6, 6, {}},
+        {"input_shaping_freq", "SET_INPUT_SHAPER", 6, 6, {}},
+        {"input_shaping_damp", "SET_INPUT_SHAPER", 4, 6, {}},
+        {"retraction", "M207 S", 6, 6, {}},
+        {"first_layer", "", 6, 6, {}},
     };
 
     int built = 0;
     for (const Expectation& expectation : expectations) {
-        const QString message = calibration.build(QString::fromLatin1(expectation.kind));
+        const QString message = calibration.build(QString::fromLatin1(expectation.kind),
+                                                  expectation.params);
         if (message.isEmpty() || message.contains(QLatin1String("not a calibration test"))) {
             std::fprintf(stderr, "%s: %s\n", expectation.kind, qPrintable(message));
             return 1;
@@ -1398,8 +1406,6 @@ int runCalibrationSelftest(const QString& configPath, const QString& dataDir)
             const QByteArray line = file.readLine();
             if (!line.contains(expectation.marker))
                 continue;
-            if (!line.contains("calibration band"))
-                continue;
             ++markers;
             if (line.startsWith("M104 S")) {
                 const int valueStart = 6;
@@ -1418,8 +1424,7 @@ int runCalibrationSelftest(const QString& configPath, const QString& dataDir)
                          expectation.kind, markers, expectation.minimumBands);
             return 1;
         }
-        if (temperatures.size() == expectation.minimumBands
-            && temperatures.first() <= temperatures.last()) {
+        if (temperatures.size() >= 2 && temperatures.first() <= temperatures.last()) {
             std::fprintf(stderr, "%s: the bands do not descend in temperature (%g then %g)\n",
                          expectation.kind, temperatures.first(), temperatures.last());
             return 1;

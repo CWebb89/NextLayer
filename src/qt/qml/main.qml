@@ -1181,6 +1181,11 @@ Window {
                 exportMenu.anchorY = Math.min(y + 6, root.height - 160)
                 exportMenu.visible = true
             }
+            onSliceMenuRequested: (x, y) => {
+                sliceMenu.anchorX = Math.min(x, root.width - 320)
+                sliceMenu.anchorY = Math.min(y + 6, root.height - 160)
+                sliceMenu.visible = true
+            }
             onAddRequested: (x, y) => {
                 root.addMenuAt = Qt.point(x, y)
                 root.addMenuVisible = !root.addMenuVisible
@@ -1762,7 +1767,31 @@ Window {
         onDismissed: root.plateMenuVisible = false
     }
 
-    // The export button's arrow: the two things that can be done with a sliced
+    // The slice button's chevron: the active plate, or every plate in the project.
+    MenuPanel {
+        id: sliceMenu
+        parent: Overlay.overlay
+        anchors.fill: parent
+        visible: false
+        z: 110
+        menuWidth: 300
+        entries: [
+            { id: "slicePlate", label: "Slice plate", hint: "Ctrl+B" },
+            { id: "sliceAll", label: "Slice all plates",
+              hint: root.plates.length > 1 ? root.plates.length + " plates" : "only one plate",
+              disabled: root.plates.length < 2 }
+        ]
+        onTriggered: (id) => {
+            sliceMenu.visible = false
+            if (id === "sliceAll")
+                footer.startSliceAll()
+            else
+                footer.startSlice()
+        }
+        onDismissed: sliceMenu.visible = false
+    }
+
+    // The export button's chevron: the two things that can be done with a sliced
     // plate, one of which does not involve a file dialog at all.
     MenuPanel {
         id: exportMenu

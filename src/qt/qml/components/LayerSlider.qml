@@ -32,6 +32,10 @@ Item {
     signal contextRequested(real x, real y)
 
     property string draggingHandle: ""
+    // Both handles on one value is the common start state (layer 1 only). Picking
+    // "lower" there clamps it to the upper handle and the range can never grow,
+    // so the first movement decides which handle the drag is taking.
+    property bool coincidentDrag: false
     property real liveLower: root.lowerValue
     property real liveUpper: root.upperValue
     property real pressY: 0
@@ -236,23 +240,41 @@ Item {
 
         onPressed: function(mouse) {
             const value = root.valueAtY(mapToItem(root, mouse.x, mouse.y).y)
-            root.draggingHandle = Math.abs(value - root.liveLower) <= Math.abs(value - root.liveUpper)
-                                  ? "lower" : "upper"
+            root.coincidentDrag = Math.abs(root.liveLower - root.liveUpper)
+                                  < Math.max(root.step, 0.001) * 0.5
+            root.draggingHandle = root.coincidentDrag
+                                  ? ""
+                                  : (Math.abs(value - root.liveLower) <= Math.abs(value - root.liveUpper)
+                                     ? "lower" : "upper")
             root.pressY = mapToItem(root, mouse.x, mouse.y).y
             root.pressValue = value
-            root.applyValue(value)
+            if (!root.coincidentDrag)
+                root.applyValue(value)
         }
 
         onPositionChanged: function(mouse) {
-            if (root.draggingHandle.length === 0 || root.travel <= 0)
+            if (root.travel <= 0)
                 return
             const local = mapToItem(root, mouse.x, mouse.y).y
-            root.applyValue(root.clamp(root.pressValue
-                                       - (local - root.pressY) * root.range / root.travel))
+            const target = root.clamp(root.pressValue
+                                      - (local - root.pressY) * root.range / root.travel)
+            if (root.coincidentDrag) {
+                if (target > root.liveUpper + root.step * 0.25)
+                    root.draggingHandle = "upper"
+                else if (target < root.liveLower - root.step * 0.25)
+                    root.draggingHandle = "lower"
+                else
+                    return
+                root.coincidentDrag = false
+            }
+            if (root.draggingHandle.length === 0)
+                return
+            root.applyValue(target)
         }
 
         onReleased: {
             root.draggingHandle = ""
+            root.coincidentDrag = false
             root.liveLower = root.lowerValue
             root.liveUpper = root.upperValue
         }

@@ -1,0 +1,51 @@
+name: Bug report
+description: Something sliced wrong, crashed, or does not draw.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A G-code problem needs the input that produced it. If the file cannot be
+        shared, the config dump plus the model's dimensions are still useful.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "About next-layer in the File menu, or the output of `next-layer --version`."
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Distribution, GPU and driver
+      placeholder: "Arch Linux, Radeon RX 6800, Mesa 25.0"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open model.stl
+        2. Select the Voron preset
+        3. Slice plate
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual
+      description: What did you expect, and what happened instead? Screenshots help for viewport problems.
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Config dump
+      description: "Attach the JSON printed by `next-layer model.stl --dump-config /tmp/config.json`."
+  - type: textarea
+    id: logs
+    attributes:
+      label: Terminal output
+      description: Run the application from a terminal and paste what it printed. Remove any host addresses or keys first.
