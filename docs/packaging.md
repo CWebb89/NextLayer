@@ -7,9 +7,10 @@ numbers are measured on this machine, 2026-11-08, `0.1.0`.
 
 | Artifact | Size | Who it is for |
 |---|---|---|
-| `NextLayer-<version>-x86_64.AppImage` | 268.7 MB | anyone who wants to run it without installing anything |
-| `next-layer-<version>.tar.gz` | 63.9 MB | the AUR package, and anyone unpacking it beside their own files |
+| `NextLayer-<version>-x86_64.AppImage` | 273.1 MB | anyone who wants to run it without installing anything |
+| `next-layer-<version>.tar.gz` | 68.8 MB | the AUR package, and anyone unpacking it beside their own files |
 | `update.json` | < 1 KB | the in-app update check |
+| `SHA256SUMS.txt` | < 1 KB | checksums for both artefacts, so a download can be verified |
 | `PKGBUILD`, `.SRCINFO`, desktop file, icon | — | pushed to the AUR |
 
 All three are built by `tools/package` and `tools/release`, on this machine, from
@@ -23,7 +24,7 @@ Both are viable for a Qt 6.12 app. They are not close for this one.
 
 | | AppImage | Flatpak |
 |---|---|---|
-| Download | 268.7 MB, self-contained | ~30 MB, plus the `org.kde.Platform` runtime at **~1.9 GB** (Qt, QtWebEngine, everything we link) |
+| Download | 273.1 MB, self-contained | ~30 MB, plus the `org.kde.Platform` runtime at **~1.9 GB** (Qt, QtWebEngine, everything we link) |
 | Sandbox | none — runs as you, with your files | bubblewrap; `--filesystem=home` still needed for the preset importer and projects |
 | 3D viewport | works today | needs `--device=dri` and a GL driver inside the runtime; Qt Quick 3D through a sandboxed GL stack is the part most likely to break on someone else's machine |
 | QtWebEngine | bundled | inside the runtime, one shared copy |
@@ -50,9 +51,12 @@ There is no CI build, deliberately:
    `dist/update.json`.
 3. `tools/package appimage` — writes the AppImage.
 4. `git tag -a v<version> -m "next-layer <version>" && git push origin v<version>`.
-5. `gh release create v<version> dist/next-layer-<version>.tar.gz dist/update.json \
-   dist/NextLayer-<version>-x86_64.AppImage --title 'next-layer <version>' --notes '…'`
-6. `tools/package aur` and push `dist/aur/` to the AUR repository.
+5. `sha256sum` both artefacts into `dist/SHA256SUMS.txt`.
+6. `gh release create v<version> …` (or `upload --clobber` on an existing one)
+   with the tarball, the AppImage, `update.json` and `SHA256SUMS.txt`.
+7. `tools/package aur` and push `dist/aur/` to the AUR repository. The PKGBUILD's
+   `sha256sums` must equal the tarball's — `tools/package aur` takes it from the
+   file it just built, so a mismatch means the wrong tarball is in `dist/`.
 
 **Why no hosted-runner workflow builds this.** The binary links an engine whose
 dependency tree is tens of gigabytes and hours of compilation. A GitHub-hosted
