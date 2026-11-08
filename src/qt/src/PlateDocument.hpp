@@ -320,6 +320,11 @@ public:
     /// which plate is active: slicing every plate must not move the camera or the
     /// selection out from under the person who asked for it.
     QVector<next_layer::PlateSliceObject> sliceObjectsFor(int plate) const;
+    /// The active plate's objects as a project file stores them: geometry in each
+    /// object's own frame with the transform that places it, and each volume in the
+    /// object's frame. A 3MF has to carry the placement as a transform, so baking it
+    /// into the vertices -- which is what the slicer path wants -- would lose it.
+    QVector<next_layer::PlateSliceObject> projectObjects() const;
     /// Which plate lies under a point on the bed plane, or -1 for the gap between
     /// plates. Plates are drawn in a grid, so a double click anywhere on one is
     /// enough to say which plate was meant.

@@ -19,4 +19,9 @@ QString applicationVersion();
 /// version line differs.
 int brandGcode(const QString& path);
 
+/// sha256 of a toolpath's move and command lines, comments left out: the same
+/// slice run twice differs in its timestamp and UUIDs and nowhere else, so this
+/// is what two runs are compared by.
+QString toolpathDigest(const QString& path);
+
 }

@@ -20,10 +20,17 @@ complete inventory, this is the part you need before you start a print.
 
 ## Slicing and files
 
-- **A project saved as `.nextproj` is ours alone.** PrusaSlicer, OrcaSlicer and
-  the printer's own front end cannot read it, and this app cannot save their
-  `.3mf` project format — it can only *open* one. See
-  `docs/features.md` for the state of `.3mf` project export.
+- **A project saved as `.nextproj` is ours alone.** PrusaSlicer and OrcaSlicer
+  cannot read it. `File > Save project for another slicer` writes a `.3mf`
+  project instead, with the configuration and the object records they read, but
+  that file carries only the plate you are on, and this app does not read the
+  per-object overrides, layer-height profile or paint back out of it yet — it
+  reads the geometry, the placement and the plates. `docs/features.md` has the
+  measured state of both.
+- **Opening a single-object 3MF now honours the file.** A 3MF is treated as a
+  scene with its own placement rather than as a mesh to drop on the bed, which is
+  what the importer did before; an object exported from CAD at the origin opens at
+  the origin.
 - **Sequential printing** is exposed as settings with no scene arrangement: the
   slicer will not stop you from arranging objects so the gantry hits them.
 - **A file written by a newer build is refused**, by design, with a message

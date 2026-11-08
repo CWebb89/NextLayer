@@ -70,6 +70,11 @@ public:
     /// wants: the numbers in the footer are the whole job, and each plate's
     /// toolpath is kept so switching to it shows what was sliced.
     Q_INVOKABLE void sliceAll();
+    /// Writes the active plate as a project file another slicer can open:
+    /// geometry, per-object settings, layer height profiles, paint and the
+    /// resolved configuration in one 3MF. Returns an empty string on success, or
+    /// the reason it failed.
+    Q_INVOKABLE QString exportProject3mf(const QString& path);
     void setModelPath(std::string modelPath);
     void setDocument(PlateDocument* document) { m_document = document; }
 

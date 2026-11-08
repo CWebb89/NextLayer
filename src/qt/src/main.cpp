@@ -671,23 +671,6 @@ QStringList specWords(const QString& spec)
     return spec.split(QLatin1Char(';'), Qt::SkipEmptyParts);
 }
 
-// The toolpath only: comment lines carry the generation timestamp and fresh
-// UUIDs, so they cannot be compared between two runs of the same slice.
-QString toolpathDigest(const QString& gcodePath)
-{
-    QFile file(gcodePath);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
-        return QStringLiteral("unreadable");
-    QCryptographicHash hash(QCryptographicHash::Sha256);
-    while (!file.atEnd()) {
-        const QByteArray line = file.readLine();
-        if (line.startsWith(';'))
-            continue;
-        hash.addData(line);
-    }
-    return QString::fromLatin1(hash.result().toHex());
-}
-
 bool applyTransformSpec(const QString& spec, Slic3r::App::InitParams& params)
 {
     for (const QString& token : specWords(spec)) {
@@ -836,6 +819,10 @@ int main(int argc, char* argv[])
     const QCommandLineOption project_test_option("project-test",
         "Save a plate to a project file, reload it into a cleared document, and slice the reloaded plate; CONFIG is a resolved config.",
         "CONFIG");
+    const QCommandLineOption export_project_option("export-project",
+        "Write the model as a project 3MF another slicer can open, then load that file "
+        "back and slice it: CONFIG,OUT. Fails when the two toolpaths differ.",
+        "CONFIG,OUT");
     const QCommandLineOption project_version_test_option("project-version-test",
         "Check the project file version policy: a file at this build's version, an older one "
         "and one with no version field load, and a newer one is refused with a reason. Prints "
@@ -934,7 +921,7 @@ int main(int argc, char* argv[])
                        settings_tab_option, paint_test_option, input_test_option, slider_test_option,
                        preset_dialog_option,
                        hover_test_option, panel_left_option, selftest_option, slice_all_option, plate_tools_option, slice_features_option,
-                       project_version_test_option, project_test_option, mesh_tools_option, update_option,
+                       project_version_test_option, project_test_option, export_project_option, mesh_tools_option, update_option,
                        update_install_option, multi_tool_option, print_host_test_option, print_host_start_option, apply_offsets_option, volume_settings_option, calibration_test_option, shape_test_option, keep_gcode_option, scene_selftest_option, preview_stats_option, vgcode_shot_option,
                        dump_presets_option, dump_presets_json_option, dump_fonts_option, dump_icons_option, dump_object_settings_option, preset_printer_option, preset_process_option, preset_filament_option, preset_filaments_option,
                        set_option, add_printer_option, save_preset_option, rename_preset_option,
@@ -1118,6 +1105,20 @@ int main(int argc, char* argv[])
         }
         return next_layer::runProjectSelftest(files.first(), parser.value(project_test_option),
                                               QString::fromStdString(dataDir()));
+    }
+
+    if (parser.isSet(export_project_option)) {
+        if (files.isEmpty()) {
+            std::fprintf(stderr, "--export-project needs a model\n");
+            return 2;
+        }
+        const QStringList parts = parser.value(export_project_option).split(QLatin1Char(','));
+        if (parts.size() != 2) {
+            std::fprintf(stderr, "--export-project expects CONFIG,OUT\n");
+            return 2;
+        }
+        return next_layer::runThreeMfExportSelftest(files.first(), parts.at(0), parts.at(1),
+                                                    QString::fromStdString(dataDir()));
     }
 
     if (parser.isSet(shape_test_option)) {
@@ -1900,7 +1901,7 @@ int main(int argc, char* argv[])
                          slicer->elapsedMs(), slicer->layerCount(), slicer->moveCount(),
                          slicer->gcodePath().toUtf8().constData());
             std::fprintf(stdout, "toolpath sha256 %s\n",
-                         qPrintable(toolpathDigest(slicer->gcodePath())));
+                         qPrintable(next_layer::toolpathDigest(slicer->gcodePath())));
             const QString keep = parser.value(keep_gcode_option);
             if (!keep.isEmpty()) {
                 QFile::remove(keep);

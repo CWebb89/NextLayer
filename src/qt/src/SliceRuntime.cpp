@@ -55,6 +55,8 @@
 #include <QStandardPaths>
 #include <QTemporaryDir>
 
+#include <miniz.h>
+
 #include "Scratch.hpp"
 
 #include <boost/filesystem/path.hpp>
@@ -391,23 +393,18 @@ std::optional<Slic3r::Domain::SelectionId> loadOne(CLIRuntime& cli, const std::s
 
 }
 
-bool SliceRuntime::slicePlate(const QVector<PlateSliceObject>& objects, const QString& configPath,
-                              const QString& gcodePath, QString& error,
-                              const QVector<PlateLayerGcode>& layerGcodes)
+std::optional<SelectionId> SliceRuntime::preparePlate(Runtime& runtime,
+                                                     const QVector<PlateSliceObject>& objects,
+                                                     const QString& configPath,
+                                                     const QString& gcodePath,
+                                                     const QVector<PlateLayerGcode>& layerGcodes,
+                                                     QString& error)
 {
-    if (objects.isEmpty()) {
-        error = QStringLiteral("there is nothing on the plate");
-        return false;
-    }
-
-    const std::scoped_lock lock(engineMutex());
-    Runtime& runtime = runtimeLocked();
-
     if (!m_plateDir.has_value() || !m_plateDir->isValid()) {
         m_plateDir.emplace(next_layer::scratchTemplate());
         if (!m_plateDir->isValid()) {
             error = QStringLiteral("could not create a scratch directory for the plate");
-            return false;
+            return std::nullopt;
         }
     }
 
@@ -419,7 +416,7 @@ bool SliceRuntime::slicePlate(const QVector<PlateSliceObject>& objects, const QS
     const std::string seed = m_plateDir->filePath(QStringLiteral("seed.stl")).toStdString();
     if (!Slic3r::Biz::store_stl(seed, objects.first().mesh, true, "next-layer")) {
         error = QStringLiteral("could not stage the plate's first object");
-        return false;
+        return std::nullopt;
     }
 
     ProjectInteractor& project = runtime.cli.project_interactor();
@@ -427,7 +424,7 @@ bool SliceRuntime::slicePlate(const QVector<PlateSliceObject>& objects, const QS
         loadOne(runtime.cli, seed, configPath.toStdString(), gcodePath.toStdString());
     if (!projectId.has_value()) {
         error = QStringLiteral("the engine could not load the plate");
-        return false;
+        return std::nullopt;
     }
     project.select_project(*projectId);
 
@@ -442,7 +439,7 @@ bool SliceRuntime::slicePlate(const QVector<PlateSliceObject>& objects, const QS
         Slic3r::Domain::ModelVolume* volume =
             Slic3r::Biz::Algorithms::ModelVolume::construct_ptr(object, std::move(mesh));
         object->add_volume(*volume);
-        object->add_instance();
+        object->add_instance(source.transform);
 
         // Modifier volumes join the same object: the FDM slice path slices each
         // volume by type and booleans them, so negatives subtract, modifiers
@@ -467,7 +464,7 @@ bool SliceRuntime::slicePlate(const QVector<PlateSliceObject>& objects, const QS
                                          QString::fromStdString(issue->second.message));
                         drainMainThread();
                         project.remove_project(*projectId);
-                        return false;
+                        return std::nullopt;
                     }
                 }
                 object->add_volume(*added);
@@ -494,7 +491,7 @@ bool SliceRuntime::slicePlate(const QVector<PlateSliceObject>& objects, const QS
                                  QString::fromStdString(issue->second.message));
                 drainMainThread();
     project.remove_project(*projectId);
-                return false;
+                return std::nullopt;
             }
         }
 
@@ -524,7 +521,7 @@ bool SliceRuntime::slicePlate(const QVector<PlateSliceObject>& objects, const QS
         error = QStringLiteral("the plate has no bed to slice");
         drainMainThread();
     project.remove_project(*projectId);
-        return false;
+        return std::nullopt;
     }
     for (const std::unique_ptr<Slic3r::Domain::BedInstance>& instancePtr : bedInstances) {
         Slic3r::Domain::BedInstance& instance = *instancePtr;
@@ -537,18 +534,6 @@ bool SliceRuntime::slicePlate(const QVector<PlateSliceObject>& objects, const QS
         }
     }
 
-    Slic3r::Biz::Slicing::SlicingInteractor& slicing = project.slicing_interactor();
-    Slic3r::Biz::StatusCache& statusCache = project.status_cache();
-
-    const SlicingId slicingId = project.selected_bed_slicing_id();
-    const Slic3r::Domain::BedInstance* bed =
-        selected.find_bed_instance_by_id(slicingId.bed_instance_id);
-    if (bed == nullptr) {
-        error = QStringLiteral("the plate has no bed to slice");
-        drainMainThread();
-    project.remove_project(*projectId);
-        return false;
-    }
 
     // Per-layer custom G-code, pauses and tool changes are the engine's own
     // `CustomGCode::Info`, held on the bed instance the slice runs on. The
@@ -582,6 +567,42 @@ bool SliceRuntime::slicePlate(const QVector<PlateSliceObject>& objects, const QS
             instancePtr->custom_gcode = info;
     }
 
+    return projectId;
+}
+
+bool SliceRuntime::slicePlate(const QVector<PlateSliceObject>& objects, const QString& configPath,
+                              const QString& gcodePath, QString& error,
+                              const QVector<PlateLayerGcode>& layerGcodes)
+{
+    if (objects.isEmpty()) {
+        error = QStringLiteral("there is nothing on the plate");
+        return false;
+    }
+
+    const std::scoped_lock lock(engineMutex());
+    Runtime& runtime = runtimeLocked();
+
+    const std::optional<SelectionId> projectId =
+        preparePlate(runtime, objects, configPath, gcodePath, layerGcodes, error);
+    if (!projectId.has_value())
+        return false;
+
+    ProjectInteractor& project = runtime.cli.project_interactor();
+    Project& selected = project.selected_project();
+    Slic3r::Domain::ConfigContainer& configContainer = project.selected_config_container();
+    Slic3r::Biz::Slicing::SlicingInteractor& slicing = project.slicing_interactor();
+    Slic3r::Biz::StatusCache& statusCache = project.status_cache();
+
+    const SlicingId slicingId = project.selected_bed_slicing_id();
+    const Slic3r::Domain::BedInstance* bed =
+        selected.find_bed_instance_by_id(slicingId.bed_instance_id);
+    if (bed == nullptr) {
+        error = QStringLiteral("the plate has no bed to slice");
+        drainMainThread();
+        project.remove_project(*projectId);
+        return false;
+    }
+
     slicing.update_process(selected.model(), selected.metadata(),
                            configContainer.selected_preset().metadata(),
                            configContainer.build_print_config(), *bed);
@@ -592,7 +613,7 @@ bool SliceRuntime::slicePlate(const QVector<PlateSliceObject>& objects, const QS
         })) {
         error = QStringLiteral("slicing never reached a terminal status");
         drainMainThread();
-    project.remove_project(*projectId);
+        project.remove_project(*projectId);
         return false;
     }
 
@@ -607,7 +628,7 @@ bool SliceRuntime::slicePlate(const QVector<PlateSliceObject>& objects, const QS
         }
         error = message;
         drainMainThread();
-    project.remove_project(*projectId);
+        project.remove_project(*projectId);
         return false;
     }
 
@@ -628,20 +649,112 @@ bool SliceRuntime::slicePlate(const QVector<PlateSliceObject>& objects, const QS
     if (!exported) {
         error = QStringLiteral("the export never finished");
         drainMainThread();
-    project.remove_project(*projectId);
+        project.remove_project(*projectId);
         return false;
     }
     if (exportListener.export_error.has_value()) {
         error = QStringLiteral("export failed: %1")
                     .arg(QString::fromStdString(exportListener.export_error.value()));
         drainMainThread();
-    project.remove_project(*projectId);
+        project.remove_project(*projectId);
         return false;
     }
 
     drainMainThread();
     project.remove_project(*projectId);
     return true;
+}
+
+namespace {
+
+/// Adds the plate records the classic 3MF writer does not know about: every
+/// object on plate one, named. A reader that understands them puts the objects
+/// back where they were instead of packing the bed, and OrcaSlicer reads the same
+/// file.
+bool writePlateRecords(const QString& path, int objectCount)
+{
+    QString xml = QStringLiteral("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<config>\n");
+    for (int object = 1; object <= objectCount; ++object) {
+        xml += QStringLiteral("  <object id=\"%1\">\n"
+                              "    <metadata key=\"plater_id\" value=\"1\"/>\n"
+                              "  </object>\n")
+                   .arg(object);
+    }
+    xml += QStringLiteral("  <plate>\n    <metadata key=\"plater_id\" value=\"1\"/>\n");
+    for (int object = 1; object <= objectCount; ++object) {
+        xml += QStringLiteral("    <model_instance>\n"
+                              "      <metadata key=\"object_id\" value=\"%1\"/>\n"
+                              "      <metadata key=\"instance_id\" value=\"0\"/>\n"
+                              "    </model_instance>\n")
+                   .arg(object);
+    }
+    xml += QStringLiteral("  </plate>\n</config>\n");
+
+    const QByteArray body = xml.toUtf8();
+    const mz_bool added = mz_zip_add_mem_to_archive_file_in_place(
+        path.toUtf8().constData(), "Metadata/model_settings.config", body.constData(),
+        size_t(body.size()), nullptr, 0, MZ_BEST_COMPRESSION);
+    return added == MZ_TRUE;
+}
+
+} // namespace
+
+bool SliceRuntime::exportPlate3mf(const QVector<PlateSliceObject>& objects,
+                                  const QString& configPath, const QString& outPath,
+                                  QString& error,
+                                  const QVector<PlateLayerGcode>& layerGcodes)
+{
+    if (objects.isEmpty()) {
+        error = QStringLiteral("there is nothing on the plate");
+        return false;
+    }
+
+    const std::scoped_lock lock(engineMutex());
+    Runtime& runtime = runtimeLocked();
+
+    const std::optional<SelectionId> projectId =
+        preparePlate(runtime, objects, configPath, outPath, layerGcodes, error);
+    if (!projectId.has_value())
+        return false;
+
+    ProjectInteractor& project = runtime.cli.project_interactor();
+    Project& selected = project.selected_project();
+    const Slic3r::Domain::ConfigContainer& configContainer =
+        project.selected_config_container();
+
+    // The plate's per-bed records -- wipe tower and per-layer markers -- are
+    // written by the same call: the exporter reads them from the beds, not from
+    // anything passed alongside.
+    Slic3r::Domain::WipeTowersOnBeds wipeTowers;
+    Slic3r::Domain::CustomGCodesOnBeds customGcodes;
+    int bedIndex = 0;
+    for (const std::unique_ptr<Slic3r::Domain::BedInstance>& instancePtr :
+         configContainer.bed_instances()) {
+        const int index = bedIndex++;
+        if (instancePtr->custom_gcode.has_value()
+            && !instancePtr->custom_gcode->gcodes.empty())
+            customGcodes[index] = *instancePtr->custom_gcode;
+        wipeTowers[index] = instancePtr->wipe_tower;
+    }
+
+    // PrusaSlicer's own project format, which OrcaSlicer reads: the classic
+    // `Slic3r_PE.config` and `Slic3r_PE_model.config` pair. The engine's newer
+    // `PrusaSlicer3_project.json` writer is deliberately not used here -- it
+    // round-trips in this engine alone and is invisible to OrcaSlicer.
+    const bool written = Slic3rLegacy::store_3mf_legacy(
+        outPath.toStdString().c_str(), &selected.model(), configContainer.build_print_config(),
+        configContainer.selected_preset().hw_config, /*fullpath_sources=*/true, wipeTowers,
+        customGcodes);
+    const bool appended = written && writePlateRecords(outPath, int(objects.size()));
+
+    if (!written)
+        error = QStringLiteral("the engine could not write %1").arg(outPath);
+    else if (!appended)
+        error = QStringLiteral("could not add the plate records to %1").arg(outPath);
+
+    drainMainThread();
+    project.remove_project(*projectId);
+    return written && appended;
 }
 
 void SliceRuntime::reloadPresets()

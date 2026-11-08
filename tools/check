@@ -561,6 +561,42 @@ else
     __ok "project file: $project_loaded[2] objects with $project_loaded[3] override(s), $project_loaded[4] profile band(s) and paint survived the round trip, and slice to $project_sliced[2] layers"
 end
 
+# A 3MF project has to be a project another slicer can open, not a container of
+# our own: the archive has to hold the geometry, the print config and the object
+# records, and this app has to be able to reopen it and slice the same toolpath.
+set -l three_mf /tmp/nl-check-project.3mf
+rm -f $three_mf
+set -l three_out (env QT_QPA_PLATFORM=eglfs XDG_DATA_HOME=$tools_home $bin $root/oracle/models/bridge_30.stl --export-project $tools_cfg,$three_mf 2>&1)
+set -l three_rc $status
+set -l three_sliced (string match -r 'document: ([0-9]+) layer\(s\), ([0-9]+) extruding move\(s\), ([0-9]+\.[0-9]+) mm' -- $three_out)
+set -l three_again (string match -r 'project: ([0-9]+) layer\(s\), ([0-9]+) extruding move\(s\), ([0-9]+\.[0-9]+) mm' -- $three_out)
+set -l three_arrangement (string match -r 'reopened: ([0-9]+) object\(s\), arrangement off by ([0-9]+\.[0-9]+) mm' -- $three_out)
+set -l three_archive ""
+set -l three_settings 0
+if test -f $three_mf
+    # Read out of the archive rather than trusted from the writer's exit code: the
+    # entries OrcaSlicer and PrusaSlicer look for, and the resolved settings block.
+    set three_archive (python3 -c "import sys,zipfile; z=zipfile.ZipFile(sys.argv[1]); n=set(z.namelist()); need=['3D/3dmodel.model','Metadata/Slic3r_PE.config','Metadata/Slic3r_PE_model.config','Metadata/model_settings.config']; print(' '.join(e for e in need if e not in n) or 'complete'); print(len(z.read('Metadata/Slic3r_PE.config').decode().splitlines()))" $three_mf 2>/dev/null)
+end
+set -l three_missing ""
+if test (count $three_archive) -ge 2
+    set three_missing $three_archive[1]
+    set three_settings $three_archive[2]
+end
+if test $three_rc -ne 0
+    __bad "3MF project: exit $three_rc, see "(string join ' ' (string match -r 'export failed.*|does not open.*|slices differently.*|changed the arrangement.*' -- $three_out | head -n 2))
+else if test -z "$three_missing" -o "$three_missing" != complete
+    __bad "3MF project: the archive is missing $three_missing"
+else if test $three_settings -lt 100
+    __bad "3MF project: the settings block has $three_settings lines"
+else if test (count $three_sliced) -lt 4 -o (count $three_again) -lt 4
+    __bad '3MF project: the round trip printed no slice measurements'
+else if test (count $three_arrangement) -lt 3 -o "$three_arrangement[2]" != 2
+    __bad "3MF project: the reopened plate holds $three_arrangement[2] object(s)"
+else
+    __ok "3MF project: $three_settings keys of configuration, geometry, object and plate records in one archive; reopened as $three_arrangement[2] objects (arrangement off by $three_arrangement[3] mm) and sliced the same $three_again[2] layers, $three_again[3] moves, $three_again[4] mm of filament as the plate itself"
+end
+
 # User-preset gate: a preset a person saves has to survive a restart, resolve
 # back into a slice and be renameable and deletable. The vendor catalogs write
 # `id: 'Anycubic'` where the engine's own bundles write `id: Anycubic`, so this

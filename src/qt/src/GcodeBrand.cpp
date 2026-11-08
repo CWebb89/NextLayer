@@ -4,6 +4,7 @@
 #include "GcodeBrand.hpp"
 
 #include <QDateTime>
+#include <QCryptographicHash>
 #include <QFile>
 #include <QStringList>
 
@@ -125,6 +126,21 @@ int brandGcode(const QString& path)
     const bool written = file.write(body) == body.size();
     file.close();
     return written ? changed : -1;
+}
+
+QString toolpathDigest(const QString& path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return QStringLiteral("unreadable");
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    while (!file.atEnd()) {
+        const QByteArray line = file.readLine();
+        if (line.startsWith(';'))
+            continue;
+        hash.addData(line);
+    }
+    return QString::fromLatin1(hash.result().toHex());
 }
 
 }

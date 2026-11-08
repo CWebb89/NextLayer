@@ -10,6 +10,7 @@
 
 #include <Slic3r/Domain/LayerHeightProfile.hpp>
 #include <Slic3r/Domain/ModelVolume.hpp>
+#include <Slic3r/Domain/SelectionId.hpp>
 #include <Slic3r/Domain/TriangleMesh.hpp>
 #include <Slic3r/Domain/TriangleSelector.hpp>
 
@@ -48,7 +49,13 @@ struct PlateLayerGcode
 struct PlateSliceObject
 {
     QString name;
+    /// Geometry in the object's own frame. The slicer path hands it over already
+    /// placed -- every vertex in printer coordinates, `transform` left identity,
+    /// which is why a slice is unaffected by how an object was moved; the project
+    /// export hands it over unplaced with the transform that places it, because a
+    /// 3MF has to record where the object sits rather than bake it into the mesh.
     Slic3r::Domain::TriangleMesh mesh;
+    Slic3r::Domain::Transformation transform;
     QVector<PlateSliceVolume> volumes;
     QByteArray settingsJson;
     Slic3r::Domain::ZHeightPairs layerHeights;
@@ -86,6 +93,15 @@ public:
     bool slicePlate(const QVector<PlateSliceObject>& objects, const QString& configPath,
                     const QString& gcodePath, QString& error,
                     const QVector<PlateLayerGcode>& layerGcodes = {});
+
+    /// Writes the plate as a project file in the format PrusaSlicer and
+    /// OrcaSlicer read: the objects and their volumes in one model, their own
+    /// settings, layer height profiles and painted facets, and the resolved
+    /// printer/print/filament configuration, all in one 3MF. What the format
+    /// cannot carry is reported by the caller rather than dropped here.
+    bool exportPlate3mf(const QVector<PlateSliceObject>& objects, const QString& configPath,
+                        const QString& outPath, QString& error,
+                        const QVector<PlateLayerGcode>& layerGcodes = {});
 
     /// The engine's printer-model list as JSON. Empty when the bundle has none.
     /// Re-reads every preset bundle from disk. A vendor that gained presets on
@@ -128,6 +144,16 @@ public:
     static std::string dataDirForParams();
 
 private:
+    /// Builds the engine project for a plate: the objects with their volumes,
+    /// settings, layer height profiles and paint, the bed they are attached to
+    /// and the per-layer markers. Returns the project's id with it loaded and
+    /// selected, or nothing after removing it on failure. Both the slice and the
+    /// project export start here, so a file written for another slicer is the
+    /// same project the slicer itself would have run.
+    std::optional<Slic3r::Domain::SelectionId> preparePlate(
+        Runtime& runtime, const QVector<PlateSliceObject>& objects, const QString& configPath,
+        const QString& gcodePath, const QVector<PlateLayerGcode>& layerGcodes, QString& error);
+
     std::optional<QTemporaryDir> m_plateDir;
 };
 

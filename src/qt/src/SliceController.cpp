@@ -11,6 +11,7 @@
 #include <QByteArray>
 #include <QFile>
 #include <QFileInfo>
+#include <QUrl>
 
 #include "Scratch.hpp"
 #include <QList>
@@ -86,6 +87,36 @@ SliceController::~SliceController()
 bool SliceController::busy() const
 {
     return m_busy;
+}
+
+QString SliceController::exportProject3mf(const QString& path)
+{
+    if (m_document == nullptr)
+        return QStringLiteral("There is nothing on the plate");
+
+    // A file dialog hands over a URL, and a person typing a path into a shell does
+    // not; both mean the same file.
+    const QString target = path.startsWith(QLatin1String("file:")) ? QUrl(path).toLocalFile() : path;
+    if (target.isEmpty())
+        return QStringLiteral("There is no file to write");
+
+    const QVector<next_layer::PlateSliceObject> objects = m_document->projectObjects();
+    if (objects.isEmpty())
+        return QStringLiteral("There is nothing on the plate");
+
+    const QByteArray json = m_settings->configJson().toUtf8();
+    QFile config(m_configPath);
+    const bool written = config.open(QIODevice::WriteOnly | QIODevice::Truncate)
+                      && config.write(json) == json.size();
+    config.close();
+    if (!written)
+        return QStringLiteral("Could not write the settings file");
+
+    QString engineError;
+    if (!m_runtime.exportPlate3mf(objects, m_configPath, target, engineError,
+                                 m_document->layerGcodeList()))
+        return QStringLiteral("Export failed: %1").arg(engineError);
+    return {};
 }
 
 QString SliceController::status() const

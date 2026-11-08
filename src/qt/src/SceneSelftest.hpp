@@ -41,6 +41,13 @@ int runSliceFeaturesSelftest(const QString& model,
 int runProjectSelftest(const QString& model, const QString& configPath,
                        const QString& dataDir);
 
+/// Writes a plate with per-object settings, a layer height profile and paint as
+/// a project 3MF another slicer can open, then loads that file back through the
+/// engine and slices it. The two toolpaths must hash the same: a file that drops
+/// an override or a painted facet loads fine and slices something else.
+int runThreeMfExportSelftest(const QString& model, const QString& configPath,
+                             const QString& outPath, const QString& dataDir);
+
 // Proves the two CAD-suite moves reach the slicer: a primitive added straight
 // onto the plate is a real object that prints, and a negative volume attached to
 // one subtracts from it. Both are measured in the exported toolpath -- a

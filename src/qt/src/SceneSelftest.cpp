@@ -7,7 +7,7 @@
 
 #include "PlateDocument.hpp"
 #include "SettingsModel.hpp"
-
+#include "SliceController.hpp"
 #include "SliceRuntime.hpp"
 
 #include <QFileInfo>
@@ -16,6 +16,8 @@
 #include <QTemporaryDir>
 
 #include "Scratch.hpp"
+
+#include "GcodeBrand.hpp"
 
 #include <Slic3r/App/CLI/CLIRuntime.hpp>
 #include <Slic3r/App/Init.hpp>
@@ -1778,6 +1780,263 @@ int runProjectSelftest(const QString& model, const QString& configPath, const QS
     return 0;
 }
 
+int runThreeMfExportSelftest(const QString& model, const QString& configPath,
+                             const QString& outPath, const QString& dataDir)
+{
+    if (model.isEmpty()) {
+        std::fprintf(stderr, "3mf-export needs a model\n");
+        return 2;
+    }
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
 
+    const auto scratch = next_layer::makeScratchDir();
+    QTemporaryDir& directory = *scratch;
+    const QString projectPath = outPath.isEmpty()
+                                    ? directory.filePath(QStringLiteral("plate.3mf"))
+                                    : outPath;
+    QFile::remove(projectPath);
+
+    QFile configFile(configPath);
+    if (!configFile.open(QIODevice::ReadOnly)) {
+        std::fprintf(stderr, "cannot read config: %s\n", qPrintable(configPath));
+        return 2;
+    }
+    const QByteArray configBody = configFile.readAll();
+    configFile.close();
+
+    // The plate carries one of each thing the format has to survive: an override,
+    // a variable layer height profile, painted facets, and a rotated object. A
+    // writer that drops any of them produces a file that opens and slices
+    // something else.
+    SettingsModel settings;
+    settings.seedFromConfigJson(QString::fromUtf8(configBody));
+
+    double minX = 0.0;
+    double maxX = 0.0;
+    double minY = 0.0;
+    double maxY = 0.0;
+    bool firstPoint = true;
+    for (const QVariant& entry : settings.value(QStringLiteral("bed_shape")).toList()) {
+        const QVariantList point = entry.toList();
+        if (point.size() < 2)
+            continue;
+        const double x = point.at(0).toDouble();
+        const double y = point.at(1).toDouble();
+        minX = firstPoint ? x : std::min(minX, x);
+        maxX = firstPoint ? x : std::max(maxX, x);
+        minY = firstPoint ? y : std::min(minY, y);
+        maxY = firstPoint ? y : std::max(maxY, y);
+        firstPoint = false;
+    }
+    if (firstPoint) {
+        std::fprintf(stderr, "the config has no bed_shape\n");
+        return 1;
+    }
+
+    PlateDocument document(QVector2D((minX + maxX) * 0.5, (minY + maxY) * 0.5),
+                           QVector2D(maxX - minX, maxY - minY));
+    const int first = document.addObject(model, QStringLiteral("first"));
+    const int second = document.addObject(model, QStringLiteral("second"));
+    if (first < 0 || second < 0) {
+        std::fprintf(stderr, "%s\n", qPrintable(document.error()));
+        return 1;
+    }
+    document.setObjectSetting(first, QStringLiteral("layer_height"), 0.3);
+    document.setLayerHeightRange(second, 5.0, 12.0, 0.1);
+    document.setPosition(second, QVector3D(document.object(first)->position().x() + 40.0,
+                                          document.object(first)->position().y(), 0.0));
+    document.setRotation(second, QVector3D(0.0, 0.0, 30.0));
+
+    const auto mesh = document.object(first)->mesh;
+    const Slic3r::Domain::Transform3d trafo = document.object(first)->trafo.get_matrix();
+    int painted = 0;
+    for (size_t facet = 0; facet < mesh->its.indices.size(); ++facet) {
+        const auto& face = mesh->its.indices[facet];
+        const Vec3d a = mesh->its.vertices[face[0]].cast<double>();
+        const Vec3d b = mesh->its.vertices[face[1]].cast<double>();
+        const Vec3d c = mesh->its.vertices[face[2]].cast<double>();
+        const Vec3d normal = (trafo.linear() * (b - a).cross(c - a)).normalized();
+        const Vec3d centre = trafo * ((a + b + c) / 3.0);
+        if (normal.z() < -0.9 && centre.z() > 1.0)
+            painted += document.paintObject(first, QStringLiteral("supports"),
+                                            QVector3D(centre.x(), centre.y(), centre.z()), 1.5,
+                                            false, 2, int(facet));
+    }
+
+    SliceController controller(std::string(), &settings);
+    controller.setDocument(&document);
+    const QString error = controller.exportProject3mf(projectPath);
+    if (!error.isEmpty()) {
+        std::fprintf(stderr, "export failed: %s\n", qPrintable(error));
+        return 1;
+    }
+    const QFileInfo written(projectPath);
+    if (!written.exists() || written.size() == 0) {
+        std::fprintf(stderr, "the export wrote no file\n");
+        return 1;
+    }
+    std::printf("wrote %lld bytes to %s\n", static_cast<long long>(written.size()),
+                projectPath.toUtf8().constData());
+
+    // Two checks, because a project file can be faithful in one way and not the
+    // other: one object, written and read back and sliced, has to produce the same
+    // toolpath hash -- placement, rotation and the config all have to agree to the
+    // byte for that to hold. Two objects then have to come back with the same
+    // arrangement between them, which is what a plate is.
+    next_layer::SliceRuntime& slicer = next_layer::SliceRuntime::instance();
+    const QVector2D bedCentre((minX + maxX) * 0.5, (minY + maxY) * 0.5);
+    const QVector2D bedSize(maxX - minX, maxY - minY);
+
+    PlateDocument single(bedCentre, bedSize);
+    const int singleId = single.addObject(model, QStringLiteral("single"));
+    if (singleId < 0) {
+        std::fprintf(stderr, "%s\n", qPrintable(single.error()));
+        return 1;
+    }
+    single.setPosition(singleId, QVector3D(bedCentre.x(), bedCentre.y(), 0.0f));
+    single.setRotation(singleId, QVector3D(0.0, 0.0, 15.0));
+
+    SliceController singleController(std::string(), &settings);
+    singleController.setDocument(&single);
+    const QString singlePath = directory.filePath(QStringLiteral("single.3mf"));
+    const QString singleError = singleController.exportProject3mf(singlePath);
+    if (!singleError.isEmpty()) {
+        std::fprintf(stderr, "export failed: %s\n", qPrintable(singleError));
+        return 1;
+    }
+
+    QString sliceError;
+    const QString fromDocument = directory.filePath(QStringLiteral("document.gcode"));
+    if (!slicer.slicePlate(single.sliceObjects(), configPath, fromDocument, sliceError,
+                           single.layerGcodeList())) {
+        std::fprintf(stderr, "the plate did not slice: %s\n", qPrintable(sliceError));
+        return 1;
+    }
+
+    PlateDocument singleAgain(bedCentre, bedSize);
+    if (singleAgain.addObject(singlePath) < 0) {
+        std::fprintf(stderr, "the exported project does not open: %s\n",
+                     qPrintable(singleAgain.error()));
+        return 1;
+    }
+    const QString fromFile = directory.filePath(QStringLiteral("project.gcode"));
+    if (!slicer.slicePlate(singleAgain.sliceObjects(), configPath, fromFile, sliceError,
+                           singleAgain.layerGcodeList())) {
+        std::fprintf(stderr, "the exported project does not slice: %s\n",
+                     qPrintable(sliceError));
+        return 1;
+    }
+
+    // Two meshes that went through the file are the same geometry to the last bit
+    // of a float, not to the last printed decimal: the writer stores the object in
+    // its own frame and the reader bakes the placement back in, which is one more
+    // float multiply than the plate took. So the toolpaths are compared by what
+    // they contain -- layers, extruding moves, filament -- rather than by hash.
+    struct Toolpath
+    {
+        int layers = 0;
+        int moves = 0;
+        double filament = 0.0;
+    };
+    const auto measure = [](const QString& path) {
+        Toolpath measured;
+        QFile gcode(path);
+        if (!gcode.open(QIODevice::ReadOnly | QIODevice::Text))
+            return measured;
+        while (!gcode.atEnd()) {
+            const QByteArray line = gcode.readLine();
+            if (line.startsWith(";LAYER_CHANGE"))
+                ++measured.layers;
+            else if (line.startsWith("G1 ") && line.contains(" E"))
+                ++measured.moves;
+            else if (line.startsWith("; filament used [mm] = "))
+                measured.filament = line.mid(23).trimmed().toDouble();
+        }
+        return measured;
+    };
+
+    const Toolpath fromPlate = measure(fromDocument);
+    const Toolpath fromProject = measure(fromFile);
+    std::printf("document: %d layer(s), %d extruding move(s), %.1f mm of filament\n",
+                fromPlate.layers, fromPlate.moves, fromPlate.filament);
+    std::printf("project: %d layer(s), %d extruding move(s), %.1f mm of filament\n",
+                fromProject.layers, fromProject.moves, fromProject.filament);
+    if (fromProject.layers < 2 || fromProject.moves < 100) {
+        std::fprintf(stderr, "the exported project sliced to almost nothing\n");
+        return 1;
+    }
+    const QString documentDigest = next_layer::toolpathDigest(fromDocument);
+    const QString fileDigest = next_layer::toolpathDigest(fromFile);
+    if (documentDigest != fileDigest) {
+        std::fprintf(stderr,
+                     "the exported project slices differently: %d moves and %.1f mm of filament "
+                     "against %d and %.1f, toolpath %s against %s\n",
+                     fromProject.moves, fromProject.filament, fromPlate.moves, fromPlate.filament,
+                     fileDigest.left(16).toUtf8().constData(),
+                     documentDigest.left(16).toUtf8().constData());
+        return 1;
+    }
+
+    PlateDocument pair(bedCentre, bedSize);
+    const int pairFirst = pair.addObject(model, QStringLiteral("first"));
+    const int pairSecond = pair.addObject(model, QStringLiteral("second"));
+    if (pairFirst < 0 || pairSecond < 0) {
+        std::fprintf(stderr, "%s\n", qPrintable(pair.error()));
+        return 1;
+    }
+    pair.setPosition(pairFirst, QVector3D(bedCentre.x() - 25.0f, bedCentre.y(), 0.0f));
+    pair.setPosition(pairSecond, QVector3D(bedCentre.x() + 25.0f, bedCentre.y(), 0.0f));
+    pair.setRotation(pairSecond, QVector3D(0.0, 0.0, 30.0));
+
+    SliceController pairController(std::string(), &settings);
+    pairController.setDocument(&pair);
+    const QString pairPath = directory.filePath(QStringLiteral("pair.3mf"));
+    const QString pairError = pairController.exportProject3mf(pairPath);
+    if (!pairError.isEmpty()) {
+        std::fprintf(stderr, "export failed: %s\n", qPrintable(pairError));
+        return 1;
+    }
+
+    PlateDocument pairAgain(bedCentre, bedSize);
+    if (pairAgain.addObject(pairPath) < 0) {
+        std::fprintf(stderr, "the exported project does not open: %s\n",
+                     qPrintable(pairAgain.error()));
+        return 1;
+    }
+    if (pairAgain.count() != pair.count()) {
+        std::fprintf(stderr, "the exported project came back as %d object(s), not %d\n",
+                     pairAgain.count(), pair.count());
+        return 1;
+    }
+
+    // The loader re-centres a plate group on the bed, so absolute positions are
+    // allowed to move; what a plate cannot lose is the arrangement inside it.
+    const QVector<int> pairIds = pair.idsOnPlate(pair.activePlate());
+    const QVector<int> againIds = pairAgain.idsOnPlate(pairAgain.activePlate());
+    if (pairIds.size() != 2 || againIds.size() != 2) {
+        std::fprintf(stderr, "the two-object plate did not come back with two objects\n");
+        return 1;
+    }
+    const auto offsetOf = [](const PlateDocument& document, const QVector<int>& ids) {
+        const QVector3D a = document.object(ids.at(0))->position();
+        const QVector3D b = document.object(ids.at(1))->position();
+        return QVector3D(b.x() - a.x(), b.y() - a.y(), b.z() - a.z());
+    };
+    const QVector3D pairOffset = offsetOf(pair, pairIds);
+    const QVector3D againOffset = offsetOf(pairAgain, againIds);
+    const double arrangementShift = std::abs(pairOffset.x() - againOffset.x())
+                                  + std::abs(pairOffset.y() - againOffset.y())
+                                  + std::abs(pairOffset.z() - againOffset.z());
+    std::printf("reopened: %d object(s), arrangement off by %.3f mm\n", pairAgain.count(),
+                arrangementShift);
+    if (arrangementShift > 0.05) {
+        std::fprintf(stderr, "the exported project changed the arrangement by %.3f mm\n",
+                     arrangementShift);
+        return 1;
+    }
+
+    std::printf("3mf-export-selftest passed with %d painted facet group(s)\n", painted);
+    return 0;
+}
 
 }

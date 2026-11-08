@@ -1072,7 +1072,13 @@ int PlateDocument::importObject(const QString& path, const QString& label, bool 
         return -1;
     }
 
-    const bool single = scene->objects.size() == 1 && scene->objects.front()->instances.size() <= 1;
+    // A 3MF is a scene file: its objects sit where its author put them, one
+    // instance each with that placement on it. Everything else that arrives in one
+    // piece is a mesh with no coordinates of its own, and keeps the placement
+    // behaviour this app has always had -- normalise to the bed, next free spot.
+    const bool authoredPlacement = local.endsWith(QLatin1String(".3mf"), Qt::CaseInsensitive);
+    const bool single = !authoredPlacement && scene->objects.size() == 1
+                        && scene->objects.front()->instances.size() <= 1;
     if (single)
         return importSceneObject(*scene->objects.front(),
                                  scene->objects.front()->instances.empty()
@@ -1080,30 +1086,20 @@ int PlateDocument::importObject(const QString& path, const QString& label, bool 
                                      : scene->objects.front()->instances.front(),
                                  local, label, placeOnBed, false);
 
-    // The engine hands back every object centred on its own bounding box, so a
-    // plate of fifteen parts arrives with all fifteen in the same spot. The
-    // build list is what keeps the arrangement: it names the placed objects in
-    // read order, one per object that comes back here, with the matrix that
-    // puts each one where its author had it.
+    // The engine hands each object back with its own instance transform, and those
+    // instances are what the build list said: baking the file's placement again
+    // would apply the author's rotation twice and cancel it. The build list is read
+    // only for what the engine does not model -- which plate an object was on.
     const next_layer::ThreeMfProject project = next_layer::readThreeMfProject(local);
-    int buildItems = 0;
-    for (const auto& objectPtr : scene->objects)
-        buildItems += int(objectPtr->instances.size());
-    const bool placed = project.valid && project.buildTransforms.size() == buildItems;
 
     pushUndo(QStringLiteral("Import %1").arg(QFileInfo(local).fileName()));
     QList<int> added;
-    int item = 0;
     for (const auto& objectPtr : scene->objects) {
         for (const auto& instance : objectPtr->instances) {
-            const next_layer::ThreeMfProject::Placement* placement =
-                placed && item < project.buildTransforms.size() ? &project.buildTransforms.at(item)
-                                                                : nullptr;
             const int id = importSceneObject(*objectPtr, instance, local, QString(), false, true,
-                                             placement);
+                                             nullptr);
             if (id >= 0)
                 added.push_back(id);
-            ++item;
         }
     }
     if (added.isEmpty()) {
@@ -1234,7 +1230,6 @@ int PlateDocument::importSceneObject(
 
     if (instance != nullptr && !placeOnBed && placement == nullptr)
         object.trafo = instance->get_transformation();
-
     if (placeOnBed || placement != nullptr) {
         if (placement != nullptr) {
             // Height is the author's: a print-in-place assembly is arranged so its
@@ -2519,6 +2514,36 @@ QVector<next_layer::PlateSliceObject> PlateDocument::sliceObjectsFor(int plate) 
     return objects;
 }
 
+QVector<next_layer::PlateSliceObject> PlateDocument::projectObjects() const
+{
+    QVector<next_layer::PlateSliceObject> objects;
+    objects.reserve(m_objects.size());
+    for (const Object& object : m_objects) {
+        if (object.plate != m_activePlate || !object.visible || object.mesh == nullptr)
+            continue;
+        next_layer::PlateSliceObject slice;
+        slice.name = object.displayName();
+        slice.mesh = *object.mesh;
+        slice.transform = object.trafo;
+        slice.settingsJson = settingsToJson(object.settings);
+        slice.layerHeights = object.layerHeights;
+        slice.supportPaint = object.supportPaint;
+        slice.seamPaint = object.seamPaint;
+        slice.toolPaint = object.toolPaint;
+        for (const Volume& volume : object.volumes) {
+            if (!volume.visible || volume.mesh == nullptr)
+                continue;
+            next_layer::PlateSliceVolume extra;
+            extra.mesh = *volume.mesh;
+            extra.mesh.transform(volume.trafo.get_matrix());
+            extra.type = volume.type;
+            extra.settingsJson = settingsToJson(volume.settings);
+            slice.volumes.push_back(std::move(extra));
+        }
+        objects.push_back(std::move(slice));
+    }
+    return objects;
+}
 
 void PlateDocument::setPrintSetup(const QString& printer, const QString& process,
                                   const QString& filament)

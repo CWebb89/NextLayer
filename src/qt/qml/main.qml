@@ -326,6 +326,7 @@ Window {
             break
         }
         case "saveProjectAs": saveProjectDialog.open(); break
+        case "saveProject3mf": saveProject3mfDialog.open(); break
         case "newPlate": root.newPlate(); break
         case "about": aboutDialog.open(); break
         case "quit": Qt.quit(); break
@@ -603,6 +604,15 @@ Window {
         return true
     }
 
+    function saveProject3mf(path) {
+        const error = sliceController.exportProject3mf(path)
+        if (error.length > 0) {
+            root.setStatus(error)
+            return false
+        }
+        root.setStatus("wrote " + path.split("/").pop())
+        return true
+    }
     function openProject(path) {
         const error = plateDocument.loadProject(path)
         if (error.length > 0) {
@@ -1882,6 +1892,7 @@ Window {
             { id: "openProject", label: "Open project…", keys: "Ctrl+Shift+O" },
             { id: "saveProject", label: "Save project", keys: "Ctrl+S" },
             { id: "saveProjectAs", label: "Save project as…", keys: "Ctrl+Shift+S" },
+            { id: "saveProject3mf", label: "Save project for another slicer…", keys: "" },
             { id: "sep1", label: "" },
             { id: "export", label: "Export G-code…", keys: "Ctrl+E" },
             { id: "sendToPrinter", label: "Send to printer…", keys: "" },
@@ -2010,6 +2021,15 @@ Window {
         fileMode: FileDialog.OpenFile
         nameFilters: ["next-layer project (*.nextproj)", "All files (*)"]
         onAccepted: root.openProject(selectedFile)
+    }
+
+    FileDialog {
+        id: saveProject3mfDialog
+        title: "Save project for another slicer"
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "3mf"
+        nameFilters: ["3MF project (*.3mf)"]
+        onAccepted: root.saveProject3mf(selectedFile)
     }
 
     FileDialog {
