@@ -8,22 +8,25 @@ Source: <https://github.com/CWebb89/NextLayer>
 
 ![The application with a printer set up and a model on the plate](docs/screenshots/model.png)
 
-Alpha, `0.1.0`, source-only. It slices and prints, and it does not yet do
-everything the mature slicers do — `docs/features.md` is the ledger, with every
-tab, tool and setting marked done, staged or blocked on the engine.
+Alpha, `0.1.0`. It slices and prints, and it does not yet do everything the mature
+slicers do — `docs/features.md` is the ledger, with every tab, tool and setting
+marked done, staged or blocked on the engine. What has been proven on hardware is
+recorded in `docs/real-prints.md`, and `docs/release-audit.md` is the honest
+version of every claim on this page, with the code behind each one.
 
 ## What it is
 
 - **A real engine underneath.** Supports, seams, variable layer height, adaptive
-  infill, the works — the parts of slicing that are geometry are the parts this
-  project does not rewrite.
-- **Built for tool changers.** Per-tool filaments, per-tool colours, tool
-  changes. No MMU, no single-nozzle colour mixing.
+  infill: the parts of slicing that are geometry come from the engine this project
+  links, not from code rewritten here.
+- **Built for tool changers.** Per-tool filaments, per-tool colours, tool changes;
+  no MMU and no single-nozzle colour mixing. Implemented, and not yet verified on
+  hardware: the only print recorded so far is on a single-extruder machine.
 - **A Qt Quick 3D interface.** Its own viewport, its own G-code preview, its own
   settings panel. Not a skin over a wxWidgets app.
 - **Local.** No account, no telemetry, no cloud. Projects are one file on your
   disk. It talks to a network at all only when you send a print to a host you
-  configured, or check for an update.
+  configured, or press *Check for updates* — both are listed in `docs/network.md`.
 
 ## What it is not
 
@@ -35,9 +38,11 @@ tab, tool and setting marked done, staged or blocked on the engine.
 
 ## Requirements
 
-Linux, a C++ compiler, CMake, Ninja, Qt 6.12 or newer (Quick, Quick3D, Svg,
-WebEngine, Network, OpenGL), fontconfig, and `fish` shell for the scripts in
-`tools/`. On Arch:
+Linux, a C++ compiler, CMake, Ninja, Qt 6.12 (Quick, Quick3D, Svg, WebEngine,
+Network, OpenGL), fontconfig, and `fish` shell for the scripts in `tools/`. Qt
+6.12.0 is the only version this release was built and tested against; no minimum
+is declared in the CMake files, so a different Qt is untried rather than
+supported. On Arch:
 
 ```sh
 sudo pacman -S base-devel cmake ninja git fish fontconfig \
@@ -45,7 +50,8 @@ sudo pacman -S base-devel cmake ninja git fish fontconfig \
 ```
 
 A GPU with a working OpenGL driver: the viewport is real 3D and there is no
-software fallback.
+software fallback. One machine's driver is what the viewport has actually been
+run on.
 
 ## Build
 
@@ -81,16 +87,38 @@ tools/printer-catalog/generate.py --from <profile checkout>/resources/profiles \
 Run it before `tools/check` or the first launch if you want more than the machines
 the engine ships.
 
+## Install
+
+`v0.1.0` publishes three things on its release page: a self-contained AppImage, a
+tarball the AUR package unpacks, and the update manifest. Neither install needs a
+compiler:
+
+```sh
+# self-contained, nothing installed
+chmod +x NextLayer-0.1.0-x86_64.AppImage && ./NextLayer-0.1.0-x86_64.AppImage
+
+# Arch: builds nothing, unpacks the release tarball
+paru -S next-layer-bin
+```
+
+Both were built and run from a clean prefix before publishing. If something is
+missing on your machine, it will say so on stderr — there is no crash reporter
+and nothing is sent anywhere, so a terminal paste is the only report we get.
+
 ## Run
+
+From a build tree:
 
 ```sh
 upstream/build/src/next-layer-qt/next-layer-qt model.stl
 ```
 
-The binary finds its QML through a compile-time path, so it runs from any
-directory. `--help` lists the headless knobs (`--smoke`, `--selftest-slice`,
-`--dump-config`, `--dump-tabs`); they exist so this project can be verified
-without a window, and they are documented in `src/qt/README.md`.
+The binary looks for its QML and resources beside itself and in
+`../share/next-layer/` before falling back to a compile-time path, so it runs from
+any directory and from a packaged install. `--help` lists the headless knobs
+(`--smoke`, `--selftest-slice`, `--dump-config`, `--dump-tabs`); they exist so this
+project can be verified without a window, and they are documented in
+`src/qt/README.md`.
 
 ## First launch
 

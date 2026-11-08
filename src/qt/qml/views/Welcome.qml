@@ -45,7 +45,7 @@ Item {
     readonly property var highlights: [
         { title: "A real slicing engine", text: "The geometry, supports and G-code come from a mature engine library. next-layer is the application around it, and everything you see here is ours." },
         { title: "Shapes, volumes, paint", text: "Add a box, cut it with a negative volume, force support where you want it, paint seams and tools." },
-        { title: "Built for tool changers", text: "Per-tool colours and tool changes. No MMU, no single-nozzle colour mixing." },
+        { title: "Built for tool changers", text: "Per-tool colours and tool changes — implemented, and only printed on a single-extruder machine so far." },
         { title: "Local, always", text: "No account, no sign-in, no telemetry. Projects are one file on your disk." }
     ]
 
