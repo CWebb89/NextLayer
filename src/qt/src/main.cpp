@@ -750,6 +750,7 @@ int main(int argc, char* argv[])
             || argument == "--slice-all" || argument == "--hover-test"
             || argument == "--calibration-test" || argument == "--mesh-tools-test"
             || argument == "--print-host-test" || argument == "--print-host-start"
+            || argument == "--apply-host-offsets"
             || argument == "--update-install" || argument == "--dump-config"
             || argument == "--scene-selftest" || argument == "--dump-presets"
             || argument == "--dump-presets-json")
@@ -824,6 +825,9 @@ int main(int argc, char* argv[])
     const QCommandLineOption print_host_start_option("print-host-start",
         "The same upload, and the machine starts the job as it lands: HOST,PORT,APIKEY,GCODE. "
         "The port may be empty.", "spec");
+    const QCommandLineOption apply_offsets_option("apply-host-offsets",
+        "Write the G-code this machine would receive with the stored host offsets applied, "
+        "and print the line they become: IN,OUT.", "in,out");
     const QCommandLineOption calibration_test_option("calibration-test",
         "Build every calibration test on a plate, slice the towers and report the band commands "
         "that reached the G-code; CONFIG is a resolved config.", "CONFIG");
@@ -901,7 +905,7 @@ int main(int argc, char* argv[])
                        preset_dialog_option,
                        hover_test_option, panel_left_option, selftest_option, slice_all_option, plate_tools_option, slice_features_option,
                        project_test_option, mesh_tools_option, update_option,
-                       update_install_option, multi_tool_option, print_host_test_option, print_host_start_option, volume_settings_option, calibration_test_option, shape_test_option, keep_gcode_option, scene_selftest_option, preview_stats_option, vgcode_shot_option,
+                       update_install_option, multi_tool_option, print_host_test_option, print_host_start_option, apply_offsets_option, volume_settings_option, calibration_test_option, shape_test_option, keep_gcode_option, scene_selftest_option, preview_stats_option, vgcode_shot_option,
                        dump_presets_option, dump_presets_json_option, dump_fonts_option, dump_object_settings_option, preset_printer_option, preset_process_option, preset_filament_option, preset_filaments_option,
                        set_option, add_printer_option, save_preset_option, rename_preset_option,
                        delete_preset_option, export_preset_option, import_preset_option,
@@ -1061,6 +1065,28 @@ int main(int argc, char* argv[])
         return next_layer::runVolumeSettingsSelftest(parser.value(volume_settings_option),
                                                    QString::fromStdString(dataDir()));
 
+    if (parser.isSet(apply_offsets_option)) {
+        const QStringList parts = parser.value(apply_offsets_option).split(QLatin1Char(','));
+        if (parts.size() != 2) {
+            std::fprintf(stderr, "--apply-host-offsets expects IN,OUT\n");
+            return 2;
+        }
+        next_layer::PrinterLink link;
+        link.load();
+        const QString applied = link.withOffsets(parts.at(0));
+        if (applied == parts.at(0)) {
+            std::printf("no host offsets stored: %s is the file the machine receives\n",
+                        parts.at(0).toUtf8().constData());
+            return QFile::copy(parts.at(0), parts.at(1)) ? 0 : 1;
+        }
+        if (!QFile::copy(applied, parts.at(1))) {
+            std::fprintf(stderr, "could not write %s\n", parts.at(1).toUtf8().constData());
+            return 1;
+        }
+        std::printf("host offsets applied: %s\n", link.offsetsLine().toUtf8().constData());
+        return 0;
+    }
+
     if (parser.isSet(print_host_test_option) || parser.isSet(print_host_start_option)) {
         const bool startPrint = parser.isSet(print_host_start_option);
         const QStringList parts = (startPrint ? parser.value(print_host_start_option)
@@ -1076,7 +1102,6 @@ int main(int argc, char* argv[])
         link.setPort(parts.at(1));
         link.setApiKey(parts.at(2));
         link.setKind(QStringLiteral("moonraker"));
-        link.save();
         const QString result = link.runHeadless(parts.at(3), startPrint);
         std::printf("print host: %s\n", result.toUtf8().constData());
         return result.contains(QLatin1String("sent ")) ? 0 : 1;

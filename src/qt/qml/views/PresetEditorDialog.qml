@@ -66,8 +66,11 @@ Popup {
     // landed on the viewport behind it.
     readonly property Item windowItem: Overlay.overlay !== null ? Overlay.overlay : parent
 
-    width: Math.min(1120, root.windowItem.width - Metrics.xl * 2)
-    height: Math.min(860, root.windowItem.height - Metrics.xl * 2)
+    // Wide enough for a two-column settings tree with its value column, and never
+    // wider than the window: the tree's rows are as wide as this popup, so a
+    // narrow window squeezes them rather than cutting them off.
+    width: Math.min(1180, root.windowItem.width - Metrics.xl * 2)
+    height: Math.min(880, root.windowItem.height - Metrics.xl * 2)
     x: Math.round((root.windowItem.width - width) / 2)
     y: Math.round((root.windowItem.height - height) / 2)
     modal: true
@@ -319,7 +322,7 @@ Popup {
                 }
 
                 TextField {
-                    Layout.preferredWidth: 180
+                    Layout.preferredWidth: 200
                     Layout.preferredHeight: Metrics.controlHeight
                     text: root.nameField
                     placeholderText: "preset name"
@@ -345,19 +348,21 @@ Popup {
                     text: "Save"
                     hint: "Write the changed values into this preset"
                     primary: true
-                    enabled: root.modified > 0 && !root.printerTab
+                    enabled: root.modified > 0
                     onClicked: root.save()
                 }
 
                 Button {
                     text: "Save as"
                     hint: "Save these values under the name in the field"
-                    enabled: !root.printerTab
                     onClicked: root.saveAs()
                 }
             }
 
-            RowLayout {
+            // Wraps rather than running off the edge: nine controls do not fit on
+            // one row at every window size, and the last of them used to be drawn
+            // outside the dialog, over the viewport.
+            Flow {
                 Layout.fillWidth: true
                 Layout.leftMargin: Metrics.lg
                 Layout.rightMargin: Metrics.lg
@@ -365,6 +370,9 @@ Popup {
                 spacing: Metrics.sm
 
                 Text {
+                    width: 56
+                    height: Metrics.controlHeight
+                    verticalAlignment: Text.AlignVCenter
                     text: root.printerTab ? "Machine" : "Preset"
                     font.family: Type.family
                     font.pixelSize: Type.sizeCaption
@@ -372,22 +380,11 @@ Popup {
                 }
 
                 ComboBox {
-                    Layout.preferredWidth: 300
+                    width: 270
+                    height: Metrics.controlHeight
                     choices: root.tabChoices
                     currentValue: root.currentName
                     onSelected: (value) => root.selectPreset(String(value))
-                }
-
-                Text {
-                    Layout.fillWidth: true
-                    Layout.preferredWidth: 0
-                    text: root.message.length > 0 ? root.message
-                          : presetStore.error.length > 0 ? presetStore.error : ""
-                    elide: Text.ElideRight
-                    font.family: Type.family
-                    font.pixelSize: Type.sizeCaption
-                    color: root.message.length > 0 || presetStore.error.length > 0
-                           ? Colors.error : Colors.textMuted
                 }
 
                 Button {
@@ -429,11 +426,30 @@ Popup {
                 }
 
                 Text {
+                    width: 100
+                    height: Metrics.controlHeight
+                    verticalAlignment: Text.AlignVCenter
                     text: root.currentIsUser ? "user preset" : "engine preset"
                     font.family: Type.family
                     font.pixelSize: Type.sizeCaption
                     color: Colors.textTertiary
                 }
+            }
+
+            Text {
+                Layout.fillWidth: true
+                Layout.leftMargin: Metrics.lg
+                Layout.rightMargin: Metrics.lg
+                Layout.bottomMargin: Metrics.sm
+                visible: text.length > 0
+                text: root.message.length > 0 ? root.message
+                      : presetStore.error.length > 0 ? presetStore.error : ""
+                wrapMode: Text.WordWrap
+                maximumLineCount: 3
+                elide: Text.ElideRight
+                font.family: Type.family
+                font.pixelSize: Type.sizeCaption
+                color: Colors.error
             }
 
             PresetDiffDialog {

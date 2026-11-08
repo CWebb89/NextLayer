@@ -724,11 +724,46 @@ int runSliceFeaturesSelftest(const QString& model,
     }
     document.clearLayerHeights(id);
 
+    // Per-object supports, asserted the decisive way round. Comparing "supports
+    // everywhere" with "supports only under the painted facets" proves nothing on
+    // a model whose overhang is one flat span -- both support the same area and
+    // the counts come out equal, which reads as a failure whichever way it went.
+    // Turning them off for this object has one answer: no support moves at all.
+    if (!document.setObjectSetting(id, QStringLiteral("support_material"),
+                                   QStringLiteral("none"))) {
+        std::fprintf(stderr, "the object refused a support_material override\n");
+        return 1;
+    }
+    int noneLayers = 0;
+    int noneMoves = 0;
+    int noneSupports = 0;
+    if (!sliceNow(noneLayers, noneMoves, noneSupports)) {
+        std::fprintf(stderr, "the plate did not slice with per-object supports off\n");
+        return 1;
+    }
+    std::printf("per-object support_material none: %d support move(s) (was %d)\n",
+                noneSupports, baseSupports);
+    if (baseSupports == 0) {
+        // Nothing to prove either way: a profile that generates no supports cannot
+        // show that turning them off per object did anything. The gate skips with
+        // this line rather than reading the silence as a pass.
+        std::printf("support overrides skipped: this profile generates no support\n");
+        document.clearObjectSettings(id);
+        return 0;
+    }
+    if (noneSupports != 0) {
+        std::fprintf(stderr,
+                     "per-object support_material none left %d support move(s) of %d: the "
+                     "override did not reach the slicer\n",
+                     noneSupports, baseSupports);
+        return 1;
+    }
+
     // Painting: the object is told to generate supports only where they are
     // painted ("Manual Only"), then every downward-facing facet above the bed is
-    // marked as an enforcer. Without the paint that mode produces no support at
-    // all, so support moves in the toolpath can only come from the facets
-    // annotation reaching the engine.
+    // marked as an enforcer. With nothing painted that mode produces no support
+    // at all, so support moves can only come from the annotation reaching the
+    // engine.
     if (!document.setObjectSetting(id, QStringLiteral("support_material"),
                                    QStringLiteral("enforcers_only"))) {
         std::fprintf(stderr, "the object refused a support_material override\n");
@@ -768,11 +803,10 @@ int runSliceFeaturesSelftest(const QString& model,
     }
     std::printf("support enforcer paint: %d support move(s) (was %d)\n",
                 paintedSupports, baseSupports);
-    if (paintedSupports <= baseSupports) {
+    if (paintedSupports == 0) {
         std::fprintf(stderr,
-                     "the painted facets produced %d support moves, the unpainted plate %d: the "
-                     "paint did not reach the slicer\n",
-                     paintedSupports, baseSupports);
+                     "the painted facets produced no support moves: the paint did not reach "
+                     "the slicer\n");
         return 1;
     }
 

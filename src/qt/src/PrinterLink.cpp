@@ -15,6 +15,7 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QRegularExpression>
 #include <QStandardPaths>
 
 #include <memory>
@@ -180,6 +181,9 @@ void PrinterLink::load()
     m_apiKey = root.value(QStringLiteral("apiKey")).toString();
     m_kind = root.value(QStringLiteral("kind")).toString(QStringLiteral("moonraker"));
     m_deviceUrl = root.value(QStringLiteral("deviceUrl")).toString();
+    m_offsetX = root.value(QStringLiteral("offsetX")).toDouble();
+    m_offsetY = root.value(QStringLiteral("offsetY")).toDouble();
+    m_offsetZ = root.value(QStringLiteral("offsetZ")).toDouble();
     emit configChanged();
 }
 
@@ -191,6 +195,9 @@ void PrinterLink::save()
     root.insert(QStringLiteral("apiKey"), m_apiKey);
     root.insert(QStringLiteral("kind"), m_kind);
     root.insert(QStringLiteral("deviceUrl"), m_deviceUrl);
+    root.insert(QStringLiteral("offsetX"), m_offsetX);
+    root.insert(QStringLiteral("offsetY"), m_offsetY);
+    root.insert(QStringLiteral("offsetZ"), m_offsetZ);
 
     QDir().mkpath(QFileInfo(configPath()).absolutePath());
     QFile file(configPath());
@@ -248,6 +255,91 @@ void PrinterLink::setDeviceUrl(const QString& value)
         return;
     m_deviceUrl = value;
     emit configChanged();
+}
+
+bool PrinterLink::hasOffsets() const
+{
+    return m_offsetX != 0.0 || m_offsetY != 0.0 || m_offsetZ != 0.0;
+}
+
+// Klipper's own compensation: SET_GCODE_OFFSET moves the coordinate system the
+// rest of the file is interpreted in, which is exactly what a machine that prints
+// 0.05 mm too low needs. There is no equivalent command that works on a Marlin
+// board this late in a file, so the dialog says which firmware this is for rather
+// than pretending a number on a Marlin machine did something.
+QString PrinterLink::offsetsLine() const
+{
+    if (!hasOffsets())
+        return {};
+    QStringList parts;
+    if (m_offsetX != 0.0)
+        parts.append(QStringLiteral("X=%1").arg(m_offsetX, 0, 'g', 6));
+    if (m_offsetY != 0.0)
+        parts.append(QStringLiteral("Y=%1").arg(m_offsetY, 0, 'g', 6));
+    if (m_offsetZ != 0.0)
+        parts.append(QStringLiteral("Z=%1").arg(m_offsetZ, 0, 'g', 6));
+    return QStringLiteral("SET_GCODE_OFFSET ") + parts.join(QLatin1Char(' '))
+         + QStringLiteral(" ; host offsets");
+}
+
+void PrinterLink::setOffsetX(double value)
+{
+    if (qFuzzyCompare(1.0 + m_offsetX, 1.0 + value))
+        return;
+    m_offsetX = value;
+    emit configChanged();
+}
+
+void PrinterLink::setOffsetY(double value)
+{
+    if (qFuzzyCompare(1.0 + m_offsetY, 1.0 + value))
+        return;
+    m_offsetY = value;
+    emit configChanged();
+}
+
+void PrinterLink::setOffsetZ(double value)
+{
+    if (qFuzzyCompare(1.0 + m_offsetZ, 1.0 + value))
+        return;
+    m_offsetZ = value;
+    emit configChanged();
+}
+
+QString PrinterLink::withOffsets(const QString& gcodePath)
+{
+    if (!hasOffsets() || gcodePath.isEmpty())
+        return gcodePath;
+
+    QFile input(gcodePath);
+    if (!input.open(QIODevice::ReadOnly))
+        return gcodePath;
+    QStringList lines = QString::fromUtf8(input.readAll()).split(QLatin1Char('\n'));
+    input.close();
+
+    // Before the first extrusion move: homing and the bed mesh are done by then,
+    // so the shift survives, and no move has been written under the old frame.
+    static const QRegularExpression extrusion(QStringLiteral("^G[123]\\s.*\\sE-?[0-9.]+"));
+    int at = -1;
+    for (int index = 0; index < lines.size(); ++index) {
+        if (extrusion.match(lines.at(index)).hasMatch()) {
+            at = index;
+            break;
+        }
+    }
+    if (at < 0)
+        return gcodePath;
+
+    lines.insert(at, offsetsLine());
+
+    const QString target = QDir(QFileInfo(gcodePath).absolutePath())
+                               .filePath(QStringLiteral(".next-layer-offsets.gcode"));
+    QFile output(target);
+    if (!output.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        return gcodePath;
+    output.write(lines.join(QLatin1Char('\n')).toUtf8());
+    output.close();
+    return target;
 }
 
 namespace {
@@ -403,7 +495,7 @@ QString PrinterLink::upload(const QString& gcodePath, bool startPrint)
         return QStringLiteral("a transfer is already running");
     m_busy = true;
     emit busyChanged();
-    const QString message = perform(gcodePath, startPrint);
+    const QString message = perform(withOffsets(gcodePath), startPrint);
     m_busy = false;
     emit busyChanged();
     emit finished(message.startsWith(QLatin1String("sent")), message);
@@ -412,7 +504,9 @@ QString PrinterLink::upload(const QString& gcodePath, bool startPrint)
 
 QString PrinterLink::runHeadless(const QString& gcodePath, bool startPrint)
 {
-    load();
+    // The caller configures the connection for this run: the harness passes a host
+    // and a port on the command line and must leave the stored connection -- and
+    // the host offsets beside it -- exactly as it found them.
     const QString tested = test();
     if (!tested.startsWith(QLatin1String("connected")))
         return QStringLiteral("test: %1").arg(tested);

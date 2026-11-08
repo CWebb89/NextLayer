@@ -477,6 +477,9 @@ bool SliceRuntime::slicePlate(const QVector<PlateSliceObject>& objects, const QS
         if (!source.settingsJson.isEmpty()) {
             const nlohmann::ordered_json settings =
                 nlohmann::ordered_json::parse(source.settingsJson.toStdString());
+            if (qEnvironmentVariableIsSet("NEXT_LAYER_DEBUG_OBJECT_SETTINGS"))
+                std::fprintf(stderr, "object settings for %s: %s\n",
+                             source.name.toUtf8().constData(), settings.dump().c_str());
             const Slic3r::Biz::Config::BoxIssues issues =
                 Slic3r::Biz::Config::load_box(settings, object->object_settings);
             // load_box reports every key it did not find, which is right for a whole

@@ -27,6 +27,15 @@ class PrinterLink : public QObject
     /// URL is how anything else -- a dashboard, a camera page -- gets in.
     Q_PROPERTY(QString deviceUrl READ deviceUrl WRITE setDeviceUrl NOTIFY configChanged)
     Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
+    /// Host offsets: a compensation table for a machine that is a little out of
+    /// alignment. Written into the G-code as Klipper's SET_GCODE_OFFSET, before
+    /// the first extrusion -- after homing and any bed mesh, which is the only
+    /// point where the shift is both known and still in effect.
+    Q_PROPERTY(double offsetX READ offsetX WRITE setOffsetX NOTIFY configChanged)
+    Q_PROPERTY(double offsetY READ offsetY WRITE setOffsetY NOTIFY configChanged)
+    Q_PROPERTY(double offsetZ READ offsetZ WRITE setOffsetZ NOTIFY configChanged)
+    Q_PROPERTY(bool hasOffsets READ hasOffsets NOTIFY configChanged)
+    Q_PROPERTY(QString offsetsLine READ offsetsLine NOTIFY configChanged)
 
 public:
     explicit PrinterLink(QObject* parent = nullptr);
@@ -38,6 +47,16 @@ public:
     bool configured() const { return !m_host.trimmed().isEmpty(); }
     QString deviceUrl() const { return m_deviceUrl; }
     bool busy() const { return m_busy; }
+    double offsetX() const { return m_offsetX; }
+    double offsetY() const { return m_offsetY; }
+    double offsetZ() const { return m_offsetZ; }
+    bool hasOffsets() const;
+    /// The line the offsets become, in the grammar this engine's G-code uses.
+    QString offsetsLine() const;
+
+    void setOffsetX(double value);
+    void setOffsetY(double value);
+    void setOffsetZ(double value);
 
     void setHost(const QString& value);
     void setPort(const QString& value);
@@ -57,6 +76,12 @@ public:
     /// They run synchronously because the engine's print host does: a wrong key
     /// or a printer that is off has to come back as an error, not a hang.
     Q_INVOKABLE QString test();
+
+    /// A copy of a sliced file with the host offsets written into it, or the
+    /// path itself when there are none to apply. Export and upload both go
+    /// through this, so what lands on the machine is what the preview showed
+    /// plus the compensation and nothing else.
+    Q_INVOKABLE QString withOffsets(const QString& gcodePath);
 
     /// The printer's web interface, tried at the plain host first: Moonraker's
     /// own UI is usually served by a reverse proxy on port 80 while the API
@@ -87,6 +112,9 @@ private:
     QString m_apiKey;
     QString m_kind = QStringLiteral("moonraker");
     QString m_deviceUrl;
+    double m_offsetX = 0.0;
+    double m_offsetY = 0.0;
+    double m_offsetZ = 0.0;
     bool m_busy = false;
 };
 

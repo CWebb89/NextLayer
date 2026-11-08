@@ -1118,6 +1118,10 @@ Window {
             }
             onPlateSelected: (index) => root.switchPlate(index)
             onPlateRemoveRequested: (index) => root.removePlate(index)
+
+            onPlateAddRequested: root.addPlate()
+            onPlateLockToggled: (index) => root.togglePlateLock(index)
+            onActionRequested: (id) => root.runAction(id)
             onPlateRenameRequested: (index) => {
                 root.plateMenuIndex = index
                 textPrompt.openWith("Rename plate", plateDocument.plateName(index), "", "Rename")
@@ -2211,8 +2215,13 @@ Window {
         defaultSuffix: "gcode"
         nameFilters: ["G-code (*.gcode)", "All files (*)"]
         onAccepted: {
-            if (toolpath.loaded && Host.copyFile(sliceController.gcodePath, selectedFile))
-                root.setStatus("exported to " + selectedFile)
+            // Host offsets are part of what a machine prints, so they go into the
+            // file that lands on disk as well as the one that gets uploaded.
+            const source = printerLink.withOffsets(sliceController.gcodePath)
+            if (toolpath.loaded && Host.copyFile(source, selectedFile))
+                root.setStatus(printerLink.hasOffsets
+                               ? "exported to " + selectedFile + " with host offsets"
+                               : "exported to " + selectedFile)
             else
                 root.setStatus("export failed")
         }

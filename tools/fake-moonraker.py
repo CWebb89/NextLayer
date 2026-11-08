@@ -57,11 +57,15 @@ def main():
     threading.Thread(target=server.serve_forever, daemon=True).start()
     print("ready", flush=True)
 
+    import os
     import subprocess
 
     binary, gcode = sys.argv[2], sys.argv[3]
+    # The preset home comes from the caller's environment: this runs the same
+    # binary the app does, and a test must neither read nor write the connection
+    # stored beside a person's presets.
     result = subprocess.run([binary, "--print-host-test", f"http://127.0.0.1:{port}/,,,{gcode}"],
-                            capture_output=True, text=True)
+                            capture_output=True, text=True, env=os.environ.copy())
     server.shutdown()
 
     for line in result.stdout.splitlines():

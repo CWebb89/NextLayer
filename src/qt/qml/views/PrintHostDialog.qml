@@ -157,6 +157,83 @@ Popup {
                         printerLink.save()
                     }
                 }
+
+                // Host offsets: the compensation table for a machine that is a
+                // few hundredths out of alignment. It is a printer property, not a
+                // print setting, so it lives with the connection and travels with
+                // the file -- export and upload both carry it.
+                Text {
+                    text: "Offsets"
+                    font.family: Type.family
+                    font.pixelSize: Type.sizeSmall
+                    color: Colors.textSecondary
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Metrics.xs
+
+                    Repeater {
+                        model: [
+                            { axis: "X", value: printerLink.offsetX },
+                            { axis: "Y", value: printerLink.offsetY },
+                            { axis: "Z", value: printerLink.offsetZ }
+                        ]
+
+                        delegate: RowLayout {
+                            id: offsetField
+
+                            required property var modelData
+
+                            spacing: Metrics.xs
+
+                            Text {
+                                text: offsetField.modelData.axis
+                                font.family: Type.family
+                                font.pixelSize: Type.sizeCaption
+                                color: Colors.textMuted
+                            }
+
+                            NumberField {
+                                Layout.preferredWidth: 92
+                                value: offsetField.modelData.value
+                                from: -50
+                                to: 50
+                                decimals: 3
+                                isLength: true
+                                onEdited: (value) => {
+                                    if (offsetField.modelData.axis === "X")
+                                        printerLink.offsetX = value
+                                    else if (offsetField.modelData.axis === "Y")
+                                        printerLink.offsetY = value
+                                    else
+                                        printerLink.offsetZ = value
+                                    printerLink.save()
+                                }
+                            }
+                        }
+                    }
+
+                    Item { Layout.fillWidth: true }
+                }
+
+                Item {
+                    Layout.preferredWidth: 1
+                    Layout.preferredHeight: 1
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    Layout.columnSpan: 2
+                    visible: printerLink.hasOffsets
+                    text: "Written into the G-code as " + printerLink.offsetsLine()
+                          + " before the first extrusion. Klipper applies it; other "
+                          + "firmware ignores the command."
+                    wrapMode: Text.WordWrap
+                    font.family: Type.family
+                    font.pixelSize: Type.sizeCaption
+                    color: Colors.textMuted
+                }
             }
 
             Text {

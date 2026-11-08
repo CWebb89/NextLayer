@@ -70,7 +70,7 @@ Gate:
 - No known data-loss or corrupt-G-code bug open.
 
 **Answer to "when is it ready":** not yet, and the gap is measurable. Code-wise it
-is arguably beta quality today — 30 gates, byte-identical G-code on 12 corpus cases,
+is arguably beta quality today — 31 gates, byte-identical G-code on 12 corpus cases,
 a real print end to end. But one 20 mm cube is one print. The thing that makes a
 slicer shippable is the boring middle: fifty prints across profiles you did not
 write, and every failure triaged. That is 6–10 weekends of testing, not 6–10 of

@@ -337,12 +337,27 @@ end
 # the same object four ways and measures each one in the toolpath -- layers for
 # the first two, support moves for the paint.
 set -l features_gcode /tmp/nl-check-features.gcode
-set -l features_out (env QT_QPA_PLATFORM=eglfs XDG_DATA_HOME=$tools_home $bin $root/oracle/models/bridge_30.stl --slice-features $tools_cfg 2>&1)
+# Supports on: two of the four measurements below are about support moves, and the
+# catalogue profile this gate otherwise uses generates none -- the knob then has
+# nothing to show and says so. Turning them on here keeps the paint and the
+# per-object support override measured instead of skipped.
+set -l features_cfg /tmp/nl-check-features.json
+rm -f $features_cfg
+env XDG_DATA_HOME=$tools_home $bin --printer 'Anycubic Kobra 2 0.4' --process $catalog_process --filament $catalog_filament --set support_material=everywhere --dump-config $features_cfg >/dev/null 2>&1
+set -l features_out (env QT_QPA_PLATFORM=eglfs XDG_DATA_HOME=$tools_home $bin $root/oracle/models/bridge_30.stl --slice-features $features_cfg 2>&1)
 set -l features_rc $status
 set -l features_setting (string match -r 'per-object layer_height 0.30: ([0-9]+) layer\(s\) \(was ([0-9]+)\)' -- $features_out)
 set -l features_profile (string match -r 'variable layer height .*: ([0-9]+) layer\(s\) \(was ([0-9]+)\)' -- $features_out)
 set -l features_paint (string match -r 'support enforcer paint: ([0-9]+) support move\(s\) \(was ([0-9]+)\)' -- $features_out)
+set -l features_none (string match -r 'per-object support_material none: ([0-9]+) support move\(s\) \(was ([0-9]+)\)' -- $features_out)
 set -l features_marker (string match -r 'custom G-code at 2.00 mm: ([0-9]+) occurrence\(s\), inside layer ([0-9]+)' -- $features_out)
+# A profile whose supports are off has nothing to show for the two support checks;
+# the knob says so with its own line. Skip them and keep testing the rest.
+set -l features_supports_skipped 0
+if string match -q '*support overrides skipped*' -- $features_out
+    set features_supports_skipped 1
+    __skip 'plate features: per-object supports and paint (this profile generates none)'
+end
 if test $features_rc -ne 0
     __bad "plate features: exit $features_rc, see "(string join ' ' (string match -r '^[a-z].*|.*did not.*|.*refused.*' -- $features_out | head -n 2))
 else if test (count $features_setting) -lt 3
@@ -353,10 +368,16 @@ else if test (count $features_profile) -lt 3
     __bad 'plate features: the layer height profile printed no measurements'
 else if test $features_profile[2] -le $features_profile[3]
     __bad "plate features: a 0.10 mm band gave $features_profile[2] layers, not more than $features_profile[3]"
+else if test $features_supports_skipped -eq 1
+    # reported above
+else if test (count $features_none) -lt 3
+    __bad 'plate features: the per-object support override printed no measurements'
+else if test $features_none[2] -ne 0 -o $features_none[3] -eq 0
+    __bad "plate features: per-object supports off left $features_none[2] of $features_none[3] support moves"
 else if test (count $features_paint) -lt 3
     __bad 'plate features: the paint printed no measurements'
-else if test $features_paint[2] -le $features_paint[3]
-    __bad "plate features: painted facets gave $features_paint[2] support moves, unpainted $features_paint[3]"
+else if test $features_paint[2] -le 0
+    __bad "plate features: painted facets gave no support moves at all, so the paint did not reach the slicer"
 else if test (count $features_marker) -lt 3
     __bad 'plate features: the custom G-code marker printed no measurements'
 else if test "$features_marker[2]" != "1"
@@ -668,8 +689,13 @@ end
 # arrive are the G-code -- without touching a printer on the network.
 printf '; next-layer calibration marker\nG28\nG1 X10 Y10 E5\n' > /tmp/nl-check-host.gcode
 set -l host_port (python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()')
-set -l host_out (timeout 90 python3 tools/fake-moonraker.py $host_port $bin /tmp/nl-check-host.gcode 2>&1)
+# Its own preset home: this runs the same binary the person uses, and a test must
+# not read -- or write -- the connection and offset table hanging off their data
+# directory.
+set -l host_home (mktemp -d /tmp/nl-check-host-XXXXXX)
+set -l host_out (env XDG_DATA_HOME=$host_home timeout 90 python3 tools/fake-moonraker.py $host_port $bin /tmp/nl-check-host.gcode 2>&1)
 set -l host_rc $status
+rm -rf $host_home
 if test $host_rc -ne 0
     __bad "print host: "(string join '; ' -- (string match -r 'print host: .*' -- $host_out))
 else
@@ -910,6 +936,40 @@ else
 end
 rm -rf $bundle_home
 
+
+# Host-offset gate: the compensation table a misaligned machine needs has to reach
+# the file the machine receives, in the one place where it still means something --
+# after homing, before the first extrusion -- and it has to stay out of the file
+# when it is zero. Run in its own preset home so the stored connection here is not
+# the one the person using the app configured.
+set -l offsets_home (mktemp -d /tmp/nl-check-offsets-XXXXXX)
+set -l offsets_in /tmp/nl-check-offsets-in.gcode
+set -l offsets_out /tmp/nl-check-offsets-out.gcode
+set -l offsets_none /tmp/nl-check-offsets-none.gcode
+cp /tmp/nl-check-filament.gcode $offsets_in
+if test -f $offsets_in
+    mkdir -p $offsets_home/next-layer
+    printf '{"host":"127.0.0.1","port":"","apiKey":"","kind":"moonraker","offsetX":0.4,"offsetY":0,"offsetZ":0.05}' > $offsets_home/next-layer/print-host.json
+    set -l offsets_line (env XDG_DATA_HOME=$offsets_home $bin --apply-host-offsets $offsets_in,$offsets_out 2>&1)
+    set -l offsets_shift (grep -c 'SET_GCODE_OFFSET X=0.4 Z=0.05' $offsets_out 2>/dev/null)
+    set -l offsets_before (grep -n -m1 'SET_GCODE_OFFSET' $offsets_out 2>/dev/null | string split -f1 ':')
+    set -l offsets_first_e (grep -n -m1 '^G[123] .* E' $offsets_out 2>/dev/null | string split -f1 ':')
+    printf '{"host":"127.0.0.1","port":"","apiKey":"","kind":"moonraker","offsetX":0,"offsetY":0,"offsetZ":0}' > $offsets_home/next-layer/print-host.json
+    env XDG_DATA_HOME=$offsets_home $bin --apply-host-offsets $offsets_in,$offsets_none >/dev/null 2>&1
+    set -l offsets_absent (grep -c 'SET_GCODE_OFFSET' $offsets_none 2>/dev/null)
+    if test $offsets_shift -lt 1
+        __bad "host offsets: the exported file carries no SET_GCODE_OFFSET ("(string match -r 'host offsets.*|no host.*' -- $offsets_line | head -n 1)")"
+    else if test -z "$offsets_before" -o -z "$offsets_first_e" -o $offsets_before -gt $offsets_first_e
+        __bad "host offsets: the shift lands at line $offsets_before, after the first extrusion at $offsets_first_e"
+    else if test $offsets_absent -ne 0
+        __bad "host offsets: a zero offset still wrote a SET_GCODE_OFFSET line"
+    else
+        __ok "host offsets: X=0.4 Z=0.05 became one SET_GCODE_OFFSET at line $offsets_before, before the first extrusion at $offsets_first_e; zero writes none"
+    end
+else
+    __skip 'host offsets (no sliced file to apply them to)'
+end
+rm -rf $offsets_home
 
 set -l integrity_out (python3 $root/oracle/baseline_check.py 2>&1)
 set -l integrity_rc $status

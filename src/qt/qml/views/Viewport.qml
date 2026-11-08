@@ -24,6 +24,11 @@ Item {
     signal plateRemoveRequested(int index)
     signal plateRenameRequested(int index)
     signal plateMenuRequested(int index, real x, real y)
+    /// The icon column standing on the bed: add a plate, lock this one, and the
+    /// two arrangement tools, which the window performs.
+    signal plateAddRequested()
+    signal plateLockToggled(int index)
+    signal actionRequested(string id)
 
     property string mode: "model"
 
@@ -1465,6 +1470,28 @@ Item {
                 readonly property bool current: plateItem.modelData.active === true
                 readonly property bool locked: plateItem.modelData.locked === true
 
+                // The icon column on the bed, back-right corner. The slot is carried
+                // in the model rather than read from a Repeater's `index`: the outer
+                // plate delegate declares its own `index`, which shadows the inner
+                // one and stacked every icon on the same spot once already.
+                readonly property var actions: [
+                    { slot: 0, icon: "delete", hint: plateDocument.plateCount > 1
+                                                 ? "Remove this plate"
+                                                 : "The last plate cannot be removed",
+                      enabled: plateDocument.plateCount > 1, danger: true, action: "remove" },
+                    { slot: 1, icon: "autorenew", hint: "Auto-orient the objects on this plate",
+                      enabled: true, danger: false, action: "orient" },
+                    { slot: 2, icon: "grid_view", hint: "Arrange the objects on this plate",
+                      enabled: true, danger: false, action: "arrange" },
+                    { slot: 3, icon: plateItem.locked ? "lock" : "lock_open",
+                      hint: plateItem.locked ? "Unlock this plate" : "Lock this plate",
+                      enabled: true, danger: false, action: "lock" },
+                    { slot: 4, icon: "more_vert", hint: "Plate settings: rename, duplicate, clear",
+                      enabled: true, danger: false, action: "menu" },
+                    { slot: 5, icon: "add", hint: "Add a plate after this one",
+                      enabled: true, danger: false, action: "add" }
+                ]
+
                 // A rectangle of the bed, in printer coordinates, as a matrix for an
                 // item whose local size is `w` x `h`. Null where any corner is behind
                 // the camera, which is how the chrome disappears when the plate does.
@@ -1600,6 +1627,101 @@ Item {
                         delay: 400
                     }
                     HoverHandler { id: pencilHover }
+                }
+
+                // The button column: six icons hanging down from the back-right
+                // corner, each a 16 mm square standing on the bed. They came back
+                // after being dropped for reading as loose glyphs: the plate is
+                // what they act on, and reaching for a bar at the top of the window
+                // to operate on the plate under the cursor is the wrong distance.
+                // They carry a rounded plate behind the icon now, so they read as
+                // buttons at any camera angle rather than as floating symbols.
+                Repeater {
+                    model: plateItem.actions
+
+                    delegate: Item {
+                        id: actionDecal
+
+                        required property var modelData
+
+                        readonly property real buttonTop: root.bedMax.y - plateChrome.gapTop
+                                                    - (actionDecal.modelData.slot + 1)
+                                                    * (plateChrome.iconSize + plateChrome.gapY)
+                        readonly property var matrix: plateItem.decal(
+                            root.bedMax.x + plateChrome.gapLeft, actionDecal.buttonTop,
+                            root.bedMax.x + plateChrome.gapLeft + plateChrome.iconSize,
+                            actionDecal.buttonTop + plateChrome.iconSize, 100, 100)
+
+                        visible: actionDecal.matrix !== null
+                        width: 100
+                        height: 100
+                        x: 0
+                        y: 0
+                        transformOrigin: Item.TopLeft
+                        transform: Matrix4x4 { matrix: actionDecal.matrix ?? Qt.matrix4x4() }
+
+                        Rectangle {
+                            anchors.fill: parent
+                            anchors.margins: 3
+                            radius: 16
+                            color: !actionDecal.modelData.enabled
+                                   ? Colors.alpha(Colors.viewportBackground, 0.55)
+                                   : actionMouse.containsMouse
+                                     ? Colors.alpha(Colors.accent, 0.30)
+                                     : Colors.alpha(Colors.surfaceContainerHighest, 0.82)
+                            border.width: actionDecal.modelData.slot === 3 && plateItem.locked ? 4 : 1
+                            border.color: actionDecal.modelData.slot === 3 && plateItem.locked
+                                          ? Colors.accent : Colors.alpha(Colors.edge, 0.9)
+                        }
+
+                        Icon {
+                            anchors.centerIn: parent
+                            name: actionDecal.modelData.icon
+                            size: 66
+                            filled: actionDecal.modelData.slot === 3 && plateItem.locked
+                            color: !actionDecal.modelData.enabled
+                                   ? Colors.alpha(Colors.textSecondary, 0.4)
+                                 : actionDecal.modelData.danger && actionMouse.containsMouse
+                                   ? Colors.error
+                                 : actionDecal.modelData.slot === 3 && plateItem.locked
+                                   ? Colors.accent
+                                 : Colors.textPrimary
+                        }
+
+                        MouseArea {
+                            id: actionMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            enabled: actionDecal.modelData.enabled
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                const action = actionDecal.modelData.action
+                                if (action === "remove")
+                                    root.plateRemoveRequested(plateItem.index)
+                                else if (action === "orient" || action === "arrange")
+                                    root.actionRequested(action)
+                                else if (action === "lock")
+                                    root.plateLockToggled(plateItem.index)
+                                else if (action === "menu") {
+                                    const at = plateChrome.project(
+                                        plateItem.modelData.x + root.bedMax.x + plateChrome.gapLeft
+                                            + plateChrome.iconSize,
+                                        plateItem.modelData.y + actionDecal.buttonTop)
+                                    root.plateMenuRequested(plateItem.index,
+                                                            Math.round(at.x), Math.round(at.y))
+                                }
+                                else if (action === "add")
+                                    root.plateAddRequested()
+                            }
+                        }
+
+                        Tooltip {
+                            target: actionDecal
+                            text: actionDecal.modelData.hint
+                            shown: actionMouse.containsMouse
+                            delay: 500
+                        }
+                    }
                 }
 
                 // The number, on the bed at the front-right corner.
