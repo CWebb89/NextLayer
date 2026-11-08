@@ -17,6 +17,9 @@ Item {
 
     signal machineChooserRequested()
     signal changesRequested(string tab)
+    /// The printer's connection, from the machine settings: the same window the
+    /// File menu opens, reachable where a person is editing the machine.
+    signal networkRequested()
 
     property string activeTab: "process"
     property string activeSubtab: ""
@@ -668,5 +671,6 @@ Item {
 
     PresetEditorDialog {
         id: presetEditor
+        onNetworkRequested: root.networkRequested()
     }
 }

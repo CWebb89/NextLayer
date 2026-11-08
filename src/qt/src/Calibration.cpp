@@ -387,53 +387,51 @@ QString Calibration::build(const QString& kind, const QVariantMap& values)
             end = start - step;
         const double nozzle = params.number("nozzle", 0.4);
         const double nozzleScale = nozzle / 0.4;
+        const int count = bandCount(start, end, step, 24);
+        const double band = 10.0 * nozzleScale;
+        const double size = 20.0 * nozzleScale;
 
-        // The tower's geometry contract: block n spans
-        // [n * 10, (n + 1) * 10] mm of the 700 mm asset and prints at
-        // 500 - 5n degrees, which is why the requested range is cut out of it
-        // rather than generated. The tower is what the numbers are embossed on.
-        const double block = 10.0;
-        const int firstBlock = int(std::lround((500.0 - start) / 5.0));
-        const int lastBlock = int(std::lround((500.0 - end) / 5.0));
-        const int blockCount = lastBlock - firstBlock + 1;
-        const QString tower = QString::fromLatin1(NEXT_LAYER_APP_RESOURCES)
-                            + QStringLiteral("/calib/temperature_tower.stl");
-        const int towerId = m_document->addObject(tower, QStringLiteral("Temperature tower"));
-        if (towerId >= 0 && blockCount > 0
-            && m_document->trimToBand(towerId, firstBlock * block, (lastBlock + 1) * block)) {
-            if (std::abs(nozzleScale - 1.0) > 1e-6)
-                m_document->setScale(towerId, QVector3D(float(nozzleScale), float(nozzleScale),
-                                                        float(nozzleScale)));
-            m_document->setPosition(towerId, QVector3D(centre.x(), centre.y(), 0.0f));
-            for (int band = 0; band < blockCount; ++band) {
-                const double value = start - step * band;
-                m_document->addLayerGcode(band * block * nozzleScale + 0.2, QStringLiteral("gcode"),
-                                          QStringLiteral("M104 S%1 ; calibration band %2")
-                                              .arg(number(value, 0))
-                                              .arg(band + 1));
-            }
-            return QStringLiteral("temperature tower: %1 bands from %2 C down to %3 C")
-                .arg(blockCount)
-                .arg(number(start, 0), number(start - step * (blockCount - 1), 0));
+        // Our own tower, built from primitives rather than cut out of the reference
+        // slicer's test mesh. That mesh carries that project's logo embossed in the
+        // geometry, and cutting a temperature range out of a fixed stack left the
+        // top band sliced through the middle of its own number. Here a band is a
+        // band: a block with a shelf cantilevered out of its top, so each temperature
+        // shows overhang, bridging and stringing, and the value itself prints on the
+        // bed beside it.
+        const double shelfHeight = 2.0 * nozzleScale;
+        for (int index = 0; index < count; ++index) {
+            const double value = start - step * index;
+            const double bottom = index * band;
+
+            const int block = m_document->addShape(QStringLiteral("box"), size, size, band);
+            if (block < 0)
+                return failure("could not build the temperature tower");
+            m_document->renameObject(block, QStringLiteral("Band %1 (%2 C)")
+                                                .arg(index + 1)
+                                                .arg(number(value, 0)));
+            m_document->setPosition(block, QVector3D(centre.x(), centre.y(), float(bottom)));
+
+            const int shelf = m_document->addShape(QStringLiteral("box"), size * 0.8,
+                                                   size * 0.6, shelfHeight);
+            if (shelf < 0)
+                return failure("could not build the temperature tower");
+            m_document->renameObject(shelf, QStringLiteral("Band %1 shelf").arg(index + 1));
+            m_document->setPosition(shelf, QVector3D(centre.x() + float(size * 0.9), centre.y(),
+                                                     float(bottom + band - shelfHeight)));
+
+            m_document->addLayerGcode(bottom + 0.2, QStringLiteral("gcode"),
+                                      QStringLiteral("M104 S%1 ; calibration band %2")
+                                          .arg(number(value, 0))
+                                          .arg(index + 1));
         }
-        m_document->removeObject(towerId);
 
-        const int count = bandCount(start, end, step, 20);
-        const double size = params.flag("auto_scale", true) ? 25.0 * params.number("nozzle", 0.4) / 0.4
-                                                            : 25.0;
-        const auto temperature = [start, step](int band) { return start - step * band; };
-        if (!addBands(count, 15.0, size, 0.0, "box", "Band",
-                      [&](int band) { return number(temperature(band), 0) + QStringLiteral(" C"); },
-                      [&](int band) {
-                          return QStringLiteral("M104 S%1").arg(number(temperature(band), 0));
-                      }))
-            return failure("could not build a temperature band");
-        if (params.flag("numbers", true))
-            addLabels(count, -(size / 2.0 + 14.0),
-                      [&](int band) { return number(temperature(band), 0); });
+        addLabels(count, -(size * 0.5 + 12.0), [start, step](int index) {
+            return QString::number(start - step * index, 'f', 0);
+        });
+
         return QStringLiteral("temperature tower: %1 bands from %2 C down to %3 C")
             .arg(count)
-            .arg(number(start, 0), number(temperature(count - 1), 0));
+            .arg(number(start, 0), number(start - step * (count - 1), 0));
     }
 
     if (kind == QLatin1String("pressure_advance")) {

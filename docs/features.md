@@ -122,7 +122,7 @@ shape; a second material needs the multi-slot UI, which is not built.
 | Physical printer / print host setup | done — Send to printer (File menu) stores the machine's host, kind (Klipper/Moonraker, OctoPrint, PrusaLink, Duet, Repetier, AstroBox, MKS) and API key beside the presets, tests the connection and uploads through the engine's own print-host family. The key file is owner-read/write only. `--print-host-test HOST,PORT,APIKEY,GCODE` does the same headlessly, and neither path writes the stored connection |
 | Host offsets | done — X/Y/Z compensation in the same dialog, stored with the connection, written into the G-code as Klipper's `SET_GCODE_OFFSET X=… Y=… Z=…` immediately before the first extrusion (after homing and any bed mesh, which is the only point where the shift both holds and has not yet been printed over). Applied by **both** export and upload, so the file on disk and the file the machine receives are the same. Klipper honours it; other firmware ignores the command, which the dialog says. `--apply-host-offsets IN,OUT` writes exactly what the machine would receive, and a gate asserts the line lands before the first extrusion and that a zero writes nothing |
 | Preset export bundle | done — File ▸ Export preset bundle (Ctrl+Shift+B) writes the current machine's whole vendor bundle, every preset file and manifest included, into a folder; `--export-bundle DIR` does the same headlessly. One preset alone is not a shareable machine, because the engine resolves a bundle as a package |
-| Machine list: the user's own machines, and the catalogue | done — the Printer dropdown lists the machines in the user's own bundles (a real directory in their preset tree, not the generated catalogue and not the engine's linked bundle), with the machine in force always shown; the grid button beside it opens the setup flow's full catalogue of 460 machines |
+| Machine list: the user's own machines, and the catalogue | done — the Printer dropdown lists the machines in the user's own bundles (a real directory in their preset tree, not the generated catalogue and not the engine's linked bundle), with the machine in force always shown; the grid button beside it opens the setup flow's full catalogue of 460 machines. The machine editor (the gear) carries a wifi button that opens the same network window as File ▸ Send to printer — host, API key, host offsets — where a person is editing the machine it belongs to |
 | Multi-extruder per-slot editing | done — one Filament row per tool in the panel, per-tool pickers in the editor, `resolve()` honours the chosen material for every tool, and a machine created by the set-up flow or by an import takes a tool count (`printers.json` carries it, `vendor.yaml` writes `tool_count`) |
 | "Compare presets" | done — the preset editor's Compare… opens two of the same kind side by side, every value they set differently; the panel's "N changed" label opens the same window in its pending-edits mode |
 | Per-object override editor | done — right-click an object ▸ Per-object settings: every print setting the engine lets an object override, its layer-height profile, per-volume overrides inside a modifier, and the paint. Reaches the slicer through the plate slice path; measured by `--slice-features`, which now asserts the decisive pair (a 0.30 mm object layer height *reduces* the layer count, and per-object `support_material: none` leaves **zero** support moves) plus the painted-enforcer and custom-G-code markers |
@@ -293,11 +293,17 @@ same parameters, and the same nine tests plus a squish ladder.
 Every test is built from the engine's primitives plus the plate's own layer
 G-code, so it slices, previews and sends like any plate. The band command is
 chosen by the printer's own `gcode_flavor`, because `SET_PRESSURE_ADVANCE` on a
-Marlin machine is an error and `M900` on Klipper stops the print.
+Marlin machine is an error and `M900` on Klipper stops the print. Nothing on the
+plate is a borrowed mesh: the reference's test models carry its logo printed in
+the geometry, and this suite builds its own.
+
+The dialog is centred on the window with its close button in its own top-right
+corner, and building a test selects everything it put on the plate, so Delete
+removes the test you just built rather than nothing.
 
 | Test | Reference parameters | Ours |
 | --- | --- | --- |
-| Temperature tower | filament type (sets the range), start / end / step, model | done — same ranges (PLA 230-190, ABS 260-230, PETG 250-220, PCTG, TPU, PA-CF, PET-CF, Custom), auto-scale for the nozzle |
+| Temperature tower | filament type (sets the range), start / end / step, model | done — same ranges (PLA 230-190, ABS 260-230, PETG 250-220, PCTG, TPU, PA-CF, PET-CF, Custom), auto-scale for the nozzle. Built from primitives (a block per band with a shelf cantilevered out of its top, so each temperature shows overhang, bridging and stringing), not from the reference's mesh: that mesh has the reference's own logo embossed in the geometry, and cutting a temperature range out of a fixed 700 mm stack sliced the top band through the middle of its number |
 | Pressure advance | extruder type (DDE / Bowden), method (tower / line / pattern), start / end / step, print numbers | tower: done. **Line and pattern are not built** -- see below |
 | Flow ratio | pass 1 (coarse) / pass 2 (fine) / YOLO, top-surface pattern | done — coarse 90-110 %, fine 98-102 %, very fine 99-101 %; patch size |
 | Max volumetric speed | start / end / step in mm³/s | done — converted per band to a feed override from the line width, layer height and base speed |

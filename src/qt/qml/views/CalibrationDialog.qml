@@ -30,6 +30,14 @@ Popup {
     focus: true
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
+    // Centred on the window, not on whatever item happens to declare this: a Popup
+    // is a visual child of its parent, and declared inside the rail it opened
+    // against the rail's corner instead of the middle of the screen.
+    readonly property Item windowItem: Overlay.overlay !== null ? Overlay.overlay : parent
+    parent: Overlay.overlay
+    x: root.windowItem === null ? 0 : Math.round((root.windowItem.width - width) / 2)
+    y: root.windowItem === null ? 0 : Math.round((root.windowItem.height - height) / 2)
+
     background: Rectangle {
         radius: Metrics.radiusLarge
         color: Colors.surfaceContainerLow
@@ -73,6 +81,11 @@ Popup {
 
     function build() {
         root.message = calibration.build(root.selected.kind, root.paramValues())
+        // The test is what was just put on the plate, and it is a handful of
+        // objects (bands, their shelves, the numbers). Left unselected, Delete
+        // removed nothing, or one band out of nine, and the plate looked untouched.
+        if (!root.message.startsWith("could not") && !root.message.startsWith("temperature tower: 0"))
+            plateDocument.selectAll()
         root.close()
     }
 
@@ -101,12 +114,13 @@ Popup {
 
                 Item {
                     Layout.fillWidth: true
+                    Layout.preferredHeight: Metrics.controlHeight
                     Layout.margins: Metrics.lg
                     Layout.bottomMargin: Metrics.sm
 
                     Text {
                         anchors.left: parent.left
-                        anchors.baseline: closeButton.baseline
+                        anchors.verticalCenter: parent.verticalCenter
                         text: "Calibration"
                         font.family: Type.family
                         font.pixelSize: Type.sizeBody
@@ -118,6 +132,7 @@ Popup {
                         id: closeButton
                         anchors.right: parent.right
                         anchors.top: parent.top
+                        visible: false
                         icon: "close"
                         hint: "Close"
                         onClicked: root.close()
@@ -338,6 +353,18 @@ Popup {
             anchors.bottom: parent.bottom
             anchors.rightMargin: Metrics.xs
             anchors.bottomMargin: Metrics.xs
+        }
+
+        // The close button belongs to the dialog, not to the list of tests: inside
+        // the left column it sat over the list it was sized against.
+        ToolButton {
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.rightMargin: Metrics.sm
+            anchors.topMargin: Metrics.sm
+            icon: "close"
+            hint: "Close"
+            onClicked: root.close()
         }
     }
 }

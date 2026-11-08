@@ -29,6 +29,10 @@ Popup {
     property bool showAddPrinter: false
     property bool confirmingDelete: false
 
+    /// Asks the window for the printer's connection window: the dialog itself has
+    /// no business owning a second copy of it.
+    signal networkRequested()
+
     readonly property string presetKind: root.tab === "filament" ? "filament"
                                        : root.tab === "printer" ? "printer" : "print"
     readonly property bool printerTab: root.tab === "printer"
@@ -423,6 +427,18 @@ Popup {
                     hint: "Create a new machine from the current settings"
                     visible: root.printerTab
                     onClicked: root.showAddPrinter = !root.showAddPrinter
+                }
+
+                ToolButton {
+                    icon: "wifi"
+                    hint: "Network: host, API key and host offsets for this machine"
+                    visible: root.printerTab
+                    onClicked: {
+                        // One modal at a time: the connection window is its own, and a
+                        // popup opened on top of a popup lands behind it.
+                        root.close()
+                        root.networkRequested()
+                    }
                 }
 
                 Text {

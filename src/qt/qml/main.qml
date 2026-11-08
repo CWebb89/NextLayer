@@ -1284,6 +1284,8 @@ Window {
 
             onMachineChooserRequested: setupFlow.reopen()
 
+            onNetworkRequested: printHostDialog.open()
+
             onChangesRequested: (tab) => presetDiffDialog.openFor(tab)
 
             Behavior on x { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
