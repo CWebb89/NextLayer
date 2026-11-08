@@ -32,6 +32,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace {
 
@@ -450,9 +451,25 @@ QImage GcodeView::Impl::render(int width, int height, const QVector3D& eye, cons
     double far_plane = std::max(distance * 10.0, 100.0);
     const Slic3r::Domain::BoundingBox3d box = m_bounds;
     if (box.defined) {
-        const double radius = 0.5 * (box.max - box.min).norm();
-        near_plane = std::max(distance - 1.5 * radius, distance * 0.01);
-        far_plane = distance + 1.5 * radius;
+        // Depth span of the toolpath along the view axis, from its own eight
+        // corners. Bounding it by a sphere around the box centre clipped the
+        // model the moment the camera orbited off that centre: the near plane
+        // tracked a radius that says nothing about which side of the eye a
+        // corner is on, so a sliced part lost whichever end was furthest from
+        // the orbit point. Corner depths are exact for any eye position.
+        const Slic3r::Domain::Vec3d forward = (centre_printer - eye_printer).normalized();
+        double nearest = std::numeric_limits<double>::max();
+        double furthest = -std::numeric_limits<double>::max();
+        for (int corner = 0; corner < 8; ++corner) {
+            const Slic3r::Domain::Vec3d point((corner & 1) ? box.max.x() : box.min.x(),
+                                              (corner & 2) ? box.max.y() : box.min.y(),
+                                              (corner & 4) ? box.max.z() : box.min.z());
+            const double depth = (point - eye_printer).dot(forward);
+            nearest = std::min(nearest, depth);
+            furthest = std::max(furthest, depth);
+        }
+        near_plane = std::max(nearest * 0.5, 0.05);
+        far_plane = std::max(furthest * 1.05, near_plane + 1.0);
     }
     camera.set_z_near_far(near_plane, far_plane);
     camera.look_at(eye_printer, centre_printer, toPrinter(up));
