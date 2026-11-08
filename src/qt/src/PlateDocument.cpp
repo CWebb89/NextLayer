@@ -4,7 +4,7 @@
 #include "PlateDocument.hpp"
 
 #include "Scratch.hpp"
-#include "ThreeMfPlates.hpp"
+#include "ThreeMfProject.hpp"
 
 #include "Arranger.hpp"
 #include "GcodeBrand.hpp"
@@ -1080,13 +1080,30 @@ int PlateDocument::importObject(const QString& path, const QString& label, bool 
                                      : scene->objects.front()->instances.front(),
                                  local, label, placeOnBed, false);
 
+    // The engine hands back every object centred on its own bounding box, so a
+    // plate of fifteen parts arrives with all fifteen in the same spot. The
+    // build list is what keeps the arrangement: it names the placed objects in
+    // read order, one per object that comes back here, with the matrix that
+    // puts each one where its author had it.
+    const next_layer::ThreeMfProject project = next_layer::readThreeMfProject(local);
+    int buildItems = 0;
+    for (const auto& objectPtr : scene->objects)
+        buildItems += int(objectPtr->instances.size());
+    const bool placed = project.valid && project.buildTransforms.size() == buildItems;
+
     pushUndo(QStringLiteral("Import %1").arg(QFileInfo(local).fileName()));
     QList<int> added;
+    int item = 0;
     for (const auto& objectPtr : scene->objects) {
         for (const auto& instance : objectPtr->instances) {
-            const int id = importSceneObject(*objectPtr, instance, local, QString(), false, true);
+            const next_layer::ThreeMfProject::Placement* placement =
+                placed && item < project.buildTransforms.size() ? &project.buildTransforms.at(item)
+                                                                : nullptr;
+            const int id = importSceneObject(*objectPtr, instance, local, QString(), false, true,
+                                             placement);
             if (id >= 0)
                 added.push_back(id);
+            ++item;
         }
     }
     if (added.isEmpty()) {
@@ -1094,7 +1111,7 @@ int PlateDocument::importObject(const QString& path, const QString& label, bool 
         return -1;
     }
 
-    adoptProjectPlates(local, added);
+    layoutProject(added, project);
     m_selectedIds = std::vector<int>(added.begin(), added.end());
     m_error.clear();
     emit errorChanged();
@@ -1104,69 +1121,92 @@ int PlateDocument::importObject(const QString& path, const QString& label, bool 
     return added.front();
 }
 
-/// Places the objects of a project file on the plates its author saved. The
-/// file's own coordinates are one shared space in which the plates sit hundreds
-/// of millimetres to metres apart, and the reader re-centres every object by its
-/// own bounding box, so a loaded position cannot be matched back to a plate. The
-/// build list can: it names the placed objects in read order, one per object that
-/// comes back, and each object's plate is in the project's plate records.
-void PlateDocument::adoptProjectPlates(const QString& local, const QList<int>& added)
+/// Puts the objects of a project file where its author had them. Two things are
+/// settled here, and both come from the file rather than from the engine's
+/// reader: which plate each object belongs to, and where on that plate it sits.
+///
+/// The reader hands back every object centred on its own bounding box, so the
+/// arrangement the file was saved with is gone by the time the objects exist.
+/// It is rebuilt from the build list: an object's placement matrix says where it
+/// was on its plate, and the group on each plate is then moved as a whole so that
+/// it lands on this plate, keeping its internal spacing.
+void PlateDocument::layoutProject(const QList<int>& added, const next_layer::ThreeMfProject& project)
 {
-    const next_layer::ThreeMfPlates project = next_layer::readThreeMfPlates(local);
-    if (!project.valid || project.plateCount < 2)
-        return;
-    if (project.buildOrder.size() != added.size())
-        return;
+    const bool knownPlates = project.valid && project.plateCount > 0
+                             && project.buildOrder.size() == added.size();
 
     QHash<int, QVector<int>> onPlate;
     for (int index = 0; index < added.size(); ++index) {
-        const int plate = project.plateOfObject.value(project.buildOrder.at(index), 0) - 1;
-        if (plate < 0 || plate >= project.plateCount)
-            continue;
         Object* object = find(added.at(index));
         if (object == nullptr)
             continue;
-        object->plate = plate;
-        onPlate[plate].append(object->id);
+        if (knownPlates) {
+            const int plate = project.plateOfObject.value(project.buildOrder.at(index), 0) - 1;
+            if (plate >= 0 && plate < project.plateCount)
+                object->plate = plate;
+        }
+        onPlate[object->plate].append(object->id);
     }
 
     if (onPlate.isEmpty())
         return;
+    if (knownPlates)
+        m_plateCount = std::max(m_plateCount, project.plateCount);
 
-    m_plateCount = std::max(m_plateCount, project.plateCount);
     for (auto it = onPlate.constBegin(); it != onPlate.constEnd(); ++it) {
-        float lowX = std::numeric_limits<float>::max();
-        float highX = std::numeric_limits<float>::lowest();
-        float lowY = lowX;
-        float highY = highX;
+        QVector3D low;
+        QVector3D high;
+        bool first = true;
         for (const int id : it.value()) {
             const Object* object = find(id);
-            const QVector3D position = object->position();
-            const QVector3D size = object->size();
-            lowX = std::min(lowX, position.x() - size.x() * 0.5f);
-            highX = std::max(highX, position.x() + size.x() * 0.5f);
-            lowY = std::min(lowY, position.y() - size.y() * 0.5f);
-            highY = std::max(highY, position.y() + size.y() * 0.5f);
+            QVector3D objectLow;
+            QVector3D objectHigh;
+            if (object == nullptr
+                || !boxOf(*object->mesh, object->trafo, object->localMin, object->localMax,
+                          objectLow, objectHigh))
+                continue;
+            low = first ? objectLow : QVector3D(std::min(low.x(), objectLow.x()),
+                                                std::min(low.y(), objectLow.y()), 0.0f);
+            high = first ? objectHigh : QVector3D(std::max(high.x(), objectHigh.x()),
+                                                  std::max(high.y(), objectHigh.y()), 0.0f);
+            first = false;
         }
-        const double dx = double(m_bedCentre.x()) - (lowX + highX) * 0.5;
-        const double dy = double(m_bedCentre.y()) - (lowY + highY) * 0.5;
-        if (std::abs(dx) < 0.01 && std::abs(dy) < 0.01)
+        if (first)
             continue;
+
+        const float dx = m_bedCentre.x() - (low.x() + high.x()) * 0.5f;
+        const float dy = m_bedCentre.y() - (low.y() + high.y()) * 0.5f;
         for (const int id : it.value()) {
             Object* object = find(id);
+            if (object == nullptr)
+                continue;
             const Vec3d offset = object->trafo.get_offset();
             object->trafo.set_offset(Vec3d(offset.x() + dx, offset.y() + dy, offset.z()));
         }
     }
 }
 
-int PlateDocument::importSceneObject(const Slic3r::Domain::ModelObject& source,                                     const Slic3r::Domain::ModelInstance* instance,
-                                     const QString& local, const QString& label, bool placeOnBed,
-                                     bool deferPush)
+int PlateDocument::importSceneObject(
+    const Slic3r::Domain::ModelObject& source, const Slic3r::Domain::ModelInstance* instance,
+    const QString& local, const QString& label, bool placeOnBed, bool deferPush,
+    const next_layer::ThreeMfProject::Placement* placement)
 {
     TriangleMesh mesh = source.raw_mesh();
     const QString name = source.name.empty() ? QFileInfo(local).fileName()
                                              : QString::fromStdString(source.name);
+
+    // A placement the file recorded is baked into the geometry, rotation and all,
+    // before the usual normalisation. Baking it keeps the object in whatever
+    // attitude its author printed it in, and leaves the transform applied at run
+    // time -- the one the panels read back -- free to mean what the user set.
+    if (placement != nullptr) {
+        Transform3d matrix = Transform3d::Identity();
+        matrix.linear() << (*placement)[0], (*placement)[1], (*placement)[2],
+                            (*placement)[3], (*placement)[4], (*placement)[5],
+                            (*placement)[6], (*placement)[7], (*placement)[8];
+        matrix.translation() << (*placement)[9], (*placement)[10], (*placement)[11];
+        mesh.transform(matrix);
+    }
 
     QVector3D fileMin;
     QVector3D fileMax;
@@ -1182,14 +1222,26 @@ int PlateDocument::importSceneObject(const Slic3r::Domain::ModelObject& source, 
     object.name = name;
     object.label = label;
 
-    if (instance != nullptr && !placeOnBed)
+    if (instance != nullptr && !placeOnBed && placement == nullptr)
         object.trafo = instance->get_transformation();
 
-    if (placeOnBed) {
-        normalise(mesh, fileMin, fileMax);
+    if (placeOnBed || placement != nullptr) {
+        if (placement != nullptr) {
+            // Height is the author's: a print-in-place assembly is arranged so its
+            // parts sit above one another, and flattening each onto the bed would
+            // stack them into each other. Only the horizontal centre moves, so the
+            // transform this object carries is the position the panels show.
+            const float centreX = (fileMin.x() + fileMax.x()) * 0.5f;
+            const float centreY = (fileMin.y() + fileMax.y()) * 0.5f;
+            mesh.translate(toVec3f(QVector3D(-centreX, -centreY, 0.0f)));
+            object.trafo.set_offset(Vec3d(centreX, centreY, 0.0));
+        } else {
+            normalise(mesh, fileMin, fileMax);
+        }
         object.mesh = std::make_shared<TriangleMesh>(mesh);
         meshBounds(*object.mesh, object.localMin, object.localMax);
-        placeNext(object);
+        if (placeOnBed)
+            placeNext(object);
     } else {
         object.mesh = std::make_shared<TriangleMesh>(mesh);
         meshBounds(*object.mesh, object.localMin, object.localMax);

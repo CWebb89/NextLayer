@@ -226,7 +226,7 @@ Popup {
                     Layout.fillWidth: true
                     Layout.columnSpan: 2
                     visible: printerLink.hasOffsets
-                    text: "Written into the G-code as " + printerLink.offsetsLine()
+                    text: "Written into the G-code as " + printerLink.offsetsLine
                           + " before the first extrusion. Klipper applies it; other "
                           + "firmware ignores the command."
                     wrapMode: Text.WordWrap

@@ -11,6 +11,9 @@ import "../components"
 Item {
     id: root
 
+    /// A right-click on an object in the viewport, in window coordinates: the
+    /// menu that answers it is a window overlay, not a child of the scene.
+    signal contextRequested(int objectId, real x, real y)
     signal placedOnFace(int objectId, int facet)
     signal painted(int objectId, int facets)
     /// A click on a plate's number badge. The owner does the plate switch: it also
@@ -1196,6 +1199,24 @@ Item {
         }
 
         onReleased: (mouse) => {
+            // The right button pans while it is dragged and opens the object's menu
+            // when it is not -- the arrangement every slicer has, and the one that
+            // stops a pan from being an accidental menu. A press that stays put is
+            // a request for the menu of whatever is under it.
+            if (mouse.button === Qt.RightButton) {
+                const travelled = Math.abs(mouse.x - input.pressX) + Math.abs(mouse.y - input.pressY)
+                input.panning = false
+                if (travelled >= 4 || root.mode !== "model" || !session.hasModel)
+                    return
+                const hit = root.hitAt(mouse.x, mouse.y)
+                if (hit.w <= 0)
+                    return
+                plateDocument.selectObject(plateScene.pickedId)
+                const point = root.mapToItem(null, mouse.x, mouse.y)
+                root.contextRequested(plateScene.pickedId, point.x, point.y)
+                return
+            }
+
             if (input.banding) {
                 input.banding = false
                 band.visible = false

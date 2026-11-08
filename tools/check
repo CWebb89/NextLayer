@@ -722,8 +722,36 @@ else
     __ok "mesh tools: "(string join '; ' -- $mesh_out)
 end
 
-# Robustness gate: a slicer is a parser, and every file it reads comes from
-# somewhere it does not control. A case counts as passing when the app says what is
+# Project layout gate: a project file carries its objects' positions and the plate
+# each one belongs to, and the engine's reader hands every object back centred on
+# itself. A plate of fifteen parts that loads as fifteen coincident parts, on one
+# plate, is the failure this measures: the gaps the author saved and the plates the
+# file records both have to survive the import.
+set -l project /tmp/nl-check-project
+rm -rf $project
+python3 $root/tools/project-fixtures.py --out $project >/dev/null 2>&1
+timeout 120 $bin $project/two-plates.3mf --dump-objects >/tmp/nl-check-project.out 2>&1
+set -l project_rc $status
+set -l project_gaps (command grep 'obj ' /tmp/nl-check-project.out | awk '{ print $4, $9 }' | python3 -c '
+import sys
+plates = {}
+for line in sys.stdin:
+    plate, x = line.split()
+    plates.setdefault(plate, []).append(float(x))
+print(" ".join(
+    "plate%s(%d parts, gaps %s)" % (plate, len(values), "/".join(
+        "%.3f" % (b - a) for a, b in zip(sorted(values), sorted(values)[1:])))
+    for plate, values in sorted(plates.items())))
+')
+if test $project_rc -ne 0
+    __bad "project layout: "(string join '; ' -- (command grep . /tmp/nl-check-project.out | head -3))
+else if test "$project_gaps" != "plate1(2 parts, gaps 40.000) plate2(2 parts, gaps 80.000)"
+    __bad "project layout: expected two plates of two parts with 40 and 80 mm gaps, got: "(string join ' / ' -- $project_gaps)
+else
+    __ok "project layout: 2 plates, parts kept their 40 mm and 80 mm spacing, each plate centred on the bed"
+end
+
+# Robustness gate: a slicer is a parser, and every file it reads comes from# somewhere it does not control. A case counts as passing when the app says what is
 # wrong with the file and keeps running; a process that aborts on a truncated
 # download is the failure this gate exists for.
 set -l malformed /tmp/nl-check-malformed

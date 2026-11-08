@@ -6,6 +6,7 @@
 #include "Arranger.hpp"
 #include "Paint.hpp"
 #include "SliceRuntime.hpp"
+#include "ThreeMfProject.hpp"
 
 #include <QObject>
 #include <QString>
@@ -410,8 +411,9 @@ private:
     int importObject(const QString& path, const QString& label, bool placeOnBed);
     int importSceneObject(const Slic3r::Domain::ModelObject& source,
                           const Slic3r::Domain::ModelInstance* instance, const QString& local,
-                          const QString& label, bool placeOnBed, bool deferPush);
-    void adoptProjectPlates(const QString& local, const QList<int>& added);
+                          const QString& label, bool placeOnBed, bool deferPush,
+                          const next_layer::ThreeMfProject::Placement* placement = nullptr);
+    void layoutProject(const QList<int>& added, const next_layer::ThreeMfProject& project);
     void placeNext(Object& object) const;
     void fail(const QString& message);
     int applyPlacements(const std::vector<next_layer::PlaceableObject>& placeables);

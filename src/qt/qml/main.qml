@@ -1122,6 +1122,7 @@ Window {
             onPlateAddRequested: root.addPlate()
             onPlateLockToggled: (index) => root.togglePlateLock(index)
             onActionRequested: (id) => root.runAction(id)
+            onContextRequested: (objectId, x, y) => root.openObjectMenu(objectId, x, y)
             onPlateRenameRequested: (index) => {
                 root.plateMenuIndex = index
                 textPrompt.openWith("Rename plate", plateDocument.plateName(index), "", "Rename")
@@ -1175,6 +1176,11 @@ Window {
                 root.plateListVisible = true
             }
             onActionTriggered: (id) => root.runAction(id)
+            onExportMenuRequested: (x, y) => {
+                exportMenu.anchorX = Math.min(x, root.width - 320)
+                exportMenu.anchorY = Math.min(y + 6, root.height - 160)
+                exportMenu.visible = true
+            }
             onAddRequested: (x, y) => {
                 root.addMenuAt = Qt.point(x, y)
                 root.addMenuVisible = !root.addMenuVisible
@@ -1503,9 +1509,20 @@ Window {
             // change is what made a plain move or delete look like a zoom.
             if (session.path !== root.lastModelPath) {
                 root.lastModelPath = session.path
-                viewport.frameContent()
+                frameTimer.restart()
             }
         }
+    }
+
+    // A project file arrives as one signal per object, and the camera framed the
+    // first of them: the rest of a project landed outside the frame, on a plate
+    // zoomed in on a single part. Framing waits for the import to settle, which is
+    // the next turn of the event loop, and then frames everything on the plate.
+    Timer {
+        id: frameTimer
+        interval: 0
+        repeat: false
+        onTriggered: viewport.frameContent()
     }
 
     Connections {
@@ -1735,6 +1752,26 @@ Window {
         anchorY: Math.min(root.plateMenuY + 8, root.height - 200)
         onTriggered: (id) => root.runAction(id)
         onDismissed: root.plateMenuVisible = false
+    }
+
+    // The export button's arrow: the two things that can be done with a sliced
+    // plate, one of which does not involve a file dialog at all.
+    MenuPanel {
+        id: exportMenu
+        parent: Overlay.overlay
+        anchors.fill: parent
+        visible: false
+        z: 110
+        menuWidth: 300
+        entries: [
+            { id: "export", label: "Export G-code…", hint: "Ctrl+E" },
+            { id: "sendToPrinter", label: "Send to printer…", hint: "upload, then print" }
+        ]
+        onTriggered: (id) => {
+            exportMenu.visible = false
+            root.runAction(id)
+        }
+        onDismissed: exportMenu.visible = false
     }
 
     // The plate list: every plate in the selector, so fourteen plates cost one

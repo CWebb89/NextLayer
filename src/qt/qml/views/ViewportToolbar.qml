@@ -39,6 +39,9 @@ Item {
     signal addRequested(real x, real y)
     signal sliceRequested()
     signal sliceAllRequested()
+    /// The export button's own menu, whose entries live in the window: a menu at the
+    /// top of the strip has to be drawn over the whole window, not cropped by it.
+    signal exportMenuRequested(real x, real y)
 
     implicitHeight: Metrics.rowHeight + Metrics.md * 2
 
@@ -251,6 +254,22 @@ Item {
             text: "Export G-code"
             enabled: root.canSlice
             onClicked: root.actionTriggered("export")
+        }
+
+        // The other half of the export action, the way every slicer with a printer
+        // behind it does it: the button writes a file, the arrow offers sending it
+        // instead. Which one a person wants depends on whether the machine is on
+        // the network, and that is not something to guess at.
+        Button {
+            id: exportArrow
+            text: "\u25be"
+            hint: "Export the G-code, or send it to the printer"
+            enabled: root.canSlice
+            onClicked: {
+                const point = exportArrow.mapToItem(null, exportArrow.width / 2,
+                                                   exportArrow.height)
+                root.exportMenuRequested(point.x, point.y)
+            }
         }
     }
 }
