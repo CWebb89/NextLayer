@@ -671,24 +671,37 @@ namespace {
 /// object on plate one, named. A reader that understands them puts the objects
 /// back where they were instead of packing the bed, and OrcaSlicer reads the same
 /// file.
-bool writePlateRecords(const QString& path, int objectCount)
+bool writePlateRecords(const QString& path, const QVector<PlateSliceObject>& objects)
 {
     QString xml = QStringLiteral("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<config>\n");
-    for (int object = 1; object <= objectCount; ++object) {
+    int plateCount = 1;
+    for (const PlateSliceObject& object : objects)
+        plateCount = std::max(plateCount, object.plate + 1);
+
+    // The object ids are the ones the writer gave the model, one per object in the
+    // order they were handed over.
+    for (int index = 0; index < objects.size(); ++index) {
         xml += QStringLiteral("  <object id=\"%1\">\n"
-                              "    <metadata key=\"plater_id\" value=\"1\"/>\n"
+                              "    <metadata key=\"plater_id\" value=\"%2\"/>\n"
                               "  </object>\n")
-                   .arg(object);
+                   .arg(index + 1)
+                   .arg(objects.at(index).plate + 1);
     }
-    xml += QStringLiteral("  <plate>\n    <metadata key=\"plater_id\" value=\"1\"/>\n");
-    for (int object = 1; object <= objectCount; ++object) {
-        xml += QStringLiteral("    <model_instance>\n"
-                              "      <metadata key=\"object_id\" value=\"%1\"/>\n"
-                              "      <metadata key=\"instance_id\" value=\"0\"/>\n"
-                              "    </model_instance>\n")
-                   .arg(object);
+    for (int plate = 1; plate <= plateCount; ++plate) {
+        xml += QStringLiteral("  <plate>\n    <metadata key=\"plater_id\" value=\"%1\"/>\n")
+                   .arg(plate);
+        for (int index = 0; index < objects.size(); ++index) {
+            if (objects.at(index).plate + 1 != plate)
+                continue;
+            xml += QStringLiteral("    <model_instance>\n"
+                                  "      <metadata key=\"object_id\" value=\"%1\"/>\n"
+                                  "      <metadata key=\"instance_id\" value=\"0\"/>\n"
+                                  "    </model_instance>\n")
+                       .arg(index + 1);
+        }
+        xml += QStringLiteral("  </plate>\n");
     }
-    xml += QStringLiteral("  </plate>\n</config>\n");
+    xml += QStringLiteral("</config>\n");
 
     const QByteArray body = xml.toUtf8();
     const mz_bool added = mz_zip_add_mem_to_archive_file_in_place(
@@ -745,7 +758,7 @@ bool SliceRuntime::exportPlate3mf(const QVector<PlateSliceObject>& objects,
         outPath.toStdString().c_str(), &selected.model(), configContainer.build_print_config(),
         configContainer.selected_preset().hw_config, /*fullpath_sources=*/true, wipeTowers,
         customGcodes);
-    const bool appended = written && writePlateRecords(outPath, int(objects.size()));
+    const bool appended = written && writePlateRecords(outPath, objects);
 
     if (!written)
         error = QStringLiteral("the engine could not write %1").arg(outPath);

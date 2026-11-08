@@ -11,20 +11,50 @@
 
 namespace next_layer {
 
+/// One volume as a project file records it: what it is (a model part, a modifier,
+/// a negative volume, a support blocker), where it sits in the object's frame, the
+/// overrides it carries, and the facets that were painted on it.
+///
+/// The paint is kept as the file's own per-triangle strings, keyed by the
+/// triangle's index inside the volume. Converting them is the caller's job,
+/// because the engine's selector is what understands the encoding.
+struct ThreeMfVolumeRecord
+{
+    QString type;
+    QHash<QString, QString> settings;
+    QHash<int, QString> supports;
+    QHash<int, QString> seams;
+    QHash<int, QString> tools;
+};
+
+/// A marker on the plate's timeline: a pause, a colour or tool change, or a
+/// snippet of custom G-code at a Z height. It belongs to the plate, not to an
+/// object, and the file keeps them per bed.
+struct ThreeMfLayerGcode
+{
+    double z = 0.0;
+    int type = 4;
+    QString text;
+};
+
+/// What a project file says about one object beyond its geometry and placement.
+struct ThreeMfObjectRecord
+{
+    QHash<QString, QString> settings;
+    QVector<ThreeMfVolumeRecord> volumes;
+    /// The variable layer height bands, as z/height pairs flattened in order.
+    QVector<double> layerHeights;
+};
+
 /// What a project file says about where its objects go, read straight from the
 /// records its authoring slicer writes.
 ///
-/// The engine's reader returns each object centred on its own bounding box, so
-/// a file authored on a plate with fifteen parts arrives with all fifteen in the
-/// same place. The scene's build list is where the arrangement survives: one
-/// `<item>` per placed object, in the order the engine returns them, each with
-/// the 4x3 placement matrix that positions it on the plate. That matrix is what
-/// this reader collects, and it is the only reason a multi-part project loads as
-/// the author left it.
-///
-/// The plate each object belongs to is in the same project's plate records (the
-/// scene holds every plate in one coordinate space, hundreds of millimetres
-/// apart, so position alone cannot identify a plate).
+/// The engine's reader returns each object with the placement the build list gave
+/// it, so the build items are read here for their order (which is how an object is
+/// matched to the records that describe it) and the plate records for the plate
+/// each object belongs to. Everything else -- the object's overrides, its volumes
+/// and their types, its layer height bands, and the facets painted on it -- is in
+/// the file in formats this engine's loader discards, so it is read here too.
 struct ThreeMfProject
 {
     /// Twelve numbers per build item, the 3MF `<item transform>` in row-major
@@ -37,8 +67,12 @@ struct ThreeMfProject
     QVector<int> buildOrder;
     QVector<Placement> buildTransforms;
     QHash<int, int> plateOfObject;
+    QHash<int, ThreeMfObjectRecord> objectRecords;
+    /// Timeline markers per bed, in the file's own type codes: colour change 0,
+    /// pause 1, tool change 2, template 3, custom G-code 4.
+    QHash<int, QVector<ThreeMfLayerGcode>> layerGcodes;
 };
 
 ThreeMfProject readThreeMfProject(const QString& path);
 
-} // namespace next_layer
+}

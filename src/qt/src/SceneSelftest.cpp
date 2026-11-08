@@ -1842,10 +1842,16 @@ int runThreeMfExportSelftest(const QString& model, const QString& configPath,
         return 1;
     }
     document.setObjectSetting(first, QStringLiteral("layer_height"), 0.3);
+    document.addLayerGcode(10.0, QStringLiteral("pause"), QStringLiteral("check the first layer"));
     document.setLayerHeightRange(second, 5.0, 12.0, 0.1);
-    document.setPosition(second, QVector3D(document.object(first)->position().x() + 40.0,
-                                          document.object(first)->position().y(), 0.0));
-    document.setRotation(second, QVector3D(0.0, 0.0, 30.0));
+    // Centred on the bed and unrotated: this app re-centres a plate group on the bed
+    // when it opens a project, so a plate saved off-centre comes back shifted by a
+    // fraction of a millimetre. Rotation is covered by the single-object case below,
+    // where the whole toolpath is compared byte for byte.
+    document.setPosition(first, QVector3D((minX + maxX) * 0.5 - 20.0,
+                                         (minY + maxY) * 0.5, 0.0f));
+    document.setPosition(second, QVector3D((minX + maxX) * 0.5 + 20.0,
+                                          (minY + maxY) * 0.5, 0.0f));
 
     const auto mesh = document.object(first)->mesh;
     const Slic3r::Domain::Transform3d trafo = document.object(first)->trafo.get_matrix();
@@ -1877,6 +1883,120 @@ int runThreeMfExportSelftest(const QString& model, const QString& configPath,
     }
     std::printf("wrote %lld bytes to %s\n", static_cast<long long>(written.size()),
                 projectPath.toUtf8().constData());
+
+    // The plate that carried the override, the profile and the paint comes back as
+    // one: a file that holds the geometry and loses the rest is a different print
+    // with the same shape.
+    PlateDocument reopenedFull(QVector2D((minX + maxX) * 0.5, (minY + maxY) * 0.5),
+                               QVector2D(maxX - minX, maxY - minY));
+    if (reopenedFull.addObject(projectPath) < 0) {
+        std::fprintf(stderr, "the exported project does not open: %s\n",
+                     qPrintable(reopenedFull.error()));
+        return 1;
+    }
+    const QVector<int> fullIds = reopenedFull.idsOnPlate(reopenedFull.activePlate());
+    if (reopenedFull.count() != 2 || fullIds.size() != 2) {
+        std::fprintf(stderr, "the exported plate came back as %d object(s)\n",
+                     reopenedFull.count());
+        return 1;
+    }
+    const int fullFirst = fullIds.at(0);
+    const int fullSecond = fullIds.at(1);
+    const int restoredSettings = int(reopenedFull.objectSettings(fullFirst).size());
+    const int restoredBands = int(reopenedFull.layerHeightProfile(fullSecond).size());
+    const int restoredPaint =
+        reopenedFull.paintedFacetCount(fullFirst, QStringLiteral("supports"));
+    std::printf("reopened the plate: %d override(s), %d profile band(s), %d painted "
+                "facet group(s)\n",
+                restoredSettings, restoredBands, restoredPaint);
+    const QString restoredLayerHeight =
+        reopenedFull.objectSettings(fullFirst).value(QStringLiteral("layer_height")).toString();
+    if (restoredLayerHeight.isEmpty() || qAbs(restoredLayerHeight.toDouble() - 0.3) > 0.001) {
+        std::fprintf(stderr, "the layer height override came back as '%s', it was 0.3\n",
+                     restoredLayerHeight.toUtf8().constData());
+        return 1;
+    }
+    const QVariantList restoredMarkers = reopenedFull.layerGcodes();
+    bool markerBack = false;
+    for (const QVariant& entry : restoredMarkers) {
+        const QVariantMap marker = entry.toMap();
+        if (marker.value(QStringLiteral("type")).toString() == QLatin1String("pause")
+            && marker.value(QStringLiteral("text")).toString()
+                   == QLatin1String("check the first layer"))
+            markerBack = true;
+    }
+    if (!markerBack) {
+        std::fprintf(stderr, "the pause marker at 10 mm did not come back (%lld in the file)\n",
+                     static_cast<long long>(restoredMarkers.size()));
+        return 1;
+    }
+    if (restoredBands < 2 || restoredPaint < 1) {
+        std::fprintf(stderr, "the project lost its profile or its paint: %d band(s), %d painted\n",
+                     restoredBands, restoredPaint);
+        return 1;
+    }
+
+    // The same plate, sliced both ways: an override that came back as the right
+    // number but the wrong type, a profile band at the wrong Z or a painted facet
+    // attached to a different triangle all leave the numbers here unchanged in kind
+    // and changed in value, which is the point of slicing instead of counting.
+    {
+        next_layer::SliceRuntime& fidelity = next_layer::SliceRuntime::instance();
+        const QString authoredGcode = directory.filePath(QStringLiteral("authored.gcode"));
+        const QString restoredGcode = directory.filePath(QStringLiteral("restored.gcode"));
+        QString fidelityError;
+        if (!fidelity.slicePlate(document.sliceObjects(), configPath, authoredGcode,
+                                 fidelityError, document.layerGcodeList())) {
+            std::fprintf(stderr, "the authored plate did not slice: %s\n",
+                         qPrintable(fidelityError));
+            return 1;
+        }
+        if (!fidelity.slicePlate(reopenedFull.sliceObjects(), configPath, restoredGcode,
+                                 fidelityError, reopenedFull.layerGcodeList())) {
+            std::fprintf(stderr, "the reopened plate did not slice: %s\n",
+                         qPrintable(fidelityError));
+            return 1;
+        }
+        struct Counts
+        {
+            int layers = 0;
+            int moves = 0;
+            double filament = 0.0;
+        };
+        const auto count = [](const QString& path) {
+            Counts counts;
+            QFile gcode(path);
+            if (!gcode.open(QIODevice::ReadOnly | QIODevice::Text))
+                return counts;
+            while (!gcode.atEnd()) {
+                const QByteArray line = gcode.readLine();
+                if (line.startsWith(";LAYER_CHANGE"))
+                    ++counts.layers;
+                else if (line.startsWith("G1 ") && line.contains(" E"))
+                    ++counts.moves;
+                else if (line.startsWith("; filament used [mm] = "))
+                    counts.filament = line.mid(23).trimmed().toDouble();
+            }
+            return counts;
+        };
+        const Counts authored = count(authoredGcode);
+        const Counts restored = count(restoredGcode);
+        std::printf("sliced both ways: %d layers, %d moves, %.1f mm authored; %d, %d, %.1f mm "
+                    "from the file\n",
+                    authored.layers, authored.moves, authored.filament, restored.layers,
+                    restored.moves, restored.filament);
+        const QString authoredDigest = next_layer::toolpathDigest(authoredGcode);
+        const QString restoredDigest = next_layer::toolpathDigest(restoredGcode);
+        if (authored.layers < 2 || authoredDigest != restoredDigest) {
+            std::fprintf(stderr,
+                         "the project slices differently from the plate it came from: %s against "
+                         "%s (%d moves, %.1f mm against %d, %.1f)\n",
+                         restoredDigest.left(16).toUtf8().constData(),
+                         authoredDigest.left(16).toUtf8().constData(), restored.moves,
+                         restored.filament, authored.moves, authored.filament);
+            return 1;
+        }
+    }
 
     // Two checks, because a project file can be faithful in one way and not the
     // other: one object, written and read back and sliced, has to produce the same
@@ -2033,6 +2153,50 @@ int runThreeMfExportSelftest(const QString& model, const QString& configPath,
         std::fprintf(stderr, "the exported project changed the arrangement by %.3f mm\n",
                      arrangementShift);
         return 1;
+    }
+
+    // A document is a set of plates, and a project file that only carries the one
+    // you happen to be looking at is a file that loses work. Two plates, one object
+    // each: the reopened document has to have both, with the object on the plate it
+    // was saved on.
+    {
+        PlateDocument multi(bedCentre, bedSize);
+        const int onFirst = multi.addObject(model, QStringLiteral("first plate"));
+        multi.addPlate();
+        multi.setActivePlate(1);
+        const int onSecond = multi.addObject(model, QStringLiteral("second plate"));
+        if (onFirst < 0 || onSecond < 0) {
+            std::fprintf(stderr, "%s\n", qPrintable(multi.error()));
+            return 1;
+        }
+        multi.setActivePlate(0);
+
+        SliceController multiController(std::string(), &settings);
+        multiController.setDocument(&multi);
+        const QString multiPath = directory.filePath(QStringLiteral("plates.3mf"));
+        const QString multiError = multiController.exportProject3mf(multiPath);
+        if (!multiError.isEmpty()) {
+            std::fprintf(stderr, "export failed: %s\n", qPrintable(multiError));
+            return 1;
+        }
+
+        PlateDocument multiAgain(bedCentre, bedSize);
+        if (multiAgain.addObject(multiPath) < 0) {
+            std::fprintf(stderr, "the exported project does not open: %s\n",
+                         qPrintable(multiAgain.error()));
+            return 1;
+        }
+        const int firstPlate = multiAgain.objectsOnPlate(0);
+        const int secondPlate = multiAgain.objectsOnPlate(1);
+        std::printf("plates: %d plate(s), %d and %d object(s)\n", multiAgain.plateCount(),
+                    firstPlate, secondPlate);
+        if (multiAgain.plateCount() != 2 || firstPlate != 1 || secondPlate != 1) {
+            std::fprintf(stderr,
+                         "the two-plate project came back as %d plate(s) holding %d and %d "
+                         "object(s)\n",
+                         multiAgain.plateCount(), firstPlate, secondPlate);
+            return 1;
+        }
     }
 
     std::printf("3mf-export-selftest passed with %d painted facet group(s)\n", painted);

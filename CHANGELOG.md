@@ -6,15 +6,18 @@ unverified.
 
 ## Unreleased
 
-- **Project export for another slicer.** `File > Save project for another
-  slicer` writes the active plate as a `.3mf` that PrusaSlicer and OrcaSlicer can
-  open: geometry, per-object settings, layer height profile, paint, the resolved
-  configuration and plate records, verified by reopening it in this app and
-  slicing the same toolpath (125 layers, 6362 moves, 1100.3 mm of filament).
+- **Project export carries the whole document.** `File > Save project for another
+  slicer` writes every plate as a `.3mf` PrusaSlicer and OrcaSlicer can open --
+  geometry, the resolved configuration, per-object settings, layer height bands,
+  painted facets, timeline markers and plate records -- and reopening it restores
+  all of it. Verified by slicing the plate and its reopened copy: 189 layers,
+  12652 moves and 2212.6 mm of filament, byte-identical.
 - **A 3MF now opens where its author put it.** A one-object 3MF used to be treated
   as a bare mesh and dropped onto the bed, and every object's build transform was
   applied a second time on top of the instance the engine already had, which
   cancelled the author's rotation.
+- **A Bambu/Orca project opens with its plates and its placement**, though not yet
+  with its per-object settings.
 
 ## 0.1.0 — 2026-11-08
 

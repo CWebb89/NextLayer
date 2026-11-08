@@ -49,6 +49,9 @@ struct PlateLayerGcode
 struct PlateSliceObject
 {
     QString name;
+    /// The plate this object sits on, 0-based. A project file records it: the
+    /// slicer only ever slices one plate at a time, but the file is the document.
+    int plate = 0;
     /// Geometry in the object's own frame. The slicer path hands it over already
     /// placed -- every vertex in printer coordinates, `transform` left identity,
     /// which is why a slice is unaffected by how an object was moved; the project

@@ -13,6 +13,9 @@ namespace next_layer {
 namespace {
 
 const char* const kModelSettings = "Metadata/model_settings.config";
+const char* const kModelConfig = "Metadata/Slic3r_PE_model.config";
+const char* const kLayerHeights = "Metadata/Slic3r_PE_layer_heights_profile.txt";
+const char* const kLayerGcodes = "Metadata/Prusa_Slicer_custom_gcode_per_print_z.xml";
 const char* const kScene = "3D/3dmodel.model";
 
 QByteArray readZipEntry(const QString& path, const char* entry)
@@ -96,6 +99,8 @@ void readPlateRecords(const QByteArray& settings, ThreeMfProject& project)
     }
 }
 
+/// The build list: one `<item>` per placed object, in the order the model file
+/// lists them. That order is how an object is matched to the records below.
 void readBuildList(const QByteArray& scene, ThreeMfProject& project)
 {
     QXmlStreamReader xml(scene);
@@ -138,6 +143,191 @@ void readBuildList(const QByteArray& scene, ThreeMfProject& project)
     }
 }
 
+/// The object and volume records: what type each volume is, the overrides the file
+/// set on it, and the range of triangles its mesh occupies. The paint itself is in
+/// the model file, keyed by that range.
+void readModelConfig(const QByteArray& config, ThreeMfProject& project)
+{
+    QXmlStreamReader xml(config);
+    int objectId = 0;
+    ThreeMfObjectRecord record;
+    ThreeMfVolumeRecord volume;
+    int firstTriangle = 0;
+    bool inVolume = false;
+
+    while (!xml.atEnd()) {
+        const QXmlStreamReader::TokenType token = xml.readNext();
+        if (token == QXmlStreamReader::StartElement) {
+            const QStringView tag = xml.name();
+            const QXmlStreamAttributes attributes = xml.attributes();
+            if (tag == QLatin1String("object")) {
+                objectId = attributes.value(QLatin1String("id")).toInt();
+                record = ThreeMfObjectRecord{};
+            } else if (tag == QLatin1String("volume")) {
+                inVolume = true;
+                volume = ThreeMfVolumeRecord{};
+                firstTriangle = attributes.value(QLatin1String("firstid")).toInt();
+                volume.settings.insert(QStringLiteral("__first_triangle"),
+                                       QString::number(firstTriangle));
+            } else if (tag == QLatin1String("metadata")) {
+                const QString key = attributes.value(QLatin1String("key")).toString();
+                const QString value = attributes.value(QLatin1String("value")).toString();
+                if (inVolume) {
+                    if (key == QLatin1String("volume_type"))
+                        volume.type = value;
+                    else if (key != QLatin1String("matrix"))
+                        volume.settings.insert(key, value);
+                } else if (objectId > 0) {
+                    record.settings.insert(key, value);
+                }
+            }
+        } else if (token == QXmlStreamReader::EndElement) {
+            const QStringView tag = xml.name();
+            if (tag == QLatin1String("volume") && inVolume) {
+                record.volumes.append(volume);
+                inVolume = false;
+            } else if (tag == QLatin1String("object") && objectId > 0) {
+                project.objectRecords.insert(objectId, record);
+                objectId = 0;
+            }
+        }
+    }
+    if (xml.hasError())
+        project.objectRecords.clear();
+}
+
+/// The variable layer height bands, one `object_id=N|z;height;z;height;...` line per
+/// object.
+void readLayerHeights(const QByteArray& body, ThreeMfProject& project)
+{
+    const QStringList lines = QString::fromUtf8(body).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+    for (const QString& line : lines) {
+        const int marker = line.indexOf(QLatin1String("object_id="));
+        const int bar = line.indexOf(QLatin1Char('|'));
+        if (marker < 0 || bar < 0)
+            continue;
+        const int id = line.mid(marker + 10, bar - marker - 10).toInt();
+        if (id <= 0)
+            continue;
+        QVector<double>& bands = project.objectRecords[id].layerHeights;
+        for (const QString& number :
+             line.mid(bar + 1).split(QLatin1Char(';'), Qt::SkipEmptyParts))
+            bands.append(number.toDouble());
+    }
+}
+
+/// The painted facets, written as attributes on the model's own triangles. A
+/// triangle's index inside its volume is what the engine's selector is keyed by, so
+/// the global index is collected here and mapped onto the volume ranges afterwards.
+void readPaint(const QByteArray& scene, ThreeMfProject& project)
+{
+    QXmlStreamReader xml(scene);
+    QHash<int, QHash<int, QString>> supports;
+    QHash<int, QHash<int, QString>> seams;
+    QHash<int, QHash<int, QString>> tools;
+    int objectId = 0;
+    int triangle = 0;
+    bool inMesh = false;
+
+    while (!xml.atEnd()) {
+        const QXmlStreamReader::TokenType token = xml.readNext();
+        if (token == QXmlStreamReader::StartElement) {
+            const QStringView tag = xml.name();
+            if (tag == QLatin1String("object")) {
+                objectId = xml.attributes().value(QLatin1String("id")).toInt();
+            } else if (tag == QLatin1String("mesh")) {
+                inMesh = true;
+                triangle = 0;
+            } else if (tag == QLatin1String("triangle") && inMesh && objectId > 0) {
+                // The reference slicer writes these attributes in its own XML
+                // namespace, so they arrive as `slic3rpe:custom_supports` and match
+                // by local name only.
+                QString painted;
+                QString seam;
+                QString tool;
+                for (const QXmlStreamAttribute& attribute : xml.attributes()) {
+                    if (attribute.name() == QLatin1String("custom_supports"))
+                        painted = attribute.value().toString();
+                    else if (attribute.name() == QLatin1String("custom_seam"))
+                        seam = attribute.value().toString();
+                    else if (attribute.name() == QLatin1String("paint_color"))
+                        tool = attribute.value().toString();
+                }
+                if (!painted.isEmpty())
+                    supports[objectId].insert(triangle, painted);
+                if (!seam.isEmpty())
+                    seams[objectId].insert(triangle, seam);
+                if (!tool.isEmpty())
+                    tools[objectId].insert(triangle, tool);
+                ++triangle;
+            }
+        } else if (token == QXmlStreamReader::EndElement && xml.name() == QLatin1String("mesh")) {
+            inMesh = false;
+        }
+    }
+    if (xml.hasError())
+        return;
+
+    for (auto it = project.objectRecords.begin(); it != project.objectRecords.end(); ++it) {
+        const QHash<int, QString>& objectSupports = supports.value(it.key());
+        const QHash<int, QString>& objectSeams = seams.value(it.key());
+        const QHash<int, QString>& objectTools = tools.value(it.key());
+        if (objectSupports.isEmpty() && objectSeams.isEmpty() && objectTools.isEmpty())
+            continue;
+
+        QVector<ThreeMfVolumeRecord>& volumes = it->volumes;
+        if (volumes.isEmpty())
+            continue;
+        for (int index = 0; index < volumes.size(); ++index) {
+            const int first = volumes.at(index)
+                                  .settings.value(QStringLiteral("__first_triangle"))
+                                  .toInt();
+            const int last = index + 1 < volumes.size()
+                                 ? volumes.at(index + 1)
+                                       .settings.value(QStringLiteral("__first_triangle"))
+                                       .toInt()
+                                       - 1
+                                 : std::numeric_limits<int>::max();
+            auto take = [&](const QHash<int, QString>& source, QHash<int, QString>& target) {
+                for (auto painted = source.constBegin(); painted != source.constEnd(); ++painted) {
+                    if (painted.key() < first || painted.key() > last)
+                        continue;
+                    target.insert(painted.key() - first, painted.value());
+                }
+            };
+            take(objectSupports, volumes[index].supports);
+            take(objectSeams, volumes[index].seams);
+            take(objectTools, volumes[index].tools);
+        }
+    }
+}
+
+/// The timeline markers, per bed: pauses, colour and tool changes and custom
+/// G-code, each at its own Z.
+void readLayerGcodes(const QByteArray& body, ThreeMfProject& project)
+{
+    QXmlStreamReader xml(body);
+    int bed = 0;
+    while (!xml.atEnd()) {
+        const QXmlStreamReader::TokenType token = xml.readNext();
+        if (token != QXmlStreamReader::StartElement)
+            continue;
+        const QXmlStreamAttributes attributes = xml.attributes();
+        if (xml.name() == QLatin1String("custom_gcodes_per_print_z")) {
+            bed = attributes.value(QLatin1String("bed_idx")).toInt();
+        } else if (xml.name() == QLatin1String("code")) {
+            ThreeMfLayerGcode marker;
+            marker.z = attributes.value(QLatin1String("print_z")).toDouble();
+            marker.type = attributes.value(QLatin1String("type")).toInt();
+            const QString extra = attributes.value(QLatin1String("extra")).toString();
+            marker.text = extra.isEmpty() ? attributes.value(QLatin1String("color")).toString()
+                                          : extra;
+            if (marker.z > 0.0)
+                project.layerGcodes[bed].append(marker);
+        }
+    }
+}
+
 } // namespace
 
 ThreeMfProject readThreeMfProject(const QString& path)
@@ -151,6 +341,10 @@ ThreeMfProject readThreeMfProject(const QString& path)
 
     readPlateRecords(settings, project);
     readBuildList(scene, project);
+    readModelConfig(readZipEntry(path, kModelConfig), project);
+    readLayerHeights(readZipEntry(path, kLayerHeights), project);
+    readLayerGcodes(readZipEntry(path, kLayerGcodes), project);
+    readPaint(scene, project);
     if (project.buildTransforms.isEmpty())
         return ThreeMfProject{};
 
@@ -158,4 +352,4 @@ ThreeMfProject readThreeMfProject(const QString& path)
     return project;
 }
 
-} // namespace next_layer
+}

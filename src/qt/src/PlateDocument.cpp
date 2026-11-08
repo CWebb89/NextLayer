@@ -3,6 +3,7 @@
 
 #include "PlateDocument.hpp"
 
+#include "ConfigBoxJson.hpp"
 #include "Scratch.hpp"
 #include "ThreeMfProject.hpp"
 
@@ -16,9 +17,12 @@
 #include "Hollow.hpp"
 #include "Text.hpp"
 
+#include <Slic3r/Biz/Algorithms/ModelVolume.hpp>
 #include <Slic3r/Biz/Algorithms/TriangleMesh.hpp>
 #include <Slic3r/Biz/FileLoadingLogic.hpp>
 #include <Slic3r/Biz/Format/STL.hpp>
+#include <Slic3r/Domain/ConfigBoxesFDM.hpp>
+#include <Slic3r/Domain/FacetsAnnotation.hpp>
 #include <Slic3r/Domain/Model.hpp>
 #include <Slic3r/Domain/ModelInstance.hpp>
 #include <Slic3r/Domain/ModelObject.hpp>
@@ -1098,13 +1102,43 @@ int PlateDocument::importObject(const QString& path, const QString& label, bool 
         for (const auto& instance : objectPtr->instances) {
             const int id = importSceneObject(*objectPtr, instance, local, QString(), false, true,
                                              nullptr);
-            if (id >= 0)
-                added.push_back(id);
+            if (id < 0)
+                continue;
+            added.push_back(id);
+            // The records are matched by the order the model file lists its
+            // objects in, which is the order the engine hands them back.
+            const int position = added.size() - 1;
+            if (position >= project.buildOrder.size())
+                continue;
+            const auto record = project.objectRecords.constFind(project.buildOrder.at(position));
+            if (record != project.objectRecords.constEnd())
+                applyProjectRecord(id, *objectPtr, *record);
         }
     }
     if (added.isEmpty()) {
         fail(QStringLiteral("%1: the file holds no object").arg(QFileInfo(local).fileName()));
         return -1;
+    }
+
+    // Timeline markers belong to the bed, and a bed is a plate here: the first
+    // bed's markers become this plate's, in the document's own vocabulary.
+    {
+        const QVector<next_layer::ThreeMfLayerGcode> markers = project.layerGcodes.value(0);
+        if (!markers.isEmpty()) {
+            for (const next_layer::ThreeMfLayerGcode& marker : markers) {
+                LayerGcode entry;
+                entry.z = marker.z;
+                switch (marker.type) {
+                case 0: entry.type = QStringLiteral("color"); break;
+                case 1: entry.type = QStringLiteral("pause"); break;
+                case 2: entry.type = QStringLiteral("tool"); break;
+                default: entry.type = QStringLiteral("gcode"); break;
+                }
+                entry.text = marker.text;
+                m_layerGcodes.push_back(entry);
+            }
+            emit layerGcodesChanged();
+        }
     }
 
     const bool hasPlates = project.valid && project.plateCount > 0
@@ -1122,8 +1156,7 @@ int PlateDocument::importObject(const QString& path, const QString& label, bool 
     return added.front();
 }
 
-/// Puts the objects of a project file where its author had them. Two things are
-/// settled here, and both come from the file rather than from the engine's
+/// Puts the objects of a project file where its author had them. Two things are/// settled here, and both come from the file rather than from the engine's
 /// reader: which plate each object belongs to, and where on that plate it sits.
 ///
 /// The reader hands back every object centred on its own bounding box, so the
@@ -1131,6 +1164,89 @@ int PlateDocument::importObject(const QString& path, const QString& label, bool 
 /// It is rebuilt from the build list: an object's placement matrix says where it
 /// was on its plate, and the group on each plate is then moved as a whole so that
 /// it lands on this plate, keeping its internal spacing.
+namespace {
+
+/// A volume's painted facets, from the file's per-triangle strings back into the
+/// engine's selector data. The parser lives on a volume, so a scratch one is made
+/// to run it: the state encoding is the engine's, and a second decoder here would
+/// be a second thing to get wrong.
+Slic3r::Domain::TriangleSelector::TriangleSplittingData facetsFrom(
+    const QHash<int, QString>& painted, int triangleCount)
+{
+    if (painted.isEmpty())
+        return {};
+    Slic3r::Domain::Model scratch;
+    Slic3r::Domain::ModelObject* holder = scratch.add_object();
+    Slic3r::Domain::ModelVolume* volume =
+        Slic3r::Biz::Algorithms::ModelVolume::construct_ptr(holder,
+                                                            Slic3r::Domain::TriangleMesh{});
+    volume->supported_facets.reserve(std::max(1, triangleCount));
+    QList<int> indices = painted.keys();
+    std::sort(indices.begin(), indices.end());
+    for (const int index : indices)
+        volume->supported_facets.set_triangle_from_string(index, painted.value(index).toStdString());
+    volume->supported_facets.shrink_to_fit();
+    return volume->supported_facets.get_data();
+}
+
+} // namespace
+
+void PlateDocument::applyProjectRecord(int id, const Slic3r::Domain::ModelObject& source,
+                                       const next_layer::ThreeMfObjectRecord& record)
+{
+    Object* object = find(id);
+    if (object == nullptr || object->mesh == nullptr)
+        return;
+
+    QStringList refused;
+    object->settings = next_layer::settingsFromText(record.settings, refused);
+    if (!refused.isEmpty()) {
+        fail(QStringLiteral("%1: %2 setting(s) in the file could not be read back: %3")
+                 .arg(object->displayName())
+                 .arg(refused.size())
+                 .arg(refused.join(QStringLiteral(", "))));
+    }
+
+    if (record.layerHeights.size() >= 2) {
+        Slic3r::Domain::ZHeightPairs bands;
+        bands.reserve(size_t(record.layerHeights.size() / 2));
+        for (int index = 0; index + 1 < record.layerHeights.size(); index += 2)
+            bands.push_back({record.layerHeights.at(index), record.layerHeights.at(index + 1)});
+        object->layerHeights = std::move(bands);
+    }
+
+    const int triangleCount = int(object->mesh->its.indices.size());
+    if (!record.volumes.isEmpty()) {
+        const next_layer::ThreeMfVolumeRecord& first = record.volumes.first();
+        object->supportPaint = facetsFrom(first.supports, triangleCount);
+        object->seamPaint = facetsFrom(first.seams, triangleCount);
+        object->toolPaint = facetsFrom(first.tools, triangleCount);
+    }
+
+    // Volumes the object carries beyond its own body: modifiers, negative volumes,
+    // support blockers. The engine's loader keeps their geometry and settings, and
+    // this is where they become part of the document again instead of vanishing on
+    // open.
+    for (const Slic3r::Domain::ModelVolume* modelVolume : source.volumes) {
+        if (modelVolume == nullptr
+            || modelVolume->type() == Slic3r::Domain::ModelVolumeType::MODEL_PART)
+            continue;
+        Volume volume;
+        volume.id = m_nextId++;
+        volume.name = QStringLiteral("Volume");
+        volume.type = modelVolume->type();
+        volume.trafo = modelVolume->get_transformation();
+        auto mesh = std::make_shared<TriangleMesh>(modelVolume->mesh());
+        if (!meshBounds(*mesh, volume.localMin, volume.localMax))
+            continue;
+        volume.mesh = mesh;
+        QStringList volumeUnreadable;
+        volume.settings =
+            next_layer::overriddenSettings(modelVolume->volume_settings, volumeUnreadable);
+        object->volumes.push_back(std::move(volume));
+    }
+}
+
 void PlateDocument::layoutProject(const QList<int>& added, const next_layer::ThreeMfProject& project)
 {
     const bool knownPlates = project.valid && project.plateCount > 0
@@ -1253,6 +1369,33 @@ int PlateDocument::importSceneObject(
         if (instance == nullptr)
             object.trafo.set_offset(Vec3d((fileMin.x() + fileMax.x()) * 0.5,
                                           (fileMin.y() + fileMax.y()) * 0.5, fileMin.z()));
+    }
+
+    // What the file also carried: the object's own overrides, its variable layer
+    // height and its painted facets. A project that opens with the geometry but
+    // without these is a different print with the same shape, so they come across
+    // here rather than being left to the exporter's reputation.
+    QStringList unreadable;
+    object.settings = next_layer::overriddenSettings(source.object_settings, unreadable);
+    if (!unreadable.isEmpty()) {
+        fail(QStringLiteral("%1: %2 setting(s) in the file are of a type this build cannot "
+                            "read back")
+                 .arg(name)
+                 .arg(unreadable.size()));
+    }
+    object.layerHeights = source.layer_height_profile.get();
+
+    for (const Slic3r::Domain::ModelVolume* modelVolume : source.volumes) {
+        if (modelVolume == nullptr)
+            continue;
+        if (!modelVolume->supported_facets.empty()
+            || !modelVolume->seam_facets.empty()
+            || !modelVolume->mm_segmentation_facets.empty()) {
+            object.supportPaint = modelVolume->supported_facets.get_data();
+            object.seamPaint = modelVolume->seam_facets.get_data();
+            object.toolPaint = modelVolume->mm_segmentation_facets.get_data();
+            break;
+        }
     }
 
     if (!deferPush)
@@ -2519,10 +2662,11 @@ QVector<next_layer::PlateSliceObject> PlateDocument::projectObjects() const
     QVector<next_layer::PlateSliceObject> objects;
     objects.reserve(m_objects.size());
     for (const Object& object : m_objects) {
-        if (object.plate != m_activePlate || !object.visible || object.mesh == nullptr)
+        if (!object.visible || object.mesh == nullptr)
             continue;
         next_layer::PlateSliceObject slice;
         slice.name = object.displayName();
+        slice.plate = object.plate;
         slice.mesh = *object.mesh;
         slice.transform = object.trafo;
         slice.settingsJson = settingsToJson(object.settings);

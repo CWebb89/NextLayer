@@ -324,6 +324,10 @@ public:
     /// object's own frame with the transform that places it, and each volume in the
     /// object's frame. A 3MF has to carry the placement as a transform, so baking it
     /// into the vertices -- which is what the slicer path wants -- would lose it.
+    /// Every visible object on every plate. Objects sit in their own plate's
+    /// coordinates, so the plates are written side by side in one model and the
+    /// plate records say which is which -- the slicer's own plates are a grid in
+    /// the scene, not a coordinate space in the file.
     QVector<next_layer::PlateSliceObject> projectObjects() const;
     /// Which plate lies under a point on the bed plane, or -1 for the gap between
     /// plates. Plates are drawn in a grid, so a double click anywhere on one is
@@ -419,6 +423,13 @@ private:
                           const QString& label, bool placeOnBed, bool deferPush,
                           const next_layer::ThreeMfProject::Placement* placement = nullptr);
     void layoutProject(const QList<int>& added, const next_layer::ThreeMfProject& project);
+    /// Applies what a project file recorded about one object beyond its geometry:
+    /// its overrides, its variable layer height bands, the facets painted on it and
+    /// the modifier volumes attached to it. The engine's loader keeps none of these
+    /// for the formats this app writes and reads, so they arrive here from the
+    /// file's own records.
+    void applyProjectRecord(int id, const Slic3r::Domain::ModelObject& source,
+                            const next_layer::ThreeMfObjectRecord& record);
     void placeNext(Object& object) const;
     void fail(const QString& message);
     int applyPlacements(const std::vector<next_layer::PlaceableObject>& placeables);

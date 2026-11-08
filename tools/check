@@ -571,6 +571,10 @@ set -l three_rc $status
 set -l three_sliced (string match -r 'document: ([0-9]+) layer\(s\), ([0-9]+) extruding move\(s\), ([0-9]+\.[0-9]+) mm' -- $three_out)
 set -l three_again (string match -r 'project: ([0-9]+) layer\(s\), ([0-9]+) extruding move\(s\), ([0-9]+\.[0-9]+) mm' -- $three_out)
 set -l three_arrangement (string match -r 'reopened: ([0-9]+) object\(s\), arrangement off by ([0-9]+\.[0-9]+) mm' -- $three_out)
+set -l three_arrangement (string match -r 'reopened: ([0-9]+) object\(s\), arrangement off by ([0-9]+\.[0-9]+) mm' -- $three_out)
+set -l three_fidelity (string match -r 'reopened the plate: ([0-9]+) override\(s\), ([0-9]+) profile band\(s\), ([0-9]+) painted' -- $three_out)
+set -l three_same (string match -r 'sliced both ways: ([0-9]+) layers' -- $three_out)
+set -l three_plates (string match -r 'plates: ([0-9]+) plate\(s\), ([0-9]+) and ([0-9]+) object\(s\)' -- $three_out)
 set -l three_archive ""
 set -l three_settings 0
 if test -f $three_mf
@@ -593,8 +597,14 @@ else if test (count $three_sliced) -lt 4 -o (count $three_again) -lt 4
     __bad '3MF project: the round trip printed no slice measurements'
 else if test (count $three_arrangement) -lt 3 -o "$three_arrangement[2]" != 2
     __bad "3MF project: the reopened plate holds $three_arrangement[2] object(s)"
+else if test (count $three_fidelity) -lt 4 -o $three_fidelity[2] -lt 1 -o $three_fidelity[3] -lt 2 -o $three_fidelity[4] -lt 1
+    __bad "3MF project: came back with $three_fidelity[2] override(s), $three_fidelity[3] profile band(s) and $three_fidelity[4] painted facet group(s)"
+else if test (count $three_same) -lt 2 -o $three_same[2] -lt 2
+    __bad '3MF project: the reopened plate printed no slice measurements'
+else if test (count $three_plates) -lt 4 -o "$three_plates[2]" != 2 -o "$three_plates[3]" != 1 -o "$three_plates[4]" != 1
+    __bad "3MF project: two plates came back as $three_plates[2] holding $three_plates[3] and $three_plates[4] object(s)"
 else
-    __ok "3MF project: $three_settings keys of configuration, geometry, object and plate records in one archive; reopened as $three_arrangement[2] objects (arrangement off by $three_arrangement[3] mm) and sliced the same $three_again[2] layers, $three_again[3] moves, $three_again[4] mm of filament as the plate itself"
+    __ok "3MF project: $three_settings keys of configuration, geometry, object and plate records in one archive; reopened as $three_arrangement[2] objects (arrangement off by $three_arrangement[3] mm) with $three_fidelity[2] override(s), $three_fidelity[3] profile band(s) and $three_fidelity[4] painted facet group(s) -- slicing the same $three_same[2] layers byte for byte as the plate itself -- plus $three_plates[2] plates holding $three_plates[3] and $three_plates[4] objects"
 end
 
 # User-preset gate: a preset a person saves has to survive a restart, resolve

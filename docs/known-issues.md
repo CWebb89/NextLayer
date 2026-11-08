@@ -22,11 +22,13 @@ complete inventory, this is the part you need before you start a print.
 
 - **A project saved as `.nextproj` is ours alone.** PrusaSlicer and OrcaSlicer
   cannot read it. `File > Save project for another slicer` writes a `.3mf`
-  project instead, with the configuration and the object records they read, but
-  that file carries only the plate you are on, and this app does not read the
-  per-object overrides, layer-height profile or paint back out of it yet — it
-  reads the geometry, the placement and the plates. `docs/features.md` has the
-  measured state of both.
+  project instead -- every plate, with the configuration, the per-object settings,
+  the variable layer height, the painted facets and the timeline markers -- and
+  this app reads all of that back. What it does not read back are object-level
+  settings from a *Bambu/Orca* project, which keeps them in
+  `Metadata/model_settings.config` rather than in PrusaSlicer's model config: those
+  files open with their geometry and their plates, not their per-object overrides.
+  `docs/features.md` has the measured state of both.
 - **Opening a single-object 3MF now honours the file.** A 3MF is treated as a
   scene with its own placement rather than as a mesh to drop on the bed, which is
   what the importer did before; an object exported from CAD at the origin opens at

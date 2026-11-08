@@ -17,6 +17,8 @@ add_executable(next-layer-qt
     src/Session.hpp
     src/Calibration.cpp
     src/Calibration.hpp
+    src/ConfigBoxJson.cpp
+    src/ConfigBoxJson.hpp
     src/PlateDocument.cpp
     src/PlateDocument.hpp
     src/PlateScene.cpp
