@@ -8,6 +8,20 @@ Moonraker job record that says it finished.
 Anything here was sliced by this engine, uploaded from the app, and printed
 without editing the G-code by hand.
 
+## What is verified, at a glance
+
+The table is the whole of it. An empty cell is a machine nobody has printed on
+with next-layer, which is most of them — the detailed entries below say what was
+proven and what the print itself got wrong.
+
+| Printer | Firmware | Tool count | Slicer version | Tester | Date | Result |
+|---|---|---|---|---|---|---|
+| Voron 2.4 R2 350 | Klipper + Moonraker | 1 | 0.1.0 | Curtis | 2026-11-06 | printed and measured, sliced on the default profile (see below) |
+
+A row goes in here only after a print finished and was looked at. A print that
+failed goes in too, with what failed — a table of successes alone is a table of
+things nobody has tried.
+
 ## 2026-11-06 — 20 mm calibration cube, Voron 2.4 350
 
 The first end-to-end print: model opened in next-layer, sliced in next-layer,

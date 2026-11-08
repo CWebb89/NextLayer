@@ -1,0 +1,53 @@
+name: Wrong slice
+description: The G-code came out wrong — missing support, a seam in the wrong place, a bad first layer.
+title: "[slice] "
+labels: ["bug", "slicing"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A wrong slice is reproducible only with the input that produced it. Attach
+        the project file and the G-code if you can; if you cannot, the settings dump
+        and the model still help.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "About next-layer in the File menu."
+    validations:
+      required: true
+  - type: input
+    id: presets
+    attributes:
+      label: Printer, process and filament
+      description: The three names shown at the top of the settings panel.
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What is wrong with the G-code
+      description: Point at it — layer number in the preview, a feature that is missing, a wall that should not be there. A screenshot of the preview at that layer is the most useful thing you can attach.
+    validations:
+      required: true
+  - type: textarea
+    id: project
+    attributes:
+      label: Project file
+      description: Drag the `.nextproj` that produced it into this box after opening the issue, or say why you cannot share it — one file, meshes included, so it reproduces exactly.
+    validations:
+      required: false
+  - type: input
+    id: gcode_sha
+    attributes:
+      label: G-code sha256
+      description: "`sha256sum` of the exported file, so the exact output can be matched to the exact input."
+    validations:
+      required: false
+  - type: textarea
+    id: machine
+    attributes:
+      label: Printer and firmware
+      description: What actually prints this G-code, and whether it failed there or only looks wrong.
+    validations:
+      required: false

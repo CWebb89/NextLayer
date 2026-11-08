@@ -1019,6 +1019,14 @@ Window {
             }
         }
 
+        AlphaNotice {
+            id: alphaNotice
+            anchors.fill: parent
+            version: root.appVersion
+            visible: !alphaNotice.seen && !welcome.visible
+            onDismissed: root.setStatus("alpha notice dismissed")
+        }
+
         SetupFlow {
             id: setupFlow
             anchors.fill: parent
