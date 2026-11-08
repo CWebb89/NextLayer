@@ -1,0 +1,108 @@
+kind: printer
+id: 37b80bdc-d8a1-4b07-83b2-10bb72f610d3
+name: 'Voron 2.4 350'
+condition: printer.model == "NL_voron-2-4-350_MODEL"
+values:
+  gcode_flavor: 'klipper'
+  binary_gcode: false
+  remaining_times: true
+  stuck_filament_detection: true
+  use_relative_e_distances: true
+  use_volumetric_e: false
+  thumbnails: '16x16/QOI,313x173/QOI,480x240/QOI,380x285/PNG'
+  single_extruder_multi_material: false
+  use_firmware_retraction: false
+  silent_mode: true
+  variable_layer_height: true
+  prefer_clockwise_movements: false
+  filament_change_time: 0
+  z_offset: 0
+  max_print_height: 325
+  extruder_clearance_height: 33
+  extruder_clearance_radius: 75
+  bed_custom_model: ''
+  bed_custom_texture: ''
+  bed_shape:
+  - '0x0'
+  - '350x0'
+  - '350x350'
+  - '0x350'
+  start_gcode: 'PRINT_START EXTRUDER=[first_layer_temperature] BED=[first_layer_bed_temperature]'
+  autoemit_temperature_commands: true
+  end_gcode: 'PRINT_END'
+  before_layer_gcode: ";BEFORE_LAYER_CHANGE\nG92 E0.0\n;[layer_z]\n{if layer_z > 150}\nM201 X{interpolate_table(layer_z, (0,7000), (150,7000), (200,4000), (270,2000))} Y{interpolate_table(layer_z, (0,7000), (150,7000), (200,4000), (270,2000))}\n{endif}\n"
+  layer_gcode: ";AFTER_LAYER_CHANGE\n;[layer_z]\n"
+  toolchange_gcode: ''
+  between_objects_gcode: ''
+  color_change_gcode: "M600\nG1 E0.3 F1500 ; prime after color change"
+  pause_print_gcode: 'M601'
+  template_custom_gcode: ''
+  custom_parameters_printer: ''
+  machine_limits_usage: 'time_estimate_only'
+  machine_max_acceleration_e:
+  - 5000
+  - 2500
+  machine_max_acceleration_extruding:
+  - 7000
+  - 2500
+  machine_max_acceleration_retracting:
+  - 2500
+  - 2500
+  machine_max_acceleration_travel:
+  - 7000
+  - 2500
+  machine_max_acceleration_x:
+  - 10000
+  - 2500
+  machine_max_acceleration_y:
+  - 10000
+  - 2500
+  machine_max_acceleration_z:
+  - 400
+  - 200
+  machine_max_feedrate_e:
+  - 100
+  - 100
+  machine_max_feedrate_x:
+  - 350
+  - 160
+  machine_max_feedrate_y:
+  - 350
+  - 160
+  machine_max_feedrate_z:
+  - 12
+  - 12
+  machine_max_jerk_e:
+  - 10
+  - 10
+  machine_max_jerk_x:
+  - 10
+  - 8
+  machine_max_jerk_y:
+  - 10
+  - 8
+  machine_max_jerk_z:
+  - 2
+  - 2
+  machine_max_junction_deviation:
+  - 0.01
+  - 0.01
+  machine_min_extruding_rate:
+  - 0
+  - 0
+  machine_min_travel_rate:
+  - 0
+  - 0
+  cooling_tube_length: 20
+  cooling_tube_retraction: 45
+  enable_pressure_advance_during_ramming: false
+  extra_loading_move: -52
+  high_current_on_filament_swap: false
+  multimaterial_purging: 80
+  parking_pos_retraction: 84
+  printer_notes: ''
+  default_print: '0.20mm BALANCED'
+  printer_model: 'Voron 2.4 350'
+  printer_technology: 'FFF'
+  printer_vendor: ''
+  thumbnails_format: 'PNG'

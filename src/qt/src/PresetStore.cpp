@@ -1020,6 +1020,8 @@ QString PresetStore::createPrinter(const QString& name, double bedWidth, double 
                      m_settings->valuesYaml(QStringLiteral("filament"), false)))
         return QStringLiteral("Could not write the filament preset");
 
+    next_layer::presets::installFilamentLibrary(dir);
+
     return next_layer::presets::addCustomPrinter(name);
 }
 

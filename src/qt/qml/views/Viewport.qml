@@ -922,13 +922,16 @@ Item {
         Component.onCompleted: toolpath.attachView(gcodeView)
     }
 
+    // Only a failed open says anything here now: the empty plate is what an empty
+    // plate looks like, and a line of instruction painted across the bed reads as
+    // part of the model.
     Text {
         anchors.centerIn: parent
-        visible: !session.hasModel
-        text: session.error.length > 0 ? session.error : "Drop an STL here, or press Ctrl+O"
+        visible: !session.hasModel && session.error.length > 0
+        text: session.error
         font.family: Type.family
         font.pixelSize: Type.sizeSmall
-        color: session.error.length > 0 ? Colors.error : Colors.textSecondary
+        color: Colors.error
         elide: Text.ElideMiddle
         width: Math.min(implicitWidth, parent.width - 80)
         horizontalAlignment: Text.AlignHCenter

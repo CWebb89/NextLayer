@@ -383,7 +383,7 @@ Item {
 
             Text {
                 width: parent.width
-                text: "Welcome. Two minutes and this machine is ready to slice."
+                text: "Two minutes and you are slicing."
                 wrapMode: Text.WordWrap
                 font.family: Type.family
                 font.pixelSize: Type.sizeLarge
@@ -463,9 +463,23 @@ Item {
                     text: "Import my presets"
                     onClicked: sourcePanel.visible = true
                 }
+            }
 
-                Button {
-                    text: "Skip for now"
+            // A way out that is not a third button in the row: skipping is a
+            // smaller decision than the other two and reads as one here.
+            Text {
+                text: "Skip for now and look around"
+                font.family: Type.family
+                font.pixelSize: Type.sizeCaption
+                color: skipMouse.containsMouse ? Colors.accent : Colors.textMuted
+                font.underline: skipMouse.containsMouse
+
+                MouseArea {
+                    id: skipMouse
+                    anchors.fill: parent
+                    anchors.margins: -Metrics.xs
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
                     onClicked: {
                         root.close()
                         root.skipRequested()
@@ -498,8 +512,14 @@ Item {
             border.width: Metrics.borderWidth
             border.color: Colors.edge
 
+            // Two columns, not one: the steps and the facts sit at the top and the
+            // version line is pinned to the bottom edge, so adding a fact can never
+            // push the footer out of the card.
             Column {
-                anchors.fill: parent
+                id: topColumn
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
                 anchors.margins: Metrics.panelPadding
                 spacing: Metrics.md
 
@@ -572,7 +592,73 @@ Item {
                     }
                 }
 
-                Item { width: 1; height: Math.max(0, nextPanel.height - 360) }
+                Item { width: 1; height: Metrics.sm }
+
+                Rectangle {
+                    width: parent.width
+                    height: Metrics.hairline
+                    color: Colors.edge
+                }
+
+                // What the app actually has in it, rather than more prose: the
+                // machine list, the formats, and the import path for someone who
+                // already has a slicer set up, which is most people arriving here.
+                Text {
+                    text: "WHAT IS IN IT"
+                    font.family: Type.family
+                    font.pixelSize: Type.sizeCaption
+                    font.bold: true
+                    font.letterSpacing: 1.2
+                    color: Colors.textTertiary
+                }
+
+                Repeater {
+                    model: [
+                        { label: presetStore.printers.length + " printers",
+                          text: "every one with its real bed, extruders and limits" },
+                        { label: "STL · 3MF · STEP",
+                          text: "plus OBJ in, G-code out, layer-by-layer preview" },
+                        { label: "Orca, Prusa, Cura",
+                          text: "import their printers, processes and filaments" }
+                    ]
+
+                    delegate: Row {
+                        id: factRow
+
+                        required property var modelData
+
+                        width: parent.width
+                        spacing: Metrics.md
+
+                        Text {
+                            width: 150
+                            text: factRow.modelData.label
+                            font.family: Type.family
+                            font.pixelSize: Type.sizeCaption
+                            font.bold: true
+                            color: Colors.textSecondary
+                            elide: Text.ElideRight
+                        }
+
+                        Text {
+                            width: factRow.width - 150 - Metrics.md
+                            text: factRow.modelData.text
+                            wrapMode: Text.WordWrap
+                            font.family: Type.family
+                            font.pixelSize: Type.sizeCaption
+                            color: Colors.textTertiary
+                        }
+                    }
+                }
+
+            }
+
+            Column {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.margins: Metrics.panelPadding
+                spacing: Metrics.sm
 
                 Rectangle {
                     width: parent.width

@@ -81,6 +81,15 @@ qt_add_resources(next-layer-qt "app_assets"
           assets/brand/next-layer-mark.svg
 )
 
+# The generic filament library: one preset per material, shipped as the engine reads
+# it and copied into a machine's bundle when that machine is created or first seen.
+file(GLOB FILAMENT_LIBRARY CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/filaments/*.yaml")
+qt_add_resources(next-layer-qt "filament_library"
+    PREFIX "/next-layer/filaments"
+    BASE "${CMAKE_CURRENT_SOURCE_DIR}/assets/filaments"
+    FILES ${FILAMENT_LIBRARY}
+)
+
 target_include_directories(next-layer-qt PRIVATE src)
 
 target_compile_definitions(next-layer-qt PRIVATE

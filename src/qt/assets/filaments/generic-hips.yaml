@@ -1,0 +1,27 @@
+kind: filament
+id: 'nl-generic-hips'
+name: 'Generic HIPS'
+values:
+  bed_temperature: 90
+  cooling_perimeter_transition_distance: 10.0
+  cooling_slowdown_logic: 'uniform_cooling'
+  disable_fan_first_layers: 3
+  end_filament_gcode: "; filament end gcode \n\n"
+  extrusion_multiplier: 1.0
+  filament_cost: 22.99
+  filament_density: 1.06
+  filament_diameter: 1.75
+  filament_max_volumetric_speed: 8.0
+  filament_minimal_purge_on_wipe_tower: 15.0
+  filament_soluble: false
+  filament_type: 'HIPS'
+  filament_vendor: 'Generic'
+  first_layer_bed_temperature: 90
+  first_layer_temperature: 240
+  full_fan_speed_layer: 0
+  max_fan_speed: 60
+  min_fan_speed: 0
+  min_print_speed: 20.0
+  slowdown_below_layer_time: 6
+  start_filament_gcode: '; Filament gcode'
+  temperature: 240

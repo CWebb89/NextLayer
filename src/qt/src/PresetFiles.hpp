@@ -35,6 +35,26 @@ inline QString customVendorDirectory()
     return root() + QStringLiteral("/local/next-layer-custom/Custom");
 }
 
+/// A machine carries the filaments its bundle lists, and a bundle written here
+/// holds only the one a machine was created with. The library this app ships is
+/// copied in beside it, so a new machine has the range of materials a slicer is
+/// expected to offer instead of a single "Generic".
+inline int installFilamentLibrary(const QString& directory)
+{
+    const QDir library(QStringLiteral(":/next-layer/filaments"));
+    if (!library.exists())
+        return 0;
+    int written = 0;
+    for (const QString& name : library.entryList({QStringLiteral("*.yaml")}, QDir::Files)) {
+        const QString target = directory + QLatin1Char('/') + name;
+        if (QFileInfo::exists(target))
+            continue;
+        if (QFile::copy(library.filePath(name), target))
+            ++written;
+    }
+    return written;
+}
+
 inline QString slugOf(const QString& name)
 {
     QString slug;

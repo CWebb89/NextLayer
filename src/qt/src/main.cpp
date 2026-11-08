@@ -8,6 +8,7 @@
 #include "Host.hpp"
 #include "MeshGeometry.hpp"
 #include "Palette.hpp"
+#include "PresetFiles.hpp"
 #include "PreviewData.hpp"
 #include "PresetImport.hpp"
 #include "PresetStore.hpp"
@@ -365,6 +366,13 @@ void prepareDataDir()
     // machine in it with "error 5 extruder_offset".
     if (!QFileInfo::exists(vendor) && QFileInfo::exists(engineBundle))
         QFile::link(engineBundle, vendor);
+
+    // A machine's materials are whatever its bundle lists, and the bundle this app
+    // writes for a user's own printer carries exactly one. The shipped library goes
+    // in beside it, once, so the material list is not one entry long.
+    const QString custom = next_layer::presets::customVendorDirectory();
+    if (QFileInfo(custom).isDir())
+        next_layer::presets::installFilamentLibrary(custom);
 
     // The engine's bed resolver checks <datadir>/bed/<file> before falling back
     // to the shipped resources. Copy the vendor bed meshes up front so slicing
