@@ -1895,6 +1895,13 @@ int runThreeMfExportSelftest(const QString& model, const QString& configPath,
         return 1;
     }
     const QVector<int> fullIds = reopenedFull.idsOnPlate(reopenedFull.activePlate());
+    if (!reopenedFull.error().isEmpty()) {
+        // A note here means this app could not read back something it wrote, which
+        // is a defect in the file or in the reader -- never in the author's slicer.
+        std::fprintf(stderr, "reopening the file reported: %s\n",
+                     qPrintable(reopenedFull.error()));
+        return 1;
+    }
     if (reopenedFull.count() != 2 || fullIds.size() != 2) {
         std::fprintf(stderr, "the exported plate came back as %d object(s)\n",
                      reopenedFull.count());

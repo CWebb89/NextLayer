@@ -40,6 +40,9 @@ struct ThreeMfLayerGcode
 /// What a project file says about one object beyond its geometry and placement.
 struct ThreeMfObjectRecord
 {
+    /// The label the author gave the object, as opposed to the one this app makes
+    /// up from the file name.
+    QString name;
     QHash<QString, QString> settings;
     QVector<ThreeMfVolumeRecord> volumes;
     /// The variable layer height bands, as z/height pairs flattened in order.
@@ -68,6 +71,15 @@ struct ThreeMfProject
     QVector<Placement> buildTransforms;
     QHash<int, int> plateOfObject;
     QHash<int, ThreeMfObjectRecord> objectRecords;
+    /// Object settings a foreign slicer wrote the Bambu/Orca way: as plain
+    /// metadata in `model_settings.config`, under its own setting names. They are
+    /// kept apart from the records above because a name or a value this engine
+    /// does not know must not stop the file from opening -- it is filtered against
+    /// the engine's own definitions and reported, never guessed at.
+    QHash<int, QHash<QString, QString>> foreignSettings;
+    /// The label a foreign project gives each object, which it keeps in the same
+    /// place as the settings.
+    QHash<int, QString> foreignNames;
     /// Timeline markers per bed, in the file's own type codes: colour change 0,
     /// pause 1, tool change 2, template 3, custom G-code 4.
     QHash<int, QVector<ThreeMfLayerGcode>> layerGcodes;

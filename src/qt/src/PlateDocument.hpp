@@ -430,8 +430,18 @@ private:
     /// file's own records.
     void applyProjectRecord(int id, const Slic3r::Domain::ModelObject& source,
                             const next_layer::ThreeMfObjectRecord& record);
+    /// Settings another slicer wrote under this object, in that slicer's own
+    /// names. What this engine's definitions accept becomes an override; the rest
+    /// is reported by name, because a foreign project must still open.
+    void applyForeignSettings(int id, const QHash<QString, QString>& settings,
+                                const QString& name);
     void placeNext(Object& object) const;
     void fail(const QString& message);
+    /// Something that did not fit but did not stop the file opening -- a setting the
+    /// engine has no definition for, written by another slicer. Collected while the
+    /// file loads and reported in the status bar once it has, instead of aborting an
+    /// import over one unknown name.
+    void note(const QString& message);
     int applyPlacements(const std::vector<next_layer::PlaceableObject>& placeables);
     static QByteArray settingsToJson(const QVariantMap& settings);
     static Slic3r::Domain::TriangleMesh primitiveMesh(const QString& kind, double width,
@@ -463,6 +473,9 @@ private:
     std::vector<int> m_selectedIds;
     int m_version = 0;
     QString m_error;
+    QStringList m_pendingNotes;
+    int m_foreignObjects = 0;
+    QStringList m_foreignNames;
     std::unique_ptr<QTemporaryDir> m_scratch;
     QStringList m_stagedPlates;
     int m_stagedRevision = 0;

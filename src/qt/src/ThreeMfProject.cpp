@@ -4,6 +4,7 @@
 #include "ThreeMfProject.hpp"
 
 #include <QByteArray>
+#include <QSet>
 #include <QXmlStreamReader>
 
 #include <miniz.h>
@@ -178,7 +179,13 @@ void readModelConfig(const QByteArray& config, ThreeMfProject& project)
                     else if (key != QLatin1String("matrix"))
                         volume.settings.insert(key, value);
                 } else if (objectId > 0) {
-                    record.settings.insert(key, value);
+                    // `name` is the object's own label, not a setting: it is kept
+                    // apart so the settings reader cannot report a name it has no
+                    // definition for.
+                    if (key == QLatin1String("name"))
+                        record.name = value;
+                    else
+                        record.settings.insert(key, value);
                 }
             }
         } else if (token == QXmlStreamReader::EndElement) {
@@ -328,6 +335,68 @@ void readLayerGcodes(const QByteArray& body, ThreeMfProject& project)
     }
 }
 
+/// The object settings another slicer keeps in `model_settings.config`: Bambu and
+/// Orca write them as plain `<metadata key value>` under the object, where
+/// PrusaSlicer writes a model config file of its own. Their names are that
+/// slicer's, so what comes back is filtered against this engine's definitions
+/// before it is applied; here only the layout keys are dropped.
+void readForeignSettings(const QByteArray& settings, ThreeMfProject& project)
+{
+    static const QSet<QString> layout{
+        QStringLiteral("name"), QStringLiteral("matrix"),
+        QStringLiteral("source_file"), QStringLiteral("source_object_id"),
+        QStringLiteral("source_volume_id"), QStringLiteral("source_offset_x"),
+        QStringLiteral("source_offset_y"), QStringLiteral("source_offset_z"),
+        QStringLiteral("identify_id"), QStringLiteral("instance_id"),
+        QStringLiteral("object_id"), QStringLiteral("plater_id"),
+        QStringLiteral("plater_name"), QStringLiteral("locked"),
+        QStringLiteral("thumbnail_file"), QStringLiteral("top_file"),
+        QStringLiteral("pick_file"),
+    };
+
+    QXmlStreamReader xml(settings);
+    int objectId = 0;
+    bool inPart = false;
+    QHash<QString, QString> record;
+
+    while (!xml.atEnd()) {
+        const QXmlStreamReader::TokenType token = xml.readNext();
+        if (token == QXmlStreamReader::StartElement) {
+            const QStringView tag = xml.name();
+            if (tag == QLatin1String("object")) {
+                objectId = xml.attributes().value(QLatin1String("id")).toInt();
+                record.clear();
+            } else if (tag == QLatin1String("part")) {
+                inPart = true;
+            } else if (tag == QLatin1String("metadata") && objectId > 0 && !inPart) {
+                const QString key = xml.attributes().value(QLatin1String("key")).toString();
+                const QString value = xml.attributes().value(QLatin1String("value")).toString();
+                if (key.isEmpty())
+                    continue;
+                if (key == QLatin1String("name")) {
+                    project.foreignNames.insert(objectId, value);
+                    continue;
+                }
+                if (layout.contains(key))
+                    continue;
+                record.insert(key, value);
+            }
+        } else if (token == QXmlStreamReader::EndElement) {
+            const QStringView tag = xml.name();
+            if (tag == QLatin1String("part")) {
+                inPart = false;
+            } else if (tag == QLatin1String("object") && objectId > 0) {
+                if (!record.isEmpty())
+                    project.foreignSettings.insert(objectId, record);
+                objectId = 0;
+                record.clear();
+            }
+        }
+    }
+    if (xml.hasError())
+        project.foreignSettings.clear();
+}
+
 } // namespace
 
 ThreeMfProject readThreeMfProject(const QString& path)
@@ -340,6 +409,7 @@ ThreeMfProject readThreeMfProject(const QString& path)
         return project;
 
     readPlateRecords(settings, project);
+    readForeignSettings(settings, project);
     readBuildList(scene, project);
     readModelConfig(readZipEntry(path, kModelConfig), project);
     readLayerHeights(readZipEntry(path, kLayerHeights), project);

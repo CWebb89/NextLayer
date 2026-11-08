@@ -1754,12 +1754,17 @@ int main(int argc, char* argv[])
                 if (object == nullptr)
                     continue;
                 const QVector3D position = object->position();
-                std::fprintf(stdout, "  obj %d plate %d '%s' faces %d at %.3f %.3f %.3f\n",
+                std::fprintf(stdout,
+                             "  obj %d plate %d '%s' faces %d at %.3f %.3f %.3f, %lld "
+                             "override(s)\n",
                              object->id, object->plate + 1, object->name.toUtf8().constData(),
                              int(object->mesh->its.indices.size() / 3), double(position.x()),
-                             double(position.y()), double(position.z()));
+                             double(position.y()), double(position.z()),
+                             static_cast<long long>(object->settings.size()));
             }
         }
+        if (!document->error().isEmpty())
+            std::fprintf(stdout, "  note: %s\n", document->error().toUtf8().constData());
         return 0;
     }
 

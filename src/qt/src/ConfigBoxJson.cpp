@@ -119,7 +119,16 @@ bool fromText(const QString& text, const Slic3r::Domain::ConfigValue& definition
         } else if constexpr (std::is_same_v<ValueType, std::string>) {
             out = QVariant(text);
         } else if constexpr (std::is_same_v<ValueType, Slic3r::Domain::EnumWrapper>) {
-            out = QVariant(text);
+            // The definition owns the vocabulary: a name it does not list is not a
+            // value, and the box would only fail later with less to go on.
+            const std::string serialized = text.toStdString();
+            for (const Slic3r::Domain::EnumValueDef& entry : value.def()) {
+                if (entry.str_serialized == serialized) {
+                    out = QVariant(text);
+                    return;
+                }
+            }
+            handled = false;
         } else if constexpr (std::is_same_v<ValueType, Slic3r::Domain::Percentage>) {
             QString digits = text;
             digits.remove(QLatin1Char('%'));

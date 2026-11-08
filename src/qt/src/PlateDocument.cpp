@@ -979,6 +979,12 @@ void PlateDocument::fail(const QString& message)
     emit errorChanged();
 }
 
+void PlateDocument::note(const QString& message)
+{
+    if (!m_pendingNotes.contains(message))
+        m_pendingNotes.append(message);
+}
+
 void PlateDocument::pushUndo(const QString& label, int coalesceKey)
 {
     if (!m_undo.empty() && coalesceKey != 0 && m_undo.back().coalesceKey == coalesceKey
@@ -1080,6 +1086,7 @@ int PlateDocument::importObject(const QString& path, const QString& label, bool 
     // instance each with that placement on it. Everything else that arrives in one
     // piece is a mesh with no coordinates of its own, and keeps the placement
     // behaviour this app has always had -- normalise to the bed, next free spot.
+    m_pendingNotes.clear();
     const bool authoredPlacement = local.endsWith(QLatin1String(".3mf"), Qt::CaseInsensitive);
     const bool single = !authoredPlacement && scene->objects.size() == 1
                         && scene->objects.front()->instances.size() <= 1;
@@ -1110,9 +1117,13 @@ int PlateDocument::importObject(const QString& path, const QString& label, bool 
             const int position = added.size() - 1;
             if (position >= project.buildOrder.size())
                 continue;
-            const auto record = project.objectRecords.constFind(project.buildOrder.at(position));
+            const int objectId = project.buildOrder.at(position);
+            const auto record = project.objectRecords.constFind(objectId);
             if (record != project.objectRecords.constEnd())
                 applyProjectRecord(id, *objectPtr, *record);
+            if (project.foreignSettings.contains(objectId))
+                applyForeignSettings(id, project.foreignSettings.value(objectId),
+                                     project.foreignNames.value(objectId));
         }
     }
     if (added.isEmpty()) {
@@ -1148,7 +1159,20 @@ int PlateDocument::importObject(const QString& path, const QString& label, bool 
     else if (added.size() > 1)
         arrangePlate();
     m_selectedIds = std::vector<int>(added.begin(), added.end());
-    m_error.clear();
+    if (m_foreignObjects > 0) {
+        QStringList names = m_foreignNames;
+        names.sort();
+        m_pendingNotes.append(
+            QStringLiteral("%1 object(s) came with %2 setting(s) this engine has no definition "
+                           "for, left out: %3")
+                .arg(m_foreignObjects)
+                .arg(names.size())
+                .arg(names.join(QStringLiteral(", "))));
+    }
+    m_foreignObjects = 0;
+    m_foreignNames.clear();
+    m_error = m_pendingNotes.join(QStringLiteral("; "));
+    m_pendingNotes.clear();
     emit errorChanged();
     emit selectionChanged();
     changed();
@@ -1200,8 +1224,10 @@ void PlateDocument::applyProjectRecord(int id, const Slic3r::Domain::ModelObject
 
     QStringList refused;
     object->settings = next_layer::settingsFromText(record.settings, refused);
+    if (!record.name.isEmpty())
+        object->name = record.name;
     if (!refused.isEmpty()) {
-        fail(QStringLiteral("%1: %2 setting(s) in the file could not be read back: %3")
+        note(QStringLiteral("%1: %2 setting(s) in the file could not be read back: %3")
                  .arg(object->displayName())
                  .arg(refused.size())
                  .arg(refused.join(QStringLiteral(", "))));
@@ -1244,6 +1270,30 @@ void PlateDocument::applyProjectRecord(int id, const Slic3r::Domain::ModelObject
         volume.settings =
             next_layer::overriddenSettings(modelVolume->volume_settings, volumeUnreadable);
         object->volumes.push_back(std::move(volume));
+    }
+}
+
+void PlateDocument::applyForeignSettings(int id, const QHash<QString, QString>& settings,
+                                         const QString& name)
+{
+    Object* object = find(id);
+    if (object == nullptr)
+        return;
+    if (!name.isEmpty())
+        object->name = name;
+
+    QStringList refused;
+    const QVariantMap accepted = next_layer::settingsFromText(settings, refused);
+    for (auto entry = accepted.constBegin(); entry != accepted.constEnd(); ++entry) {
+        if (!object->settings.contains(entry.key()))
+            object->settings.insert(entry.key(), entry.value());
+    }
+    if (!refused.isEmpty()) {
+        ++m_foreignObjects;
+        for (const QString& name : refused) {
+            if (!m_foreignNames.contains(name))
+                m_foreignNames.append(name);
+        }
     }
 }
 

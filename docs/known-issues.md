@@ -24,11 +24,14 @@ complete inventory, this is the part you need before you start a print.
   cannot read it. `File > Save project for another slicer` writes a `.3mf`
   project instead -- every plate, with the configuration, the per-object settings,
   the variable layer height, the painted facets and the timeline markers -- and
-  this app reads all of that back. What it does not read back are object-level
-  settings from a *Bambu/Orca* project, which keeps them in
-  `Metadata/model_settings.config` rather than in PrusaSlicer's model config: those
-  files open with their geometry and their plates, not their per-object overrides.
-  `docs/features.md` has the measured state of both.
+  this app reads all of that back. A *Bambu/Orca* project keeps an object's
+  settings as plain metadata in `Metadata/model_settings.config` under that
+  slicer's own names; what this engine has a definition for is restored, the rest
+  is named in the status bar and left out. The names it cannot map are the ones
+  that mean the same thing under a different name -- `sparse_infill_density` for
+  `fill_density`, `wall_loops` for `perimeters`, `enable_support` for
+  `support_material` -- and that table is not written, because guessing it would
+  change prints silently. `docs/features.md` has the measured state of both.
 - **Opening a single-object 3MF now honours the file.** A 3MF is treated as a
   scene with its own placement rather than as a mesh to drop on the bed, which is
   what the importer did before; an object exported from CAD at the origin opens at

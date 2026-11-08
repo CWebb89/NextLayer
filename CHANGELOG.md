@@ -16,8 +16,11 @@ unverified.
   as a bare mesh and dropped onto the bed, and every object's build transform was
   applied a second time on top of the instance the engine already had, which
   cancelled the author's rotation.
-- **A Bambu/Orca project opens with its plates and its placement**, though not yet
-  with its per-object settings.
+- **A Bambu/Orca project opens with its plates, its placement and the settings
+  this engine shares names with it**; the ones it names differently are listed in
+  the status bar instead of being guessed at. An object keeps the label its author
+  gave it, and a project file no longer reports its own object names as a setting
+  it failed to read.
 
 ## 0.1.0 — 2026-11-08
 
