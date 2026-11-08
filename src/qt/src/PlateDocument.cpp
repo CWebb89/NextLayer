@@ -1153,6 +1153,11 @@ void PlateDocument::layoutProject(const QList<int>& added, const next_layer::Thr
     if (knownPlates)
         m_plateCount = std::max(m_plateCount, project.plateCount);
 
+    // The plate bar and the selector read `plateCount`, and it just grew from one
+    // plate to the project's fourteen: without this the file loads with every plate
+    // holding its objects and the window still showing a single bed.
+    emit plateChanged();
+
     for (auto it = onPlate.constBegin(); it != onPlate.constEnd(); ++it) {
         QVector3D low;
         QVector3D high;

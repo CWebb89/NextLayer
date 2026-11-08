@@ -1517,12 +1517,20 @@ Window {
     // A project file arrives as one signal per object, and the camera framed the
     // first of them: the rest of a project landed outside the frame, on a plate
     // zoomed in on a single part. Framing waits for the import to settle, which is
-    // the next turn of the event loop, and then frames everything on the plate.
+    // the next turn of the event loop.
+    //
+    // A project with more than one plate frames the plate, not the model: the model
+    // is fourteen beds wide, and zooming to fit it put the active plate in a corner.
     Timer {
         id: frameTimer
         interval: 0
         repeat: false
-        onTriggered: viewport.frameContent()
+        onTriggered: {
+            if (plateDocument.plateCount > 1)
+                viewport.fitPlate()
+            else
+                viewport.frameContent()
+        }
     }
 
     Connections {
