@@ -39,7 +39,9 @@ Card {
         const h = Math.floor(total / 3600)
         const m = Math.floor((total % 3600) / 60)
         const s = total % 60
-        return h > 0 ? h + "h " + m + "m" : (m > 0 ? m + "m " + s + "s" : s + "s")
+        // No space between the parts: the legend's time column is 54 px, and
+        // "10m 37s" ran into the percentage beside it.
+        return h > 0 ? h + "h" + m + "m" : (m > 0 ? m + "m" + s + "s" : s + "s")
     }
 
     function length(mm) {
@@ -109,7 +111,7 @@ Card {
 
         RowLayout {
             width: parent.width
-            spacing: Metrics.md
+            spacing: Metrics.sm
 
             Text {
                 Layout.fillWidth: true
@@ -121,7 +123,7 @@ Card {
             }
 
             Text {
-                Layout.preferredWidth: 48
+                Layout.preferredWidth: 60
                 horizontalAlignment: Text.AlignRight
                 visible: !root.rangeMode
                 text: "Time"
@@ -132,7 +134,7 @@ Card {
             }
 
             Text {
-                Layout.preferredWidth: 44
+                Layout.preferredWidth: 36
                 horizontalAlignment: Text.AlignRight
                 visible: !root.rangeMode
                 text: "%"
@@ -143,7 +145,7 @@ Card {
             }
 
             Text {
-                Layout.preferredWidth: 92
+                Layout.preferredWidth: 90
                 horizontalAlignment: Text.AlignRight
                 visible: !root.rangeMode
                 text: "Usage"
@@ -179,7 +181,7 @@ Card {
                     anchors.fill: parent
                     anchors.leftMargin: Metrics.xs
                     anchors.rightMargin: Metrics.xs
-                    spacing: Metrics.md
+                    spacing: Metrics.sm
 
                     Rectangle {
                         Layout.alignment: Qt.AlignVCenter
@@ -192,7 +194,7 @@ Card {
                     Text {
                         Layout.alignment: Qt.AlignVCenter
                         Layout.fillWidth: true
-                        Layout.minimumWidth: 90
+                        Layout.minimumWidth: 56
                         text: String(legendRow.modelData.name)
                         elide: Text.ElideRight
                         font.family: Type.family
@@ -203,7 +205,7 @@ Card {
 
                     Text {
                         Layout.alignment: Qt.AlignVCenter
-                        Layout.preferredWidth: 48
+                        Layout.preferredWidth: 60
                         horizontalAlignment: Text.AlignRight
                         visible: !root.rangeMode
                         text: root.clock(Number(legendRow.modelData.seconds))
@@ -214,7 +216,7 @@ Card {
 
                     Text {
                         Layout.alignment: Qt.AlignVCenter
-                        Layout.preferredWidth: 44
+                        Layout.preferredWidth: 36
                         horizontalAlignment: Text.AlignRight
                         visible: !root.rangeMode
                         text: Number(legendRow.modelData.percent).toFixed(1) + "%"
@@ -225,7 +227,7 @@ Card {
 
                     Text {
                         Layout.alignment: Qt.AlignVCenter
-                        Layout.preferredWidth: 92
+                        Layout.preferredWidth: 90
                         horizontalAlignment: Text.AlignRight
                         visible: !root.rangeMode
                         text: root.length(legendRow.modelData.lengthMm) + " "
@@ -271,7 +273,7 @@ Card {
                 anchors.fill: parent
                 anchors.leftMargin: Metrics.xs
                 anchors.rightMargin: Metrics.xs
-                spacing: Metrics.md
+                spacing: Metrics.sm
 
                 Text {
                     Layout.fillWidth: true
@@ -322,7 +324,7 @@ Card {
                     anchors.fill: parent
                     anchors.leftMargin: Metrics.xs
                     anchors.rightMargin: Metrics.xs
-                    spacing: Metrics.md
+                    spacing: Metrics.sm
 
                     Rectangle {
                         Layout.alignment: Qt.AlignVCenter
@@ -344,7 +346,7 @@ Card {
 
                     Text {
                         Layout.alignment: Qt.AlignVCenter
-                        Layout.preferredWidth: 48
+                        Layout.preferredWidth: 60
                         horizontalAlignment: Text.AlignRight
                         text: Number(optionRow.modelData.seconds) > 0
                               ? root.clock(Number(optionRow.modelData.seconds)) : ""

@@ -62,6 +62,19 @@ Item {
         root.refresh()
     }
 
+    /// The categories of the open tab, for the selector row. A category with
+    /// changed settings carries a dot in its label, so the one place that lists
+    /// them all also says which ones are not at their preset value.
+    function subtabChoices() {
+        const out = []
+        for (let i = 0; i < root.currentSubtabs.length; ++i) {
+            const entry = root.currentSubtabs[i]
+            out.push({ value: entry.key,
+                       label: entry.modified > 0 ? entry.title + "  \u2022" : entry.title })
+        }
+        return out
+    }
+
     function ensureSubtab() {
         const tab = root.tabData(root.activeTab)
         if (!tab)
@@ -78,18 +91,6 @@ Item {
         root.visibleGroups = root.filtering
                 ? settingsModel.groups("", "", root.filterText)
                 : settingsModel.groups(root.activeTab, root.activeSubtab, "")
-    }
-
-    function resetSubtab() {
-        settingsModel.resetSubtab(root.activeTab, root.activeSubtab)
-    }
-
-    function activeSubtabModified() {
-        const tab = root.currentTab
-        for (let i = 0; i < (tab ? tab.subtabs.length : 0); ++i)
-            if (tab.subtabs[i].key === root.activeSubtab)
-                return tab.subtabs[i].modified
-        return 0
     }
 
     /// The machine remembered from the last session is not in the bundle any
@@ -500,143 +501,75 @@ Item {
         anchors.top: tabStrip.bottom
     }
 
+    // The categories of the open tab and the filter over every tab, on one row.
+    //
+    // They were two: a wrapping strip of category chips that took up to four rows
+    // of a 490 px panel, and a search field under it. Fourteen chips cannot be
+    // read at a glance anyway, so the strip is a selector that names the category
+    // you are in and lists all of them, and the space it used to take belongs to
+    // the settings.
     Item {
-        id: subtabStrip
+        id: categoryRow
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: tabSeparator.bottom
         anchors.leftMargin: Metrics.lg
         anchors.rightMargin: Metrics.lg
-        anchors.topMargin: Metrics.xs
-        // The chips wrap instead of scrolling sideways: a group's strip is three
-        // to five chips, and a clipped one reads as a cut-off label rather than
-        // as something that can be scrolled.
-        height: subtabFlow.implicitHeight + Metrics.xs * 2
-        visible: !root.filtering
-
-        Flow {
-            id: subtabFlow
-            y: Metrics.xs
-            width: parent.width - (subtabReset.visible ? subtabReset.width + Metrics.sm : 0)
-            spacing: Metrics.xxs
-
-            Repeater {
-                model: root.currentSubtabs
-
-                delegate: Item {
-                    id: subtabChip
-
-                    required property var modelData
-
-                    readonly property bool active: root.activeSubtab === modelData.key
-
-                    width: subtabText.implicitWidth + Metrics.md * 2 + (subtabChip.modelData.modified > 0
-                                                                       ? Metrics.sm : 0)
-                    height: Metrics.rowHeight - Metrics.xs * 2
-
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: Metrics.radiusSmall
-                        color: subtabChip.active ? Colors.selectedFill
-                             : subtabMouse.containsMouse ? Colors.hoverFill : "transparent"
-                    }
-
-                    Row {
-                        anchors.centerIn: parent
-                        spacing: Metrics.xs
-
-                        Text {
-                            id: subtabText
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: subtabChip.modelData.title
-                            font.family: Type.family
-                            font.pixelSize: Type.sizeCaption
-                            font.bold: true
-                            color: subtabChip.active ? Colors.accent
-                                 : subtabMouse.containsMouse ? Colors.textPrimary : Colors.textSecondary
-                        }
-
-                        Rectangle {
-                            visible: subtabChip.modelData.modified > 0
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: Metrics.xs + Metrics.xxs
-                            height: width
-                            radius: width / 2
-                            color: Colors.accent
-                        }
-                    }
-
-                    MouseArea {
-                        id: subtabMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        acceptedButtons: Qt.LeftButton
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.selectSubtab(subtabChip.modelData.key)
-                    }
-                }
-            }
-        }
-    }
-
-    ToolButton {
-        id: subtabReset
-        anchors.right: parent.right
-        anchors.rightMargin: Metrics.lg
-        anchors.top: subtabStrip.top
-        anchors.topMargin: Metrics.xs * 2
-        icon: "restart_alt"
-        hint: "Reset every change in this group"
-        visible: !root.filtering
-        enabled: root.activeSubtabModified() > 0
-        onClicked: root.resetSubtab()
-    }
-
-    Item {
-        id: searchRow
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: subtabStrip.visible ? subtabStrip.bottom : tabSeparator.bottom
-        anchors.leftMargin: Metrics.lg
-        anchors.rightMargin: Metrics.lg
         anchors.topMargin: Metrics.sm
         height: Metrics.controlHeight
 
+        ComboBox {
+            id: categoryPicker
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            width: 158
+            visible: !root.filtering
+            elideMode: Text.ElideRight
+            choices: root.subtabChoices()
+            currentValue: root.activeSubtab
+            onSelected: (value) => root.selectSubtab(String(value))
+        }
+
         Rectangle {
-            anchors.fill: parent
+            id: searchBox
+            anchors.left: categoryPicker.visible ? categoryPicker.right : parent.left
+            anchors.leftMargin: categoryPicker.visible ? Metrics.sm : 0
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            height: Metrics.controlHeight
             radius: Metrics.radiusSmall
             color: Colors.surfaceContainer
             border.width: Metrics.borderWidth
             border.color: filterField.activeFocus ? Colors.primary : Colors.outlineVariant
-        }
 
-        Icon {
-            id: searchIcon
-            anchors.left: parent.left
-            anchors.leftMargin: Metrics.md
-            anchors.verticalCenter: parent.verticalCenter
-            name: "search"
-            size: Type.sizeSmall
-            color: Colors.textMuted
-        }
+            Icon {
+                id: searchIcon
+                anchors.left: parent.left
+                anchors.leftMargin: Metrics.md
+                anchors.verticalCenter: parent.verticalCenter
+                name: "search"
+                size: Type.sizeSmall
+                color: Colors.textMuted
+            }
 
-        TextField {
-            id: filterField
-            anchors.left: searchIcon.right
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            anchors.leftMargin: Metrics.sm
-            anchors.rightMargin: Metrics.md
-            background: Item {}
+            TextField {
+                id: filterField
+                anchors.left: searchIcon.right
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.leftMargin: Metrics.sm
+                anchors.rightMargin: Metrics.md
+                background: Item {}
             placeholderText: "search all settings"
-            font.family: Type.family
-            font.pixelSize: Type.sizeSmall
-            color: Colors.textPrimary
-            placeholderTextColor: Colors.textMuted
-            selectByMouse: true
-            onTextChanged: {
-                root.filterText = text
-                root.refresh()
+                font.family: Type.family
+                font.pixelSize: Type.sizeSmall
+                color: Colors.textPrimary
+                placeholderTextColor: Colors.textMuted
+                selectByMouse: true
+                onTextChanged: {
+                    root.filterText = text
+                    root.refresh()
+                }
             }
         }
     }
@@ -645,7 +578,7 @@ Item {
         id: body
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: searchRow.bottom
+        anchors.top: categoryRow.bottom
         anchors.bottom: parent.bottom
         anchors.topMargin: Metrics.sm
         anchors.bottomMargin: Metrics.sm

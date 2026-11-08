@@ -131,13 +131,21 @@ shape; a second material needs the multi-slot UI, which is not built.
 | Feature | Status |
 | --- | --- |
 | Process / Filament / Printer tabs | done |
-| Vertical sub-tab rail | done |
+| Vertical sub-tab rail | n/a by decision — the wrapping chip strip took up to four rows of a 490 px panel for fourteen categories nobody reads at a glance. It is now one row: a category selector that names the category you are in and lists all of them (with a dot on the ones that are not at their preset value) beside the global search field. |
 | Panel docks left or right, animated, remembered across launches | done |
 | Global preferences dialog | not started — the header toggle is the placeholder, as agreed |
 
 ## Viewport toolbar (one strip over the viewport)
 
-Plates on the left, tools next, object actions on the right — one panel.
+Plates on the left, the object actions next, the slice and export pills on the
+right: one row, one control per action, tooltips carrying the labels.
+
+It used to be two rows: a plate cluster, nine actions, fourteen tools and the
+slice controls came to roughly 1300 px against 1150 available, so the tools were
+given a second row. Two rows of icon-only buttons read as a wall of glyphs, so the
+tools moved to their own rail down the left of the viewport and the strip is one
+row again. A permanently disabled entry (Split, which needs multi-object scenes
+the CLI does not expose) is no longer drawn at all.
 
 | Action | Status |
 | --- | --- |
@@ -157,7 +165,10 @@ Plates on the left, tools next, object actions on the right — one panel.
 
 ## Tool rail
 
-Now part of the same strip.
+A column of tools down the left edge of the viewport, grouped and separated:
+place it, cut it, decorate it, support it, tune it. A tool the engine cannot
+drive yet is left out rather than drawn greyed out, because a button that does
+nothing is not a roadmap.
 
 | Tool | Status |
 | --- | --- |

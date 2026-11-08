@@ -149,11 +149,11 @@ Window {
 
     readonly property var plateMenuEntries: [
         { id: "plateRename", label: "Rename plate\u2026", hint: "" },
-        { id: "plateDuplicate", label: "Duplicate plate", hint: "with its objects" },
+        { id: "plateDuplicate", label: "Duplicate plate", hint: "keeps objects" },
         { id: "plateLock",
           label: plateDocument.plateLocked(root.plateMenuIndex) ? "Unlock plate" : "Lock plate",
-          hint: "read-only until unlocked" },
-        { id: "plateClear", label: "Clear the plate", hint: "keep the plate" },
+          hint: "read-only" },
+        { id: "plateClear", label: "Clear the plate", hint: "keep it" },
         { id: "sep1" },
         { id: "plateDelete", label: "Delete plate", hint: "",
           disabled: plateDocument.plateCount <= 1 }
@@ -192,7 +192,7 @@ Window {
         { id: "duplicate", icon: "content_copy", label: "Duplicate", hint: "Duplicate the selected object",
           enabled: root.hasModel },
         { id: "split", icon: "call_split", label: "Split", hint: "Split needs multi-object scenes; not exposed by the engine CLI",
-          enabled: false },
+          enabled: false, hidden: true },
         { id: "centre", icon: "filter_center_focus", label: "Centre", hint: "Centre the object on the bed",
           enabled: root.hasModel },
         { id: "drop", icon: "vertical_align_bottom", label: "Drop to bed", hint: "Drop the object onto the bed",
@@ -371,8 +371,7 @@ Window {
     }
 
     readonly property var tools: [
-        { id: "move", icon: "open_with", label: "Move", state: "ready",
-          hint: "Move — drag the model on the bed, or centre it at X/Y" },
+        { id: "move", icon: "open_with", label: "Move", state: "ready",          hint: "Move — drag the model on the bed, or centre it at X/Y" },
         { id: "rotate", icon: "rotate_right", label: "Rotate", state: "ready",
           hint: "Rotate about X/Y/Z in degrees" },
         { id: "scale", icon: "open_in_full", label: "Scale", state: "ready",
@@ -400,6 +399,37 @@ Window {
         { id: "calibrate", icon: "tune", label: "Calibration", state: "ready",
           hint: "Calibration — flow, temperature, pressure advance, retraction and first layer" }
     ]
+
+    /// The tools that can act on a model, grouped for the rail down the left of the
+    /// viewport. A tool the engine cannot drive yet is left out rather than drawn
+    /// greyed out: a button that does nothing is not a roadmap.
+    readonly property var toolGroups: {
+        const byId = ({})
+        for (let i = 0; i < root.tools.length; ++i)
+            if (root.tools[i].state === "ready")
+                byId[root.tools[i].id] = root.tools[i]
+
+        const order = [
+            { ids: ["move", "rotate", "scale", "face"], divider: true },
+            { ids: ["cut", "measure"], divider: true },
+            { ids: ["text", "fuzzy"], divider: true },
+            { ids: ["support", "seam", "colour"], divider: true },
+            { ids: ["layers", "calibrate"], divider: false }
+        ]
+
+        const groups = []
+        for (let g = 0; g < order.length; ++g) {
+            const entries = []
+            for (let i = 0; i < order[g].ids.length; ++i) {
+                const tool = byId[order[g].ids[i]]
+                if (tool !== undefined)
+                    entries.push(tool)
+            }
+            if (entries.length > 0)
+                groups.push({ tools: entries, divider: order[g].divider })
+        }
+        return groups
+    }
 
     // Plates belong to the document -- count, names and locks -- because the
     // viewport draws a bed per plate and has to agree with the bar above it. The
@@ -1084,22 +1114,10 @@ Window {
                                             : "selected " + count + " objects")
             }
             onPlateSelected: (index) => root.switchPlate(index)
-            onPlateAddRequested: root.addPlate()
             onPlateRemoveRequested: (index) => root.removePlate(index)
-            onPlateLockRequested: (index) => root.togglePlateLock(index)
             onPlateRenameRequested: (index) => {
                 root.plateMenuIndex = index
                 textPrompt.openWith("Rename plate", plateDocument.plateName(index), "", "Rename")
-            }
-            // Both act on the plate you are on: switching first is what makes the
-            // click mean "this plate" rather than "whichever plate was active".
-            onPlateOrientRequested: (index) => {
-                root.switchPlate(index)
-                root.runAction("orient")
-            }
-            onPlateArrangeRequested: (index) => {
-                root.switchPlate(index)
-                root.runAction("arrange")
             }
 
             Behavior on x { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
@@ -1130,8 +1148,6 @@ Window {
             anchors.topMargin: Metrics.md
             plates: root.plates
             activePlate: root.activePlate
-            tools: root.tools
-            activeTool: root.activeTool
             actions: root.objectActions
             slicing: footer.slicing
             canSlice: session.hasModel
@@ -1151,7 +1167,6 @@ Window {
                 root.plateListY = y
                 root.plateListVisible = true
             }
-            onToolTriggered: (id) => root.runTool(id)
             onActionTriggered: (id) => root.runAction(id)
             onAddRequested: (x, y) => {
                 root.addMenuAt = Qt.point(x, y)
@@ -1159,6 +1174,18 @@ Window {
             }
             onSliceRequested: footer.startSlice()
             onSliceAllRequested: footer.startSliceAll()
+        }
+
+        ToolRail {
+            id: toolRail
+            visible: root.mode !== root.deviceMode
+            anchors.left: viewport.left
+            anchors.leftMargin: Metrics.md
+            anchors.top: viewportToolbar.bottom
+            anchors.topMargin: Metrics.sm
+            groups: root.toolGroups
+            activeTool: root.activeTool
+            onToolTriggered: (id) => root.runTool(id)
         }
 
         // What the last action did, in the same corner the tool strip calls home.
@@ -1202,7 +1229,7 @@ Window {
             z: 4
             visible: root.objectListVisible
             x: root.panelOnLeft
-               ? settingsPanel.x + settingsPanel.width
+               ? toolRail.x + toolRail.width + Metrics.sm
                : settingsPanel.x - width
             width: Metrics.drawerWidth
             onCloseRequested: root.objectListVisible = false
@@ -1307,7 +1334,7 @@ Window {
             anchors.rightMargin: Metrics.md + viewport.rightInset
             anchors.topMargin: Metrics.md + viewportToolbar.implicitHeight + Metrics.md
             anchors.bottomMargin: Metrics.md + viewport.bottomInset + viewport.cameraBarHeight + Metrics.md
-            width: Math.min(380, viewport.width * 0.42)
+            width: Math.min(430, viewport.width * 0.46)
             clip: true
 
             Column {

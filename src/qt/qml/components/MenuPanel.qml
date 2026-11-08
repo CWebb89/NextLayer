@@ -3,6 +3,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Layouts
 import "../theme"
 
 // A small pop-up menu drawn over the whole window: a list of labelled entries
@@ -93,16 +94,20 @@ Item {
                         color: Colors.outlineVariant
                     }
 
-                    Row {
+                    RowLayout {
                         anchors.fill: parent
                         anchors.leftMargin: Metrics.md
                         anchors.rightMargin: Metrics.md
                         spacing: Metrics.sm
                         visible: !row.separator
 
+                        // The label owns whatever the hint does not need, and the
+                        // hint is capped: laid out the other way round, a long hint
+                        // squeezed the label down to "Duplicate p...".
                         Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: parent.width - hintLabel.width - Metrics.sm
+                            Layout.fillWidth: true
+                            Layout.preferredWidth: 0
+                            Layout.alignment: Qt.AlignVCenter
                             text: row.modelData.label || ""
                             elide: Text.ElideRight
                             font.family: Type.family
@@ -113,7 +118,9 @@ Item {
 
                         Text {
                             id: hintLabel
-                            anchors.verticalCenter: parent.verticalCenter
+                            Layout.preferredWidth: Math.min(implicitWidth, parent.width * 0.46)
+                            Layout.maximumWidth: Math.round(parent.width * 0.46)
+                            Layout.alignment: Qt.AlignVCenter
                             text: row.modelData.hint || ""
                             elide: Text.ElideRight
                             horizontalAlignment: Text.AlignRight

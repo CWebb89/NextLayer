@@ -433,9 +433,27 @@ def unknown_expression_names(text, known):
     return names
 
 
-def as_point_list(value):
+OFFSET_POINT = re.compile(r"^\s*(-?[0-9.]+)\s*[x,]\s*(-?[0-9.]+)\s*$")
+
+
+def informative_offsets(value):
+    """The offset list, or None when it carries nothing the engine's default lacks.
+
+    A value that is not a point at all (a bare number, a string the reference wrote
+    for a different field) is nothing this engine can read, and an all-zero list is
+    its default, so both are left out rather than written and rejected.
+    """
     items = value if isinstance(value, list) else [value]
-    return [str(item) for item in items]
+    points = []
+    nonzero = False
+    for item in items:
+        text = str(item)
+        match = OFFSET_POINT.match(text)
+        if match is None:
+            return None
+        nonzero = nonzero or any(float(part) for part in match.groups())
+        points.append(text)
+    return points if nonzero else None
 
 
 EXTRUDER_RESET_LINE = re.compile(r"^[ \t]*[gG]92[ \t]*[eE](0(\.0*)?|\.0+)[ \t]*(;.*)?$")
@@ -563,13 +581,17 @@ def printer_values(data, machine_name, vendor, nozzle_float, allowed, enums,
     # slice with one tool writes no G-code at all. This app drives tool
     # changers, never an MMU.
     values["single_extruder_multi_material"] = False
-    # An extruder offset is written in the engine's own `0x0` spelling even though its
-    # reader reports a type mismatch for it on every load: the value is required for a
-    # multi-extruder machine to slice at all (dropping it fails with "error 5
-    # extruder_offset"), and the bundle loader rejects the nested-list spelling that
-    # would avoid the warning. A warning beats a tool changer that cannot slice.
+    # An extruder offset is written in the engine's own `0x0` spelling. Its reader
+    # logs a type mismatch for that spelling on every load of the preset, so the key
+    # is only written where it says something the default does not: an offset that is
+    # not zero. An all-zero list is the engine's own default, and a multi-extruder
+    # machine needs the key only to match a tool count, which its zeros already do.
     for key in POINT_LIST & set(values):
-        values[key] = as_point_list(values[key])
+        offsets = informative_offsets(values[key])
+        if offsets is None:
+            del values[key]
+        else:
+            values[key] = offsets
     dropped, salvaged = repair_gcode(values, known_placeholders)
     # An empty layer-change template stops this build exporting at all, so where
     # the vendor has none, keep the engine's own.

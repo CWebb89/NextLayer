@@ -19,13 +19,11 @@ Item {
     signal plateSelected(int index)
     /// How many objects a rubber-band drag picked up, so the window can say so.
     signal bandSelected(int count)
-    /// The plate's own button row, mirroring the per-plate icons.
-    signal plateAddRequested()
+    /// The plate's own actions: remove, and the menu that holds rename, duplicate,
+    /// lock and clear.
     signal plateRemoveRequested(int index)
-    signal plateLockRequested(int index)
     signal plateRenameRequested(int index)
-    signal plateOrientRequested(int index)
-    signal plateArrangeRequested(int index)
+    signal plateMenuRequested(int index, real x, real y)
 
     property string mode: "model"
 
@@ -1522,28 +1520,6 @@ Item {
                     root.bedMax.x - plateChrome.gapLeft * 2,
                     root.bedMin.y + plateChrome.gapLeft * 2 + plateChrome.iconSize, 100, 100)
 
-                // The slot is carried in the model rather than read from a Repeater's
-                // `index`: the outer plate delegate declares its own `index`, and that
-                // property shadows the inner Repeater's context index, which stacked
-                // all six icons on top of one another.
-                readonly property var actions: [
-                    { slot: 0, icon: "delete", hint: plateDocument.plateCount > 1
-                                                 ? "Remove this plate"
-                                                 : "The last plate cannot be removed",
-                      enabled: plateDocument.plateCount > 1, danger: true, action: "remove" },
-                    { slot: 1, icon: "autorenew", hint: "Auto-orient the objects on this plate",
-                      enabled: true, danger: false, action: "orient" },
-                    { slot: 2, icon: "grid_view", hint: "Arrange the objects on this plate",
-                      enabled: true, danger: false, action: "arrange" },
-                    { slot: 3, icon: plateItem.locked ? "lock" : "lock_open",
-                      hint: plateItem.locked ? "Unlock this plate" : "Lock this plate",
-                      enabled: true, danger: false, action: "lock" },
-                    { slot: 4, icon: "more_vert", hint: "Plate settings: rename, duplicate, clear",
-                      enabled: true, danger: false, action: "menu" },
-                    { slot: 5, icon: "add", hint: "Add a plate after this one",
-                      enabled: true, danger: false, action: "add" }
-                ]
-
                 // Name, on the bed: the plate name is rendered into a texture and
                 // laid along the back edge; this is the same decal, drawn as text.
                 Item {
@@ -1621,91 +1597,6 @@ Item {
                         delay: 400
                     }
                     HoverHandler { id: pencilHover }
-                }
-
-                // The button column: six icons hanging down from the back-right
-                // corner, each a 16 mm square standing on the bed.
-                Repeater {
-                    model: plateItem.actions
-
-                    delegate: Item {
-                        id: actionDecal
-
-                        required property var modelData
-
-                        readonly property real buttonTop: root.bedMax.y - plateChrome.gapTop
-                                                    - (actionDecal.modelData.slot + 1)
-                                                    * (plateChrome.iconSize + plateChrome.gapY)
-                        readonly property var matrix: plateItem.decal(
-                            root.bedMax.x + plateChrome.gapLeft, actionDecal.buttonTop,
-                            root.bedMax.x + plateChrome.gapLeft + plateChrome.iconSize,
-                            actionDecal.buttonTop + plateChrome.iconSize, 100, 100)
-
-                        visible: actionDecal.matrix !== null
-                        width: 100
-                        height: 100
-                        x: 0
-                        y: 0
-                        transformOrigin: Item.TopLeft
-                        transform: Matrix4x4 { matrix: actionDecal.matrix ?? Qt.matrix4x4() }
-
-                        Rectangle {
-                            anchors.fill: parent
-                            anchors.margins: 4
-                            radius: 14
-                            color: actionMouse.containsMouse && actionDecal.modelData.enabled
-                                   ? Colors.alpha(Colors.surfaceContainer, 0.85) : "transparent"
-                            border.width: actionDecal.modelData.slot === 3 && plateItem.locked ? 5 : 0
-                            border.color: Colors.alpha(Colors.accent, 0.75)
-                        }
-
-                        Icon {
-                            anchors.centerIn: parent
-                            name: actionDecal.modelData.icon
-                            size: 74
-                            filled: actionDecal.modelData.slot === 3 && plateItem.locked
-                            color: !actionDecal.modelData.enabled ? Colors.alpha(Colors.textSecondary, 0.4)
-                                 : actionDecal.modelData.danger && actionMouse.containsMouse ? Colors.error
-                                 : actionDecal.modelData.slot === 3 && plateItem.locked ? Colors.accent
-                                 : plateItem.current ? Colors.textPrimary : Colors.textSecondary
-                        }
-
-                        MouseArea {
-                            id: actionMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            enabled: actionDecal.modelData.enabled
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                const action = actionDecal.modelData.action
-                                if (action === "remove")
-                                    root.plateRemoveRequested(plateItem.index)
-                                else if (action === "orient")
-                                    root.plateOrientRequested(plateItem.index)
-                                else if (action === "arrange")
-                                    root.plateArrangeRequested(plateItem.index)
-                                else if (action === "lock")
-                                    root.plateLockRequested(plateItem.index)
-                                else if (action === "menu") {
-                                    const at = plateChrome.project(
-                                        plateItem.modelData.x + root.bedMax.x + plateChrome.gapLeft
-                                            + plateChrome.iconSize,
-                                        plateItem.modelData.y + actionDecal.buttonTop)
-                                    root.plateMenuRequested(plateItem.index,
-                                                            Math.round(at.x), Math.round(at.y))
-                                }
-                                else if (action === "add")
-                                    root.plateAddRequested()
-                            }
-                        }
-
-                        Tooltip {
-                            target: actionDecal
-                            text: actionDecal.modelData.hint
-                            shown: actionMouse.containsMouse
-                            delay: 500
-                        }
-                    }
                 }
 
                 // The number, on the bed at the front-right corner.

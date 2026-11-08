@@ -117,13 +117,25 @@ Item {
             TextField {
                 id: addressField
                 Layout.fillWidth: true
+                Layout.preferredHeight: Metrics.controlHeight
                 placeholderText: "10.0.0.22  ·  printer hostname, Mainsail, Fluid, or any page"
                 selectByMouse: false
                 onPressed: selectAll()
                 onActiveFocusChanged: if (activeFocus) selectAll()
                 font.family: Type.family
                 font.pixelSize: Type.sizeSmall
+                color: Colors.textPrimary
+                placeholderTextColor: Colors.textMuted
+                leftPadding: Metrics.md
+                rightPadding: Metrics.md
                 onAccepted: root.connect(text)
+
+                background: Rectangle {
+                    radius: Metrics.radiusSmall
+                    color: Colors.surfaceContainer
+                    border.width: Metrics.borderWidth
+                    border.color: addressField.activeFocus ? Colors.primary : Colors.outlineVariant
+                }
             }
 
             Button {
@@ -152,6 +164,9 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             spacing: Metrics.sm
+            // The pane below repeats this sentence in full when the page did not
+            // load, so the line stands down rather than saying it twice.
+            visible: root.pageError.length === 0
 
             Rectangle {
                 Layout.preferredWidth: Metrics.xs

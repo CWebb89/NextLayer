@@ -357,19 +357,14 @@ void prepareDataDir()
     QDir().mkpath(data + "/physical_printer");
 
     const QString vendor = data + "/presets/local/prusa-research-fff";
-    if (!QFileInfo::exists(vendor)) {
-        const QString assets = QString::fromLatin1(NEXT_LAYER_RESOURCES_DIR)
-                             + "/presets/prusa-research-fff";
-        if (QFileInfo::exists(assets))
-            QFile::link(assets, vendor);
-    }
-
-    // The engine's shipped printer presets spell an all-zero extruder offset as
-    // `'0x0'`, which its own reader reports as a type mismatch on every start. It
-    // is left alone: removing the entry makes a multi-extruder machine fail to
-    // slice outright ("error 5 extruder_offset"), and a warning is much cheaper
-    // than a broken tool changer. Printed once per profile load, by the engine's
-    // own bundle rather than by anything this app writes.
+    const QString engineBundle = QString::fromLatin1(NEXT_LAYER_RESOURCES_DIR)
+                               + "/presets/prusa-research-fff";
+    // The engine reads the printer profiles it ships from the data directory, so
+    // its own bundle is linked in once. Dropping its `extruder_offset` entry to
+    // quiet a reader warning used to look tempting and breaks every multi-tool
+    // machine in it with "error 5 extruder_offset".
+    if (!QFileInfo::exists(vendor) && QFileInfo::exists(engineBundle))
+        QFile::link(engineBundle, vendor);
 
     // The engine's bed resolver checks <datadir>/bed/<file> before falling back
     // to the shipped resources. Copy the vendor bed meshes up front so slicing

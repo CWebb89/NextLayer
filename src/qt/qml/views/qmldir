@@ -8,6 +8,7 @@ FooterBar 1.0 FooterBar.qml
 PreviewLegend 1.0 PreviewLegend.qml
 GcodeWindow 1.0 GcodeWindow.qml
 ViewportToolbar 1.0 ViewportToolbar.qml
+ToolRail 1.0 ToolRail.qml
 TransformPanel 1.0 TransformPanel.qml
 SettingsTree 1.0 SettingsTree.qml
 PresetEditorDialog 1.0 PresetEditorDialog.qml

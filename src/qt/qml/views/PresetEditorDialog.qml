@@ -55,10 +55,22 @@ Popup {
         return presetStore.printProfiles
     }
 
-    width: Math.min(1180, parent.width - Metrics.xl * 2)
-    height: Math.min(860, parent.height - Metrics.xl * 2)
-    x: Math.round((parent.width - width) / 2)
-    y: Math.round((parent.height - height) / 2)
+    // Drawn over the whole window, not inside the panel it is declared in: a Popup
+    // is a visual child of its `parent`, so left at its default it was painted
+    // under the preview cards while being sized against them.
+    parent: Overlay.overlay
+
+    // Sized and centred against the window, not against the item this popup is
+    // declared in. It lives inside the settings panel, which is a third of the
+    // window wide: sized from there it drew at the panel's width while its content
+    // kept the width it was laid out for, and the right-hand half of every setting
+    // landed on the viewport behind it.
+    readonly property Item windowItem: Overlay.overlay !== null ? Overlay.overlay : parent
+
+    width: Math.min(1120, root.windowItem.width - Metrics.xl * 2)
+    height: Math.min(860, root.windowItem.height - Metrics.xl * 2)
+    x: Math.round((root.windowItem.width - width) / 2)
+    y: Math.round((root.windowItem.height - height) / 2)
     modal: true
     dim: true
     padding: 0
@@ -296,10 +308,19 @@ Popup {
                     }
                 }
 
-                Item { Layout.fillWidth: true }
+                Text {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 0
+                    horizontalAlignment: Text.AlignRight
+                    text: "Name"
+                    elide: Text.ElideRight
+                    font.family: Type.family
+                    font.pixelSize: Type.sizeCaption
+                    color: Colors.textMuted
+                }
 
                 TextField {
-                    Layout.preferredWidth: 260
+                    Layout.preferredWidth: 180
                     Layout.preferredHeight: Metrics.controlHeight
                     text: root.nameField
                     placeholderText: "preset name"
@@ -335,6 +356,40 @@ Popup {
                     enabled: !root.printerTab
                     onClicked: root.saveAs()
                 }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.leftMargin: Metrics.lg
+                Layout.rightMargin: Metrics.lg
+                Layout.bottomMargin: Metrics.sm
+                spacing: Metrics.sm
+
+                Text {
+                    text: root.printerTab ? "Machine" : "Preset"
+                    font.family: Type.family
+                    font.pixelSize: Type.sizeCaption
+                    color: Colors.textMuted
+                }
+
+                ComboBox {
+                    Layout.preferredWidth: 300
+                    choices: root.tabChoices
+                    currentValue: root.currentName
+                    onSelected: (value) => root.selectPreset(String(value))
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 0
+                    text: root.message.length > 0 ? root.message
+                          : presetStore.error.length > 0 ? presetStore.error : ""
+                    elide: Text.ElideRight
+                    font.family: Type.family
+                    font.pixelSize: Type.sizeCaption
+                    color: root.message.length > 0 || presetStore.error.length > 0
+                           ? Colors.error : Colors.textMuted
+                }
 
                 Button {
                     text: "Rename"
@@ -366,6 +421,13 @@ Popup {
                     hint: "Create a new machine from the current settings"
                     visible: root.printerTab
                     onClicked: root.showAddPrinter = !root.showAddPrinter
+                }
+
+                Text {
+                    text: root.currentIsUser ? "user preset" : "engine preset"
+                    font.family: Type.family
+                    font.pixelSize: Type.sizeCaption
+                    color: Colors.textTertiary
                 }
             }
 
@@ -490,46 +552,6 @@ Popup {
                 }
 
                 Item { Layout.fillWidth: true }
-            }
-
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.leftMargin: Metrics.lg
-                Layout.rightMargin: Metrics.lg
-                Layout.bottomMargin: Metrics.sm
-                spacing: Metrics.sm
-
-                Text {
-                    text: root.printerTab ? "Machine" : "Preset"
-                    font.family: Type.family
-                    font.pixelSize: Type.sizeCaption
-                    color: Colors.textMuted
-                }
-
-                ComboBox {
-                    Layout.preferredWidth: 320
-                    choices: root.tabChoices
-                    currentValue: root.currentName
-                    onSelected: (value) => root.selectPreset(String(value))
-                }
-
-                Text {
-                    Layout.fillWidth: true
-                    text: root.message.length > 0 ? root.message
-                          : presetStore.error.length > 0 ? presetStore.error : ""
-                    elide: Text.ElideRight
-                    font.family: Type.family
-                    font.pixelSize: Type.sizeCaption
-                    color: root.message.length > 0 || presetStore.error.length > 0
-                           ? Colors.error : Colors.textMuted
-                }
-
-                Text {
-                    text: root.currentIsUser ? "user preset" : "engine preset"
-                    font.family: Type.family
-                    font.pixelSize: Type.sizeCaption
-                    color: Colors.textTertiary
-                }
             }
 
             RowLayout {

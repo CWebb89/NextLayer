@@ -7,47 +7,18 @@ import QtQuick.Controls
 import "../theme"
 import "../components"
 
-// The single strip over the viewport: plate tabs, a
-// divider, the object actions, a divider, the manipulation tools, then the
-// slice and export pills on the right. One panel, icon-only, tooltips carry the
-// labels.
+// The single strip over the viewport: plate tabs, a divider, the object actions,
+// a divider, then the slice and export pills on the right. One row, icon-only,
+// tooltips carry the labels. The manipulation tools are not here: fourteen of
+// them plus ten actions did not fit one row, and the second row they were given
+// read as a wall of glyphs. They live in the tool rail down the left of the
+// viewport (ToolRail.qml), next to the model they act on.
 Item {
     id: root
 
     property var plates: []
     property int activePlate: 0
     property var actions: []
-    property var tools: []
-
-    /// The same tools, split into the groups the strip draws a divider between.
-    /// Ids are matched against the flat list, so adding a tool to `tools` and not
-    /// here leaves it out rather than drawing it twice.
-    readonly property var toolGroups: {
-        const byId = ({})
-        for (let i = 0; i < root.tools.length; ++i)
-            byId[root.tools[i].id] = root.tools[i]
-
-        const order = [
-            { ids: ["move", "rotate", "scale", "face"], divider: true },
-            { ids: ["cut", "measure"], divider: true },
-            { ids: ["text", "fuzzy"], divider: true },
-            { ids: ["support", "seam", "colour"], divider: true },
-            { ids: ["layers", "assemble", "calibrate"], divider: false }
-        ]
-
-        const groups = []
-        for (let g = 0; g < order.length; ++g) {
-            const entries = []
-            for (let i = 0; i < order[g].ids.length; ++i) {
-                const tool = byId[order[g].ids[i]]
-                if (tool !== undefined)
-                    entries.push(tool)
-            }
-            if (entries.length > 0)
-                groups.push({ tools: entries, divider: order[g].divider })
-        }
-        return groups
-    }
     property string activeTool: ""
     property bool slicing: false
     property bool canSlice: false
@@ -66,18 +37,10 @@ Item {
     /// window coordinates, so the menu it opens lands on the button rather than in
     /// a corner of the window.
     signal addRequested(real x, real y)
-    signal toolTriggered(string id)
     signal sliceRequested()
     signal sliceAllRequested()
 
-    // Two rows, because one cannot hold them: a plate cluster, nine object
-    // actions, fourteen tools and the slice controls came to roughly 1300 px
-    // against 1150 available, and the overflow silently clipped the last six
-    // tools -- support, seam and colour painting, variable layer height,
-    // assemble and calibration -- off the end of the strip. Plate and object
-    // actions share the top row with the slice controls; the tools own the
-    // second row and always fit.
-    implicitHeight: Metrics.rowHeight + Metrics.md * 2 + Metrics.rowHeight + Metrics.xs
+    implicitHeight: Metrics.rowHeight + Metrics.md * 2
 
     Rectangle {
         anchors.fill: parent
@@ -187,6 +150,21 @@ Item {
             enabled: root.plates.length > 1
             onClicked: root.plateRemoved(root.activePlate)
         }
+
+        // The rest of a plate's own actions: rename, duplicate, clear. There used
+        // to be a column of six icons standing on the bed for this; at a low camera
+        // angle they read as loose glyphs floating over the plate, and every one of
+        // them but this menu is in the bar already.
+        ToolButton {
+            id: plateMenuButton
+            icon: "more_vert"
+            hint: "Plate settings: rename, duplicate, lock, clear"
+            onClicked: {
+                const point = plateMenuButton.mapToItem(null, plateMenuButton.width,
+                                                        plateMenuButton.height)
+                root.plateMenuRequested(root.activePlate, point.x, point.y)
+            }
+        }
     }
 
     Divider {
@@ -210,7 +188,7 @@ Item {
             id: addButton
             icon: "add_box"
             hint: "Add a shape or a modifier volume"
-            onClicked: (mouse) => {
+            onClicked: {
                 const point = addButton.mapToItem(null, 0, addButton.height + Metrics.xs)
                 root.addRequested(point.x, point.y)
             }
@@ -242,52 +220,6 @@ Item {
         anchors.left: actionRow.right
         anchors.leftMargin: Metrics.sm
         anchors.verticalCenter: plateRow.verticalCenter
-    }
-
-    // The tools in three groups, separated, so the strip reads as "shape it,
-    // paint it, measure it" instead of one undifferentiated run of icons.
-    Row {
-        id: toolRow
-        anchors.left: parent.left
-        anchors.leftMargin: Metrics.md
-        anchors.right: parent.right
-        anchors.rightMargin: Metrics.md
-        anchors.top: plateRow.bottom
-        anchors.topMargin: Metrics.md
-        spacing: 0
-
-        Repeater {
-            model: root.toolGroups
-
-            delegate: Row {
-                id: toolGroup
-                required property var modelData
-
-                spacing: 0
-
-                Repeater {
-                    model: toolGroup.modelData.tools
-
-                    delegate: ToolButton {
-                        required property var modelData
-
-                        icon: modelData.icon
-                        hint: modelData.hint
-                        enabled: modelData.state === "ready"
-                        active: root.activeTool === modelData.id
-                        onClicked: root.toolTriggered(modelData.id)
-                    }
-                }
-
-                Rectangle {
-                    anchors.verticalCenter: parent.verticalCenter
-                    visible: toolGroup.modelData.divider
-                    width: Metrics.borderWidth
-                    height: Metrics.rowHeight - Metrics.lg
-                    color: Colors.outlineVariant
-                }
-            }
-        }
     }
 
     Row {
