@@ -424,7 +424,7 @@ Item {
                     }
 
                     ComboBox {
-                        width: parent.width - presetBar.presetLabelWidth - filamentGear.width
+                        width: parent.width - presetBar.presetLabelWidth - Metrics.controlHeight
                                - Metrics.sm * 2
                         enabled: presetBar.printer.length > 0
                         choices: presetStore.filamentProfiles
