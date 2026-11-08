@@ -344,7 +344,7 @@ the *Calibration Guide* entry (a wiki link) and the AMS-specific flows.
 | Icon set | Material Symbols Outlined, an outline style throughout |
 | Several objects on one plate | done — the document holds N objects; a slice bakes them into one STL of separate shells and the engine prints every island |
 | Per-object settings | done — 136 print settings are overridable per object; they reach the slicer through the plate path (`--slice-features`: a 0.30 mm per-object layer height gives 84 layers instead of 125) |
-| Save/load project (`.3mf` with settings and objects) | needs-engine — `store_3mf(const std::string&, const Domain::Project&)` and `load_3mf` exist, but building a `Domain::Project` needs a live `ProjectInteractor`; doing that beside the worker-thread `CLI::run` slice would put two engine runtimes in one process |
+| Save/load project (`.3mf` with settings and objects) | staged — `store_3mf(const std::string&, const Domain::Project&, const Store3mfParam&)` exists and a populated `Domain::Project` is already in process: `SliceRuntime::slice` loads one through `CLI::load_print_data` and holds it in the live `ProjectInteractor`, so the old "two runtimes in one process" objection is gone. What is left is the mapping, and it is the whole job: our per-object overrides, layer-height profile, paint, layer markers and plates live in `PlateDocument`, and none of them are in an engine `Model` until something pushes them there | the document→`Domain::Project` mapping |
 | Undo / redo | done — `Ctrl+Z` / `Ctrl+Shift+Z` over add, delete, duplicate, transform and visibility |
 | Sequential printing | staged — settings exist, no scene arrangement |
 
@@ -489,7 +489,7 @@ and the engine's plater.
 | Bed shape editor (drag polygon, SVG/STL background) | `bed_shape` is edited as points; the plater's editor is not exposed | a canvas over the point list |
 | Rotation and scale gizmo handles, snapping | the Move tool draws axis arrows; rotate/scale stay numeric | the gizmo half of the render-module host |
 | Sequential printing | the settings exist, nothing arranges objects for it | arrange with a clearance pass |
-| `.3mf` project | `store_3mf`/`load_3mf` exist but need a live `ProjectInteractor` beside the worker-thread slice | the plater host, again |
+| `.3mf` project | `store_3mf`/`load_3mf` exist and a live `Domain::Project` is already in the process, but the document→project mapping is unwritten, and the engine's project holds one bed where the document holds plates | the document→project mapping, tested by a save/load/slice round trip |
 | Calibration wizard: save to preset, then re-run fine | "Apply to setting" writes the live value; the re-slice step is manual | a second pass over the same test |
 | Travel / retraction as legend categories, G-code colour schemes | they are lines in the toolpath, not legend rows | preview legend model |
 | SVG embossing | text is built through `Biz::Emboss::text2shapes`; SVG needs a contour source | an SVG importer into the same emboss path |
