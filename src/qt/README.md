@@ -56,6 +56,7 @@ mouse:
 | `--transform SPEC,OUT` | runs the engine transform path and writes a transformed STL: `rotate=x,y,z;scale=f;cut=z;duplicate=n;move=x,y;center;drop` |
 | `--selftest-slice` | the worker-thread slice path runs and its G-code parses back; it slices through the app's own engine runtime (`SliceRuntime`), not a second engine |
 | `--keep-gcode PATH` | with `--selftest-slice`, copies the G-code to PATH so two slice paths can be compared byte for byte |
+| `--export-project CONFIG,OUT` | writes the document as a project 3MF another slicer reads, reopens it through the app's own 3MF path and slices it: fails unless both toolpaths hash the same. What it reports — overrides, layer height bands, painted facets, plates — is what the gate reads |
 | `--preview FILE` | a G-code file loads into the toolpath preview before QML starts |
 | `--preview-stats GCODE,OUT` | the engine's G-code processor reads a file and writes per-line-type statistics as JSON |
 | `--layer N` | opens the preview at layer N, for a shot of a specific layer |
