@@ -52,6 +52,8 @@
 #include <QPainter>
 #include <QCryptographicHash>
 #include <QGuiApplication>
+#include <QFontDatabase>
+#include <QFontMetrics>
 
 #include <string_view>
 
@@ -110,6 +112,18 @@ QString qmlEntry(const QString& override)
     }
 
     return QString::fromLatin1(NEXT_LAYER_QML_DIR) + "/main.qml";
+}
+
+/// The icon font is a resource, not a system package. Without this the interface
+/// draws a missing-glyph box for every icon on any machine that has not installed
+/// Material Symbols, which includes the AppImage, since it bundles Qt and not
+/// fonts.
+void registerBundledFonts()
+{
+    const int id = QFontDatabase::addApplicationFont(
+        QStringLiteral(":/next-layer/fonts/MaterialSymbolsOutlined.ttf"));
+    if (id < 0)
+        std::fprintf(stderr, "fonts: the bundled icon font did not load\n");
 }
 
 // The close guard: a plate is work, and closing the window must not be how it is
@@ -759,7 +773,7 @@ int main(int argc, char* argv[])
             || argument == "--apply-host-offsets"
             || argument == "--update-install" || argument == "--dump-config"
             || argument == "--scene-selftest" || argument == "--dump-presets"
-            || argument == "--dump-presets-json")
+            || argument == "--dump-presets-json" || argument == "--dump-icons")
             headless = true;
     }
     if (!headless)
@@ -769,6 +783,7 @@ int main(int argc, char* argv[])
     QGuiApplication::setOrganizationName(QStringLiteral("next-layer"));
     QGuiApplication::setApplicationName(QStringLiteral("next-layer"));
     next_layer::sweepScratchDirs();
+    registerBundledFonts();
 
     QCommandLineParser parser;
     parser.setApplicationDescription("next-layer: a slicer for tool changers");
@@ -869,6 +884,9 @@ int main(int argc, char* argv[])
     const QCommandLineOption dump_fonts_option("dump-fonts",
         "List the fonts the emboss text tool can open, and prove one opens with its face "
         "metrics. Prints a count line first so a harness reads a figure, not an exit code.");
+    const QCommandLineOption dump_icons_option("dump-icons",
+        "Resolve the icon font the way the interface does: print whether its family is "
+        "registered and whether a ligature name still measures as one glyph, then exit.");
     const QCommandLineOption dump_object_settings_option("dump-object-settings",
         "List the settings a single object can override, with their types, and exit.");
     const QCommandLineOption dump_presets_option("dump-presets",
@@ -912,7 +930,7 @@ int main(int argc, char* argv[])
                        hover_test_option, panel_left_option, selftest_option, slice_all_option, plate_tools_option, slice_features_option,
                        project_test_option, mesh_tools_option, update_option,
                        update_install_option, multi_tool_option, print_host_test_option, print_host_start_option, apply_offsets_option, volume_settings_option, calibration_test_option, shape_test_option, keep_gcode_option, scene_selftest_option, preview_stats_option, vgcode_shot_option,
-                       dump_presets_option, dump_presets_json_option, dump_fonts_option, dump_object_settings_option, preset_printer_option, preset_process_option, preset_filament_option, preset_filaments_option,
+                       dump_presets_option, dump_presets_json_option, dump_fonts_option, dump_icons_option, dump_object_settings_option, preset_printer_option, preset_process_option, preset_filament_option, preset_filaments_option,
                        set_option, add_printer_option, save_preset_option, rename_preset_option,
                        delete_preset_option, export_preset_option, import_preset_option,
                        import_slicer_option, export_bundle_option});
@@ -1209,6 +1227,22 @@ int main(int argc, char* argv[])
         }
         std::printf("object settings: %d\n", count);
         return 0;
+    }
+
+    if (parser.isSet(dump_icons_option)) {
+        const QString family = QStringLiteral("Material Symbols Outlined");
+        const bool registered = QFontDatabase::families().contains(family);
+        QFont font(family);
+        font.setPixelSize(24);
+        const QFontMetrics metrics(font);
+        const QString name = QStringLiteral("settings");
+        const int ligature = metrics.horizontalAdvance(name);
+        int per_character = 0;
+        for (const QChar character : name)
+            per_character += metrics.horizontalAdvance(QString(character));
+        std::printf("icons: family %s\n", registered ? "registered" : "missing");
+        std::printf("icons: ligature %d per-character %d\n", ligature, per_character);
+        return (registered && per_character > 0 && ligature * 2 < per_character) ? 0 : 1;
     }
 
     if (parser.isSet(dump_fonts_option)) {

@@ -93,8 +93,20 @@ dependency and is disabled in our build.
 
 `src/qt/assets/brand/next-layer-mark.svg` is ours.
 
-No fonts are bundled. The interface uses whatever fontconfig resolves the
-configured family to, and the icons are the **Material Symbols Outlined** font
-installed system-wide (Apache-2.0, © Google LLC), drawn by name through its
-ligature table — so an icon appears only if that font is installed, and the font
-is never redistributed here.
+## Bundled font
+
+| | |
+|---|---|
+| Component | Material Symbols Outlined (variable, `FILL,GRAD,opsz,wght`) |
+| Licence | Apache-2.0 |
+| Copyright | Google LLC |
+| Source | https://github.com/google/material-design-icons |
+| In this tree | `src/qt/assets/fonts/MaterialSymbolsOutlined.ttf`, licence text beside it |
+
+The interface draws every icon by name through this font's ligature table, so
+it ships inside the binary rather than depending on the system having installed
+it. `src/qt/assets/fonts/README.md` records why the whole variable file is
+shipped instead of a subset, and the sha256 of the copy here.
+
+Interface text still uses whatever fontconfig resolves; no UI text font is
+bundled beyond the one the engine's own resources already carry.

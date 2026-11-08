@@ -255,6 +255,35 @@ else
     __ok "fonts: $font_count[2] openable, one opened with unit_per_em $font_metrics[2]"
 end
 
+# The icon font ships as a resource. A machine that has never installed Material
+# Symbols -- the AppImage, a fresh desktop, CI -- would otherwise draw a
+# missing-glyph box for every icon in the interface, and nothing above would
+# notice. This runs the lookup the QML does, with fontconfig pointed at a
+# directory that does not exist, so the only family available is the bundled one.
+set -l no_fonts (mktemp)
+printf '%s\n' \
+    '<?xml version="1.0"?>' \
+    '<!DOCTYPE fontconfig SYSTEM "fonts.dtd">' \
+    '<fontconfig><dir>/nonexistent-next-layer-fonts</dir></fontconfig>' >$no_fonts
+set -l icon_out (env FONTCONFIG_FILE=$no_fonts $bin --dump-icons 2>&1)
+set -l icon_rc $status
+rm -f $no_fonts
+set -l icon_family (string match -r '^icons: family (\w+)$' -- $icon_out)
+set -l icon_widths (string match -r '^icons: ligature (\d+) per-character (\d+)$' -- $icon_out)
+if test $icon_rc -ne 0
+    __bad "--dump-icons exited $icon_rc with every system font hidden: "(string join ' ' (string match -r '^icons:.*' -- $icon_out | head -n 2))
+else if not set -q icon_family[2]
+    __bad '--dump-icons printed no family line'
+else if test "$icon_family[2]" != registered
+    __bad 'the icon font family is not registered without system fonts: the bundled resource did not load'
+else if not set -q icon_widths[3]
+    __bad '--dump-icons printed no width pair'
+else if not test (math "$icon_widths[2] * 2") -lt $icon_widths[3]
+    __bad "an icon name measures $icon_widths[2] against $icon_widths[3] per character: the ligature table did not resolve"
+else
+    __ok "icons: bundled family resolved with no system font, ligature $icon_widths[2] of $icon_widths[3] per character"
+end
+
 set -l slice_out ($bin $model --selftest-slice 2>&1)
 set -l slice_rc $status
 set -l slice_match (string match -r 'slice finished in (\d+) ms: (\d+) layers, (\d+) moves' -- $slice_out)

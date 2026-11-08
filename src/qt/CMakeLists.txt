@@ -78,6 +78,7 @@ qt_add_resources(next-layer-qt "app_assets"
     PREFIX "/next-layer"
     BASE assets
     FILES assets/base-config.json
+          assets/fonts/MaterialSymbolsOutlined.ttf
           assets/bed/voron24_350_plate.stl
           assets/bed/voron24_350_logo.svg
           assets/brand/next-layer-mark.svg
