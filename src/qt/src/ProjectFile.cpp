@@ -376,4 +376,9 @@ bool parseProject(const QByteArray& body, std::vector<ProjectObject>& objects,
     return true;
 }
 
+int formatVersion()
+{
+    return kFormatVersion;
+}
+
 }

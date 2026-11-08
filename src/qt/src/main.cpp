@@ -17,6 +17,7 @@
 #include "Updater.hpp"
 #include "PlateDocument.hpp"
 #include "PlateScene.hpp"
+#include "ProjectFile.hpp"
 #include "Resources.hpp"
 #include "Scratch.hpp"
 #include "QtPlatform.hpp"
@@ -773,7 +774,8 @@ int main(int argc, char* argv[])
             || argument == "--apply-host-offsets"
             || argument == "--update-install" || argument == "--dump-config"
             || argument == "--scene-selftest" || argument == "--dump-presets"
-            || argument == "--dump-presets-json" || argument == "--dump-icons")
+            || argument == "--dump-presets-json" || argument == "--dump-icons"
+            || argument == "--project-version-test")
             headless = true;
     }
     if (!headless)
@@ -834,6 +836,10 @@ int main(int argc, char* argv[])
     const QCommandLineOption project_test_option("project-test",
         "Save a plate to a project file, reload it into a cleared document, and slice the reloaded plate; CONFIG is a resolved config.",
         "CONFIG");
+    const QCommandLineOption project_version_test_option("project-version-test",
+        "Check the project file version policy: a file at this build's version, an older one "
+        "and one with no version field load, and a newer one is refused with a reason. Prints "
+        "one line per case and exits non-zero if any disagrees.");
     const QCommandLineOption slice_features_option("slice-features",
         "Slice one model with a per-object layer height, a layer height profile and painted facets, and report what each changed; CONFIG is a resolved config.",
         "CONFIG");
@@ -928,7 +934,7 @@ int main(int argc, char* argv[])
                        settings_tab_option, paint_test_option, input_test_option, slider_test_option,
                        preset_dialog_option,
                        hover_test_option, panel_left_option, selftest_option, slice_all_option, plate_tools_option, slice_features_option,
-                       project_test_option, mesh_tools_option, update_option,
+                       project_version_test_option, project_test_option, mesh_tools_option, update_option,
                        update_install_option, multi_tool_option, print_host_test_option, print_host_start_option, apply_offsets_option, volume_settings_option, calibration_test_option, shape_test_option, keep_gcode_option, scene_selftest_option, preview_stats_option, vgcode_shot_option,
                        dump_presets_option, dump_presets_json_option, dump_fonts_option, dump_icons_option, dump_object_settings_option, preset_printer_option, preset_process_option, preset_filament_option, preset_filaments_option,
                        set_option, add_printer_option, save_preset_option, rename_preset_option,
@@ -1059,6 +1065,50 @@ int main(int argc, char* argv[])
                                      });
         std::fprintf(stdout, "transform %s -> %s\n", ok ? "ok" : "failed", out.toUtf8().constData());
         return ok ? 0 : 1;
+    }
+
+    if (parser.isSet(project_version_test_option)) {
+        next_layer::ProjectMetadata metadata;
+        metadata.applicationVersion = next_layer::applicationVersion();
+        const QByteArray current = next_layer::serialiseProject({}, metadata);
+
+        auto withVersion = [](const QByteArray& body, int version, bool keep) {
+            QJsonObject root = QJsonDocument::fromJson(body).object();
+            if (keep)
+                root.insert(QStringLiteral("version"), version);
+            else
+                root.remove(QStringLiteral("version"));
+            return QJsonDocument(root).toJson(QJsonDocument::Compact);
+        };
+
+        struct Probe
+        {
+            const char* label;
+            QByteArray body;
+            bool refused;
+        };
+        const QVector<Probe> probes{
+            {"current", current, false},
+            {"older", withVersion(current, 0, true), false},
+            {"missing", withVersion(current, 0, false), false},
+            {"newer", withVersion(current, next_layer::formatVersion() + 1, true), true},
+        };
+
+        bool as_expected = true;
+        for (const Probe& probe : probes) {
+            std::vector<next_layer::ProjectObject> objects;
+            next_layer::ProjectMetadata parsed;
+            QString error;
+            next_layer::parseProject(probe.body, objects, parsed, error);
+            const bool newer_refusal = error.contains(QStringLiteral("newer next-layer"));
+            const bool correct = newer_refusal == probe.refused;
+            as_expected = as_expected && correct;
+            std::printf("project version: %s %s%s%s\n", probe.label,
+                        correct ? (probe.refused ? "refused" : "accepted") : "WRONG",
+                        correct ? "" : " -- loader said: ",
+                        correct ? "" : error.toUtf8().constData());
+        }
+        return as_expected ? 0 : 1;
     }
 
     if (parser.isSet(project_test_option)) {

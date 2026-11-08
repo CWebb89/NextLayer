@@ -210,6 +210,30 @@ if test $static -eq 1
     __summary
 end
 
+# The project file version policy: this build's version, an older one and one
+# with no version field load; a newer one is refused with a reason. Without this
+# the policy is a paragraph in a doc comment, and the day a version 2 exists
+# nothing would catch a loader that quietly accepts it.
+set -l version_out ($bin --project-version-test 2>&1)
+set -l version_rc $status
+set -l version_current (string match -r '^project version: current accepted$' -- $version_out)
+set -l version_older (string match -r '^project version: older accepted$' -- $version_out)
+set -l version_missing (string match -r '^project version: missing accepted$' -- $version_out)
+set -l version_newer (string match -r '^project version: newer refused$' -- $version_out)
+if test $version_rc -ne 0
+    __bad "--project-version-test exited $version_rc: "(string join ' ' (string match -r '^project version:.*' -- $version_out | head -n 2))
+else if not set -q version_current[1]
+    __bad 'the project loader refuses a file at its own version'
+else if not set -q version_older[1]
+    __bad 'the project loader refuses an older file'
+else if not set -q version_missing[1]
+    __bad 'the project loader refuses a file with no version field'
+else if not set -q version_newer[1]
+    __bad 'the project loader accepts a file written by a newer build'
+else
+    __ok 'project versions: current, older and unversioned load; newer is refused'
+end
+
 set -l tabs_out ($bin $model --dump-tabs 2>&1)
 set -l tabs_rc $status
 set -l tally (printf '%s\n' $tabs_out | awk '
@@ -287,6 +311,24 @@ end
 set -l slice_out ($bin $model --selftest-slice 2>&1)
 set -l slice_rc $status
 set -l slice_match (string match -r 'slice finished in (\d+) ms: (\d+) layers, (\d+) moves' -- $slice_out)
+
+# The privacy claim needs a test, not a paragraph. A network namespace with no
+# interfaces makes every connect fail at the syscall, so a slice that still
+# produces its layers there is a slice that never reached for the network.
+set -l net_out (unshare -rn $bin $model --selftest-slice 2>&1)
+set -l net_rc $status
+set -l net_match (string match -r 'slice finished in (\d+) ms: (\d+) layers' -- $net_out)
+if test $net_rc -ne 0
+    __bad "--selftest-slice exited $net_rc inside a network namespace with no interfaces: "(string join ' ' (string match -r 'error.*|slice .*' -- $net_out | head -n 2))
+else if not set -q net_match[3]
+    __bad 'the slice in a network namespace printed no layer count'
+else if not set -q slice_match[3]
+    __skip 'network: sliced with no network, but the plain slice above already failed'
+else if test $net_match[3] -ne $slice_match[3]
+    __bad "network namespace changed the slice: $net_match[3] layers there against $slice_match[3] outside"
+else
+    __ok "network: sliced $net_match[3] layers in a namespace with no network"
+end
 if test $slice_rc -ne 0
     __bad "--selftest-slice exited $slice_rc"", see: "(string join ' ' (string match -r '^slice .*|error.*' -- $slice_out | head -n 3))
 else if not set -q slice_match[3]

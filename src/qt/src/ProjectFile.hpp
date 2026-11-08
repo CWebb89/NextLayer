@@ -82,4 +82,7 @@ QByteArray serialiseProject(const std::vector<ProjectObject>& objects,
 bool parseProject(const QByteArray& body, std::vector<ProjectObject>& objects,
                   ProjectMetadata& metadata, QString& error);
 
+/// The project file version this build writes, and the newest it will read.
+int formatVersion();
+
 }
