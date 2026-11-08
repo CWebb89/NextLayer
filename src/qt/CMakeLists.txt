@@ -47,6 +47,8 @@ add_executable(next-layer-qt
     src/GcodeView.hpp
     src/GcodeBrand.cpp
     src/GcodeBrand.hpp
+    src/Resources.cpp
+    src/Resources.hpp
     src/ThreeMfProject.cpp
     src/ThreeMfProject.hpp
     src/Scratch.cpp

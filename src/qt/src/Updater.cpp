@@ -295,10 +295,11 @@ bool Updater::installSync(const QString& root, QString& error)
         return false;
     }
 
-    const QString stagedQml = m_stagedPath + QStringLiteral("/qml");
-    if (QDir(stagedQml).exists()) {
-        const QString targetQml = root + QStringLiteral("/qml");
-        if (!copyTree(stagedQml, targetQml, error)) {
+    for (const QString& directory : {QStringLiteral("qml"), QStringLiteral("resources")}) {
+        const QString staged = m_stagedPath + QLatin1Char('/') + directory;
+        if (!QDir(staged).exists())
+            continue;
+        if (!copyTree(staged, root + QLatin1Char('/') + directory, error)) {
             QFile::rename(previous, targetBinary);
             return false;
         }

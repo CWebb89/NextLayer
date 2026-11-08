@@ -1,0 +1,226 @@
+#!/usr/bin/env fish
+
+# Turns the build tree into something a stranger can run.
+#
+#   tools/package appimage [VERSION]
+#
+# One subcommand for now, because one is verifiable on this machine. The layout
+# it writes is also what a plain tarball needs: a binary in usr/bin, qml/ and the
+# engine's resources in usr/share/next-layer. The app finds both relative to its
+# own executable, so the same tree runs unpacked anywhere.
+#
+# It never uploads. The last thing it prints is the path of what it built.
+
+set -l root (dirname (status dirname))
+set -l bin $root/upstream/build/src/next-layer-qt/next-layer-qt
+set -l qml $root/src/qt/qml
+set -l resources $root/upstream/resources
+set -l icon $root/src/qt/assets/brand/next-layer-mark.svg
+set -l tools_dir $HOME/.cache/next-layer-tools
+
+set -l command ""
+if test (count $argv) -ge 1
+    set command $argv[1]
+end
+
+if test "$command" != "appimage"; and test "$command" != "aur"
+    echo "usage: tools/package appimage [VERSION]" >&2
+    echo "       tools/package aur [VERSION]" >&2
+    exit 2
+end
+
+set -l built_version (string match -r 'NEXT_LAYER_VERSION="([^"]+)"' -- \
+    (cat $root/src/qt/CMakeLists.txt))
+if test (count $built_version) -lt 2
+    echo "tools/package: no NEXT_LAYER_VERSION in src/qt/CMakeLists.txt" >&2
+    exit 1
+end
+set -l tag $built_version[2]
+if test (count $argv) -ge 2
+    set tag $argv[2]
+end
+
+if not test -x $bin
+    echo "tools/package: $bin is missing; build it first" >&2
+    exit 1
+end
+
+if test "$command" = "aur"
+    # The AUR package ships the release tarball's own tree under /opt, so the two
+    # cannot drift: the checksum below is the one tools/release just printed.
+    set -l archive $root/dist/next-layer-$tag.tar.gz
+    if not test -f $archive
+        echo "tools/package: $archive is missing; run tools/release $tag first" >&2
+        exit 1
+    end
+
+    set -l out $root/dist/aur
+    set -l sha (sha256sum $archive | string split ' ')[1]
+    rm -rf $out
+    mkdir -p $out
+
+    printf '%s\n' \
+        '# Maintainer: Curtis Webb <cwebb89@users.noreply.github.com>' \
+        "pkgname=next-layer-bin" \
+        "pkgver=$tag" \
+        'pkgrel=1' \
+        "pkgdesc='3D printer slicer built on an open-source slicing engine'" \
+        "arch=('x86_64')" \
+        "url='https://github.com/CWebb89/NextLayer'" \
+        "license=('AGPL-3.0-or-later')" \
+        'depends=(' \
+        "    'qt6-quick3d'" \
+        "    'qt6-webengine'" \
+        "    'qt6-svg'" \
+        "    'qt6-declarative'" \
+        "    'hicolor-icon-theme'" \
+        ')' \
+        "provides=('next-layer')" \
+        "conflicts=('next-layer' 'next-layer-git')" \
+        "options=('!strip')" \
+        'source=("$pkgname-$pkgver.tar.gz::$url/releases/download/v$pkgver/next-layer-$pkgver.tar.gz")' \
+        "sha256sums=('$sha')" \
+        '' \
+        'package() {' \
+        '    install -d "\$pkgdir/opt/next-layer" \\' \
+        '              "\$pkgdir/usr/bin" \\' \
+        '              "\$pkgdir/usr/share/applications" \\' \
+        '              "\$pkgdir/usr/share/icons/hicolor/scalable/apps"' \
+        '' \
+        '    cp -r "\$srcdir/next-layer-qt" "\$srcdir/qml" "\$srcdir/resources" "\$pkgdir/opt/next-layer/"' \
+        '' \
+        '    ln -s /opt/next-layer/next-layer-qt "\$pkgdir/usr/bin/next-layer"' \
+        '' \
+        '    install -Dm644 "\$startdir/next-layer.desktop" "\$pkgdir/usr/share/applications/next-layer.desktop"' \
+        '    install -Dm644 "\$startdir/next-layer.svg" "\$pkgdir/usr/share/icons/hicolor/scalable/apps/next-layer.svg"' \
+        '}' \
+        > $out/PKGBUILD
+
+    printf '%s\n' \
+        '[Desktop Entry]' \
+        'Type=Application' \
+        'Name=next-layer' \
+        'Comment=3D printer slicer' \
+        'Exec=next-layer %f' \
+        'Icon=next-layer' \
+        'Terminal=false' \
+        'Categories=Graphics;3DGraphics;Engineering;' \
+        'MimeType=model/stl;model/3mf;application/x-3mf;' \
+        > $out/next-layer.desktop
+    cp $icon $out/next-layer.svg
+
+    pushd $out >/dev/null
+    makepkg --printsrcinfo > .SRCINFO
+    popd >/dev/null
+
+    echo "built $out/PKGBUILD (sha256 $sha)"
+    echo "     push PKGBUILD .SRCINFO next-layer.desktop next-layer.svg to the AUR repo"
+    exit 0
+end
+
+for tool in linuxdeploy linuxdeploy-plugin-qt
+    if not test -x $tools_dir/$tool
+        echo "tools/package: $tools_dir/$tool is missing" >&2
+        echo "  curl -L -o $tools_dir/$tool https://github.com/linuxdeploy/$tool/releases/download/continuous/$tool-x86_64.AppImage" >&2
+        exit 1
+    end
+end
+
+set -l dist $root/dist
+set -l appdir $dist/appimage/NextLayer.AppDir
+set -l output $dist/NextLayer-$tag-x86_64.AppImage
+
+rm -rf $appdir
+mkdir -p $appdir/usr/bin $appdir/usr/share/next-layer $appdir/usr/share/applications $appdir/usr/share/icons/hicolor/scalable/apps
+
+cp $bin $appdir/usr/bin/next-layer
+chmod +x $appdir/usr/bin/next-layer
+cp -r $qml $appdir/usr/share/next-layer/qml
+
+# The engine's resources tree is 166 MB, most of it localization and test data
+# nothing at runtime reads. What is shipped is what the app loads.
+mkdir -p $appdir/usr/share/next-layer/resources
+for part in presets icons shaders fonts
+    if test -d $resources/$part
+        cp -r $resources/$part $appdir/usr/share/next-layer/resources/$part
+    end
+end
+
+cp $icon $appdir/usr/share/icons/hicolor/scalable/apps/next-layer.svg
+
+# linuxdeploy only takes the platform plugin this build session is using, which
+# would leave a user on Wayland (the session this app is developed in) with
+# nothing but XWayland, and leave `--smoke` without the only platform that can
+# host a headless GL context. Ship the platform plugins and the Wayland shells
+# beside them.
+set -l qt_plugins /usr/lib/qt6/plugins
+mkdir -p $appdir/usr/plugins/platforms
+for plugin in libqwayland.so libqeglfs.so libqoffscreen.so libqxcb.so
+    if test -f $qt_plugins/platforms/$plugin
+        cp $qt_plugins/platforms/$plugin $appdir/usr/plugins/platforms/
+    end
+end
+for area in wayland-shell-integration wayland-graphics-integration-client wayland-decoration-client
+    mkdir -p $appdir/usr/plugins/$area
+    for plugin in $qt_plugins/$area/*.so
+        cp $plugin $appdir/usr/plugins/$area/
+    end
+end
+
+printf '%s\n' \
+    '[Desktop Entry]' \
+    'Type=Application' \
+    'Name=next-layer' \
+    'Comment=3D printer slicer' \
+    'Exec=next-layer %f' \
+    'Icon=next-layer' \
+    'Terminal=false' \
+    'Categories=Graphics;3DGraphics;Engineering;' \
+    'MimeType=model/stl;model/3mf;application/x-3mf;' \
+    > $appdir/usr/share/applications/next-layer.desktop
+
+printf '%s\n' \
+    '#!/bin/sh' \
+    'HERE=$(dirname "$(readlink -f "$0")")' \
+    'export NEXT_LAYER_RESOURCES="$HERE/usr/share/next-layer/resources"' \
+    'exec "$HERE/usr/bin/next-layer" "$@"' \
+    > $dist/appimage/AppRun-custom
+chmod +x $dist/appimage/AppRun-custom
+
+set -lx OUTPUT $output
+set -lx QMAKE (command -v /usr/lib/qt6/bin/qmake6; or command -v qmake6)
+
+# The linuxdeploy AppImage carries its own binutils, whose strip cannot read the
+# `.relr.dyn` sections Arch's libraries have and aborts the whole deployment, and
+# its Qt plugin has to be found as a plugin directory rather than as a mounted
+# AppImage. Both are extracted, and their strip is pointed at the system one.
+set -l deployer $tools_dir/linuxdeploy
+if test -x $tools_dir/ld/squashfs-root/AppRun
+    set deployer $tools_dir/ld/squashfs-root/AppRun
+    set -gx PATH $tools_dir/bin $PATH
+end
+
+if not $deployer \
+        --appdir $appdir \
+        --desktop-file $appdir/usr/share/applications/next-layer.desktop \
+        --icon-file $appdir/usr/share/icons/hicolor/scalable/apps/next-layer.svg \
+        --custom-apprun $dist/appimage/AppRun-custom \
+        --deploy-deps-only $appdir/usr/plugins \
+        --plugin qt \
+        --output appimage
+    echo "tools/package: linuxdeploy failed" >&2
+    exit 1
+end
+
+set -l produced ""
+if test -f $output
+    set produced $output
+end
+if test -z "$produced"
+    echo "tools/package: linuxdeploy reported success but wrote no AppImage" >&2
+    exit 1
+end
+chmod +x $output
+
+echo "built $output"
+echo "     "(math (stat -c %s $output) / 1024 / 1024)" MB"

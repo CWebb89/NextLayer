@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Curtis Webb
 
 #include "PresetStore.hpp"
+#include "Resources.hpp"
 
 #include "SliceRuntime.hpp"
 #include "PresetFiles.hpp"
@@ -39,7 +40,7 @@ QString presetsRoot()
 QStringList bundleRoots()
 {
     return {presetsRoot() + QStringLiteral("/local"),
-            QString::fromLatin1(NEXT_LAYER_RESOURCES_DIR) + QStringLiteral("/presets")};
+            next_layer::resourcesDir() + QStringLiteral("/presets")};
 }
 
 QString freshId()

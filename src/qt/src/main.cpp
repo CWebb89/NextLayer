@@ -17,6 +17,7 @@
 #include "Updater.hpp"
 #include "PlateDocument.hpp"
 #include "PlateScene.hpp"
+#include "Resources.hpp"
 #include "Scratch.hpp"
 #include "QtPlatform.hpp"
 #include "SceneSelftest.hpp"
@@ -98,9 +99,15 @@ QString qmlEntry(const QString& override)
     if (!override.isEmpty())
         return override;
 
-    const QString beside = QCoreApplication::applicationDirPath() + "/qml/main.qml";
-    if (QFile::exists(beside))
-        return beside;
+    const QString base = QCoreApplication::applicationDirPath();
+    const QStringList candidates{
+        base + "/qml/main.qml",
+        base + "/../share/next-layer/qml/main.qml",
+    };
+    for (const QString& candidate : candidates) {
+        if (QFile::exists(candidate))
+            return candidate;
+    }
 
     return QString::fromLatin1(NEXT_LAYER_QML_DIR) + "/main.qml";
 }
@@ -358,8 +365,7 @@ void prepareDataDir()
     QDir().mkpath(data + "/physical_printer");
 
     const QString vendor = data + "/presets/local/prusa-research-fff";
-    const QString engineBundle = QString::fromLatin1(NEXT_LAYER_RESOURCES_DIR)
-                               + "/presets/prusa-research-fff";
+    const QString engineBundle = next_layer::resourcesDir() + "/presets/prusa-research-fff";
     // The engine reads the printer profiles it ships from the data directory, so
     // its own bundle is linked in once. Dropping its `extruder_offset` entry to
     // quiet a reader warning used to look tempting and breaks every multi-tool
@@ -377,7 +383,7 @@ void prepareDataDir()
     // The engine's bed resolver checks <datadir>/bed/<file> before falling back
     // to the shipped resources. Copy the vendor bed meshes up front so slicing
     // can resolve a bed model even when the resources tree is not shipped.
-    const QString assetsDir = QString::fromLatin1(NEXT_LAYER_RESOURCES_DIR)
+    const QString assetsDir = next_layer::resourcesDir()
                             + "/presets/prusa-research-fff/PrusaResearch/assets";
     const QString bedDir = data + "/bed";
     QDir().mkpath(bedDir);
@@ -407,7 +413,7 @@ void prepareDataDir()
     // vendor is dropped here and recopied by the engine on this same load. A
     // bundle linked into the local tree is skipped: removing it would delete the
     // link's target.
-    const QString appBundles = QString::fromLatin1(NEXT_LAYER_RESOURCES_DIR) + "/presets";
+    const QString appBundles = next_layer::resourcesDir() + "/presets";
     const QString localBundles = data + "/presets/local";
     for (const QFileInfo& repo : QDir(appBundles).entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot)) {
         if (QFileInfo(localBundles + "/" + repo.fileName()).isSymLink())
@@ -460,7 +466,7 @@ void initEngine()
 {
     Slic3r::App::init_common();
     Slic3r::App::init_paths(engineParams());
-    Slic3r::set_resources_dir(NEXT_LAYER_RESOURCES_DIR);
+    Slic3r::set_resources_dir(next_layer::resourcesDir().toStdString());
     Slic3r::Biz::Scene::BedGeometry::set_resolver([](const std::string& name) {
         const QString fileName = QFileInfo(QString::fromStdString(name)).fileName();
         if (fileName.isEmpty())
@@ -469,7 +475,7 @@ void initEngine()
         const QString bed = QString::fromStdString(dataDir()) + QStringLiteral("/bed/") + fileName;
         if (QFileInfo(bed).isFile())
             return bed.toStdString();
-        return std::string(NEXT_LAYER_RESOURCES_DIR) + name;
+        return next_layer::resourcesDir().toStdString() + name;
     });
     prepareDataDir();
 }
@@ -519,7 +525,7 @@ QString bedAssetResource(const QString& printerModel)
     const QString stl = bedStlForPrinter(printerModel);
     if (stl.isEmpty())
         return QString();
-    return QString::fromLatin1(NEXT_LAYER_RESOURCES_DIR)
+    return next_layer::resourcesDir()
          + QStringLiteral("/presets/prusa-research-fff/PrusaResearch/assets/")
          + stl;
 }

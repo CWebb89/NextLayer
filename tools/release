@@ -61,6 +61,15 @@ rm -rf $stage
 mkdir -p $stage
 cp $bin $stage/next-layer-qt
 cp -r $qml $stage/qml
+# The engine's resources tree is 166 MB, most of it localization and test data
+# nothing loads at runtime. The app resolves this directory beside its own
+# executable, so the unpacked tree runs from anywhere.
+mkdir -p $stage/resources
+for part in presets icons shaders fonts
+    if test -d $root/upstream/resources/$part
+        cp -r $root/upstream/resources/$part $stage/resources/$part
+    end
+end
 strip $stage/next-layer-qt 2>/dev/null
 tar -czf $archive -C $stage .
 
