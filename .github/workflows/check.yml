@@ -1,0 +1,26 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  static:
+    name: static gates
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install fish, Qt 6 tools and the QML linter
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            fish qt6-base-dev-tools qt6-declarative-dev-tools
+
+      - name: Put Qt's bin directory on PATH
+        run: echo /usr/lib/qt6/bin >> "$GITHUB_PATH"
+
+      - name: tools/check --static
+        run: tools/check --static

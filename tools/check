@@ -39,6 +39,7 @@ set -g failures
 set -l fast 0
 set -l ui 0
 set -l update 0
+set -l static 0
 
 for arg in $argv
     switch $arg
@@ -48,12 +49,15 @@ for arg in $argv
             set ui 1
         case --update-qmllint-baseline
             set update 1
+        case --static
+            set static 1
         case -h --help
             printf '%s\n' \
-                'usage: tools/check [--fast] [--ui] [--update-qmllint-baseline]' \
+                'usage: tools/check [--fast] [--ui] [--static] [--update-qmllint-baseline]' \
                 '' \
                 '  --fast                      skip oracle verify (the slow, byte-exact check)' \
                 '  --ui                        also drive a real window and capture it' \
+                '  --static                    only the gates that need no built binary (CI)' \
                 '  --update-qmllint-baseline   accept the current qmllint warnings as known' \
                 '' \
                 'Run this after any change. It does not build: build first, then check.'
@@ -79,10 +83,44 @@ function __skip --argument-names text
     printf '  skip  %s\n' $text
 end
 
+function __summary
+    echo
+    set -l total (math $passed + $failed)
+    if test $failed -eq 0
+        echo "$passed/$total gates passed"
+        exit 0
+    end
+    echo "$passed/$total gates passed, $failed FAILED:"
+    for failure in $failures
+        echo "  - $failure"
+    end
+    exit 1
+end
+
+function __harness_syntax
+    set -l broken
+    for script in (find $root/tools -maxdepth 2 -type f ! -name '*.*' -o -maxdepth 2 -type f -name '*.fish')
+        if not head -n 1 $script | grep -q 'fish'
+            continue
+        end
+        set -l error (fish -n $script 2>&1)
+        if test -n "$error"
+            set -a broken (path basename -- $script)
+        end
+    end
+    if test (count $broken) -gt 0
+        __bad "harness: fish cannot parse "(string join ' ' $broken)
+    else
+        __ok 'harness: every fish script in tools/ parses'
+    end
+end
+
 echo 'next-layer check'
 
 set -l ready 1
-if not test -x $bin
+if test $static -eq 1
+    set ready 2
+else if not test -x $bin
     __bad "no binary at $bin — build it first"
     set ready 0
 else
@@ -103,6 +141,8 @@ if test $ready -eq 0
     echo 'not running the rest: the binary cannot be trusted'
     exit 1
 end
+
+__harness_syntax
 
 pushd $root/src/qt >/dev/null
 set -l qmlfiles (find qml -name '*.qml')
@@ -163,6 +203,11 @@ else
     else
         __ok "qmllint: "(count $warnings)" warning(s), all known"
     end
+end
+
+if test $static -eq 1
+    __skip 'every gate that needs the binary (build it, then run tools/check)'
+    __summary
 end
 
 set -l tabs_out ($bin $model --dump-tabs 2>&1)
@@ -1088,13 +1133,4 @@ if test $ui -eq 1
 end
 
 echo
-set -l total (math $passed + $failed)
-if test $failed -eq 0
-    echo "$passed/$total gates passed"
-    exit 0
-end
-echo "$passed/$total gates passed, $failed FAILED:"
-for failure in $failures
-    echo "  - $failure"
-end
-exit 1
+__summary

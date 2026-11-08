@@ -34,6 +34,23 @@ python3 oracle/oracle.py verify --runner qt \
 `12/12` or it is broken. A CHANGED case means the slicing path moved; the
 report tells you which config and which file to diff.
 
+### What CI runs, and what it cannot
+
+`.github/workflows/check.yml` runs `tools/check --static` on every push and pull
+request: the QML lint against its baseline and a `fish -n` parse of every script
+in `tools/`. That is the whole of it, deliberately.
+
+The rest of `tools/check` needs a binary built from the pinned engine, and the
+engine's dependency build is hours and tens of gigabytes — a hosted runner has
+neither the time nor a cache to make it cheap, and a workflow that pretends
+otherwise is a red build nobody reads. So the binary gates, the oracle, the
+headless frame and the printed evidence all stay local, where they run in a
+minute against a real build. `--static` skips them and says so in a skip line
+rather than passing quietly.
+
+If CI is ever widened, it needs a self-hosted runner with a warm
+`upstream/deps/build`, not a cleverer workflow.
+
 ## 2. Headless, no window: the fast loop
 
 Use these while changing code. They exercise the same functions the UI does.
