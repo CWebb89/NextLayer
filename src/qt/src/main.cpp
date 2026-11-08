@@ -1589,10 +1589,13 @@ int main(int argc, char* argv[])
         }
         const QVector3D low = geometry->boundsMin();
         const QVector3D high = geometry->boundsMax();
-        std::fprintf(stdout, "mesh %s, bounds (%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f) mm, bed %lld points centred (%.1f,%.1f)\n",
-                     session->displayName().toUtf8().constData(),
-                     low.x(), low.y(), low.z(), high.x(), high.y(), high.z(),
-                     static_cast<long long>(printer.bed.size()), centre.x(), centre.y());
+        // A development line, not something a person launching the app needs in
+        // their terminal: it says what the file loaded as, on every start.
+        if (qEnvironmentVariableIsSet("NEXT_LAYER_DEBUG_LOAD"))
+            std::fprintf(stdout, "mesh %s, bounds (%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f) mm, bed %lld points centred (%.1f,%.1f)\n",
+                         session->displayName().toUtf8().constData(),
+                         low.x(), low.y(), low.z(), high.x(), high.y(), high.z(),
+                         static_cast<long long>(printer.bed.size()), centre.x(), centre.y());
     } else {
         std::fprintf(stdout, "no model, empty bed %lld points centred (%.1f,%.1f)\n", 
                      static_cast<long long>(printer.bed.size()), centre.x(), centre.y());
@@ -1836,7 +1839,8 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty("startupPlates",
                                              parser.isSet(plates_option) ? parser.value(plates_option).toInt() : 1);
     const QString entry = qmlEntry(parser.value(qml_option));
-    std::fprintf(stdout, "qml entry: %s\n", entry.toUtf8().constData());
+    if (qEnvironmentVariableIsSet("NEXT_LAYER_DEBUG_LOAD"))
+        std::fprintf(stdout, "qml entry: %s\n", entry.toUtf8().constData());
     engine.load(QUrl::fromLocalFile(entry));
     if (engine.rootObjects().isEmpty()) {
         std::fprintf(stderr, "QML failed to load\n");
