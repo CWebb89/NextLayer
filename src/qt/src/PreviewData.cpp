@@ -181,6 +181,15 @@ float roleSeconds(const pg::MoveVertex& move)
     return move.time[std::size_t(pg::TimeMode::Normal)];
 }
 
+// The G-code processor walks lines and throws rather than tolerating a last line
+// without a terminator, which aborts the process: a file that was cut mid-write,
+// or one another tool wrote, then reads as a slicer that crashed on open.
+void terminateLastLine(std::string& gcode)
+{
+    if (!gcode.empty() && gcode.back() != '\n')
+        gcode.push_back('\n');
+}
+
 }
 
 bool renderPreviewWithVgcode(const QString& gcodePath, const QString& outPath,
@@ -193,6 +202,7 @@ bool renderPreviewWithVgcode(const QString& gcodePath, const QString& outPath,
     file.close();
     if (gcode.empty())
         return false;
+    terminateLastLine(gcode);
 
     pg::ProcessorConfig config = configFor(gcode);
     pg::Processor processor(std::move(config));
@@ -509,6 +519,7 @@ static bool processFile(const QString& gcodePath, PreviewData& data,
     file.close();
     if (gcode.empty())
         return false;
+    terminateLastLine(gcode);
 
     pg::ProcessorConfig config = configFor(gcode);
     const double filamentCostPerKg =

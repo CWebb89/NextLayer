@@ -44,9 +44,12 @@ BIN=upstream/build/src/next-layer-qt/next-layer-qt
 $BIN oracle/models/cube_20.stl --dump-presets                 # 462 machines, 67 vendors
 $BIN oracle/models/cube_20.stl --dump-tabs                    # every settings tab
 $BIN oracle/models/cube_20.stl --dump-subtab process,speed    # one sub-tab's items
-$BIN oracle/models/cube_20.stl --printer 'Voron 2.4 350 0.4 nozzle - Copy 0.4' \
-     --process '2.4' --filament 'PLA' --dump-config /tmp/c.json
+$BIN oracle/models/cube_20.stl --printer 'Voron 2.4 350 0.4' \
+     --process 'Standard' --filament 'Generic' --dump-config /tmp/c.json
 $BIN oracle/models/cube_20.stl --slice /tmp/c.json,/tmp/c.gcode
+# Without a dump, naming the triple opens the window on that setup.
+$BIN oracle/models/cube_20.stl --printer 'Voron 2.4 350 0.4' \
+     --process 'Standard' --filament 'Generic'
 grep -c ';LAYER_CHANGE' /tmp/c.gcode                          # must be > 0
 $BIN oracle/models/cube_20.stl --selftest-slice                # the app's own controller
 ```

@@ -92,6 +92,12 @@ Item {
         return 0
     }
 
+    /// The machine remembered from the last session is not in the bundle any
+    /// more, so nothing resolved and the app has no bed. Named rather than
+    /// silent: a regenerated printer catalog renames machines, and this is the
+    /// normal way to arrive at that state.
+    signal rememberedPrinterMissing(string name)
+
     Settings {
         id: rememberedSetup
         category: "presets"
@@ -142,6 +148,8 @@ Item {
                     return
                 }
             }
+            rememberedSetup.printer = ""
+            root.rememberedPrinterMissing(wanted)
         }
 
         function onResolved() {

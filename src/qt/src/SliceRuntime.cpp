@@ -246,6 +246,12 @@ std::mutex& SliceRuntime::engineMutex()
     return mutex;
 }
 
+void SliceRuntime::ensurePlatformServices()
+{
+    const std::scoped_lock lock(engineMutex());
+    runtimeLocked();
+}
+
 void SliceRuntime::shutdown()
 {
     const std::scoped_lock lock(engineMutex());

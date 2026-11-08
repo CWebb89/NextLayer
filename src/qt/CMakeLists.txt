@@ -106,3 +106,14 @@ target_link_libraries(next-layer-qt PRIVATE
 )
 
 target_link_options(next-layer-qt PRIVATE -Wl,--wrap=glewInit)
+
+# STEP goes through the engine's OCCT wrapper, which is a module library it looks
+# for beside the executable. Built without it beside the binary, every STEP file
+# fails with "Cannot load OCCTWrapper.so" however valid it is.
+if(TARGET OCCTWrapper)
+    add_dependencies(next-layer-qt OCCTWrapper)
+    add_custom_command(TARGET next-layer-qt POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:OCCTWrapper> $<TARGET_FILE_DIR:next-layer-qt>/
+        COMMENT "Copying the OCCT wrapper beside the app, for STEP loading")
+endif()

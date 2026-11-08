@@ -116,6 +116,12 @@ public:
     /// after static teardown has begun with events still queued.
     static void shutdown();
 
+    /// Creates the engine runtime if it does not exist yet, which installs the
+    /// platform services the engine's own file loader asserts on. STEP and the
+    /// project formats go through that loader, so a model named on the command
+    /// line needs this before it is opened, not when a slice first runs.
+    static void ensurePlatformServices();
+
     /// The data directory the engine resolves presets against. The plate path
     /// needs it for its own load, and it must match what the runtime was built
     /// with.

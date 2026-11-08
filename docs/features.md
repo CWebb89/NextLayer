@@ -117,7 +117,7 @@ shape; a second material needs the multi-slot UI, which is not built.
 | Rename / delete a user preset | done — both refuse a vendor preset and say why |
 | Add a custom printer (bed size, height) | done — writes a self-contained vendor bundle (vendor + printer + tool + sheet + printer/process/tool/filament presets) from the current settings, then selects it; hand-authoring the 3.0 YAML was the risk and it is gone |
 | Save a *printer* preset from the Printer tab | staged — a second printer preset on an existing hardware config appears as a duplicate profile name, so a new machine is the supported route |
-| Preset visibility modes (Simple / Advanced / Expert) | not started — the engine's `ConfigItemDef` carries no mode field, so every setting is always shown and the 17 hidden legacy/identity settings sit in per-tab "Advanced" sub-tabs |
+| Preset visibility modes (Simple / Advanced / Expert) | n/a by decision — every setting is shown from the first launch, as asked for: no mode field, no gating. What makes 347 flat settings navigable is search across every tab (results labelled Tab › Sub-tab › Group), the per-tab "Advanced" sub-tabs holding the 17 legacy/identity settings, and the engine's own description on every row's hover |
 | Physical printer / print host setup | needs-engine — no printer-host API in the app layer yet |
 | Preset export bundle, compare-presets diff | not started |
 | Multi-extruder per-slot editing | staged — the settings model collapses filament values to slot 0, which matches a single-tool machine |
@@ -167,7 +167,7 @@ Now part of the same strip.
 | Cut at Z | done — `Cut.cpp` clips every straddling triangle against the plane and caps both halves with the mesh's own cross-section (`slice_mesh` + `Biz::Algorithms::Tesselate`), so neither half is open. `--mesh-tools-test`: a 20 mm cube cut at 8 mm gives 8 mm and 12 mm parts holding 8000 mm³ between them. The engine's own `CutGizmo`/`CutDialog` exist in the plater host, which is what a future gizmo would drive |
 | Measure (two points, distance, deltas, angle from vertical) | done |
 | Fuzzy skin | done — jumps to Process › Walls & Perimeters |
-| Lay on face | done — click a face; the facet normal is turned down and the object dropped to the bed |
+| Lay on face | done — click a face; the facet normal is turned down and the object dropped to the bed. With the tool armed the face under the pointer is collected as one whole flat face (`PlateScene::setHoverFacet` floods out through shared vertices to every coplanar triangle, so a square face is 2 triangles, not 1; `--hover-test N` proves the flood) and drawn tinted before the click. Verified in a real window: `l`, pointer over the cube, whole top face cyan, click reports "laid face 3 on the bed" |
 | Support painting | done — sphere brush over the picked facets, stored as the engine's own `FacetsAnnotation`, drawn in the viewport and honoured by the slice (`--slice-features` proves 0 → 983 support moves) |
 | Seam painting | done — same brush, `seam_facets` |
 | Colour painting for a tool changer | done — the brush writes a per-facet tool index (`mm_segmentation_facets`, the engine's tool field) and the swatch list is the printer's own tool colours, so the overlay is what the machine will print. **There is no MMU and no single-nozzle colour mixing anywhere in this app**: those options are filtered out of the settings panel and the words do not appear in the UI |
@@ -197,7 +197,7 @@ Now part of the same strip.
 | Drag the selected object on the bed with the Move tool | done — commits `setPosition` on the document, so it is undoable and does not touch the file; the drag only arms with the Move tool, so a rotate never moves the plate under you |
 | Object list / per-object context menu | done — object list docked bottom-right, and right-clicking a row opens the object menu |
 | Multi-select | done — Ctrl-click toggles, Shift-click extends from the anchor, Ctrl+A selects the plate, a Shift drag draws a selection rectangle and takes every object whose bounding box it touches (`selectObjects` on the document), and a drag with the Move tool moves every selected object by the same delta, undoably |
-| Lay on face | partly — with the tool armed the face under the pointer is collected as one whole flat face (`PlateScene::setHoverFacet` floods out through shared vertices to every coplanar triangle, so a square face is 2 triangles, not 1; `--hover-test N` proves it) but the tint does not draw yet |
+| Lay on face highlight | done — the tool armed with `l`, the face under the pointer is flooded from the hovered triangle to every coplanar vertex-connected neighbour and drawn tinted before the click; a square face reads as one face, not one triangle. Verified in a real window with real pointer input (cockpit `key l`, `move --hover`, capture) |
 | Numeric tool panels (rotate, scale, move, cut, duplicate) | done — the panel beside the viewport shows only for tools that take numbers, commits each value as it is typed (no Apply button), has an X to close, and keeps drop/centre for `move` and `rotate` |
 | Ray picking for selection and measure | done — Möller–Trumbore over the mesh in printer coordinates; View3D.pick() returns nothing in this app |
 | Place on face | done — click a face with the tool armed; the facet's normal is turned to point down and the object is dropped onto the bed |
@@ -312,7 +312,7 @@ the *Calibration Guide* entry (a wiki link) and the AMS-specific flows.
 | Feature | Status |
 | --- | --- |
 | Open STL by dialog or drag-and-drop | done |
-| Open OBJ, 3MF, STEP and SVG by dialog or drag-and-drop | done — every format goes through the engine's own reader (`FileLoadingLogic::read_model_from_file`), and the dialog's filter is built from its extension list, so a format the reader accepts is never missing from the dialog. A file holding several objects imports all of them (measured: an 18-object 3MF project opens as 18 objects; a 568-object one as 568) |
+| Open OBJ, 3MF, STEP and SVG by dialog or drag-and-drop | done — every format goes through the engine's own reader (`FileLoadingLogic::read_model_from_file`), and the dialog's filter is built from its extension list, so a format the reader accepts is never missing from the dialog. A file holding several objects imports all of them (measured: an 18-object 3MF project opens as 18 objects; a 568-object one as 568). STEP needs the engine's `OCCTWrapper` module beside the binary, which `src/qt/CMakeLists.txt` now copies on every build — without it every STEP failed with "Cannot load OCCTWrapper.so". Measured after the fix: a 130 mm STEP part opens as 669 facets |
 | Project files with several plates | done — the plates are rebuilt from the project's own records: the scene's build list names the placed objects in read order and `Metadata/model_settings.config` names the plate each belongs to, so a 14-plate, 568-object project opens as 14 plates holding 8/15/1/16/16/100/100/100/100/100/4/1/4/3 objects, which is exactly what the file says. Each plate's group is then centred on its own bed, because the file's coordinates are one shared space with the plates laid out metres apart |
 | Empty bed with no model | done |
 | Multiple plates (app-level, one document each) | done |
@@ -337,23 +337,26 @@ engine resolves it like any other preset.
 | Machine geometry (bed size, height, nozzle, extruder count, limits) | done — 428 machines, every one sliced end to end |
 | Per-vendor printer listing and search | done — 460 hardware configs in an isolated `--dump-presets`, no duplicate names, `tools/check` slices one of them |
 | Process and filament settings | done — each machine slices with the vendor's own default process and filament preset, not this app's generic profile |
-| Vendor start/end G-code | staged — imported whole for the machines whose templates this engine can evaluate; 159 start, 119 end, 13 layer and 90 filament-start templates still name options the engine does not have and are dropped whole (see below) |
+| Vendor start/end G-code | done for all but nine machines — a template that names an option this build does not have now loses only the lines carrying that name instead of being dropped whole, so a machine keeps its purge, home and mesh even when one firmware macro is unsupported. 372 of the 381 templates that used to be dropped whole are published with their remaining lines; nine `start_gcode` templates still drop entirely because every line in them was unsupported. Each loss is named in the catalog run report |
 | Per-vendor profile UI (vendor > machine > variant tree) | staged — the flat searchable list stands in for a grouped picker |
 
-Known loss: a G-code template referencing a name the engine does not have
+Known loss: a G-code template that names an option the engine does not have
 (`initial_no_support_extruder`, `plate_name`, `machine_max_speed_z`,
-`activate_air_filtration`) is dropped entirely rather than half-applied, so those
-presets have no start/end sequence until it is written in Printer → Custom G-code.
-Braces are kept and repaired instead: a renamed setting is renamed inside the
-expression, a bare reference to a per-tool setting gets `[0]` (the engine refuses
-an unindexed vector), and a quoted literal is not read as a setting name.
-Line-level salvage is the obvious next step.
+`activate_air_filtration`) loses the lines that name it and keeps the rest. A
+conditional block is dropped as one piece, because half of an `{if}`/`{endif}` pair
+is a parse error rather than a smaller version of the same thing. Braces are kept
+and repaired instead: a renamed setting is renamed inside the expression, a bare
+reference to a per-tool setting gets `[0]` (the engine refuses an unindexed
+vector), and a quoted literal is not read as a setting name.
 
 Slicing state, measured with `validate.py` over the catalog's own 428 machines:
 **428/428 write G-code, 0 failures**, each with its vendor's own process and
-filament. One machine declares no start G-code, so there is no marker to look for;
-30 have no convertible vendor process and publish this app's standard profile
-instead, named individually in the run report.
+filament. Nine machines declare no start G-code at all (their whole template named
+options this engine does not have), so they print with the engine's own generic
+start sequence until one is written in Printer → Custom G-code; five of the nine
+carry no start line left for `validate.py` to look for. 30 machines have no
+convertible vendor process and publish this app's standard profile instead, named
+individually in the run report.
 
 The reference's `Custom` vendor is not published: it holds printer templates
 (`MyKlipper`, `MyMarlin`) meant to be copied, and next-layer already owns that
@@ -454,7 +457,7 @@ and the engine's plater.
 
 | Missing | Why it is missing | Cost |
 | --- | --- | --- |
-| Preset visibility modes (Simple / Advanced / Expert) | the engine's `ConfigItemDef` has no mode field, so every setting is always shown; 17 legacy/identity settings already sit in per-tab "Advanced" sub-tabs | a curated list per mode; the settings model would filter, the panel needs no change |
+| Preset visibility modes (Simple / Advanced / Expert) | n/a by decision — every setting is shown from the first launch. Nothing to build: the engine's `ConfigItemDef` has no mode field, and the app is not going to invent one | — |
 | Compare two presets side by side | the app diffs the live config against the *current* preset (`Ctrl+Shift+D`), not one preset against another | a dialog over `PresetStore`'s two resolved configs |
 | Multi-extruder per-slot editing | the settings model collapses filament values to slot 0, which matches a single-tool machine; multi-tool slicing itself works | a slot switcher in the Filament tab |
 | Per-filament colour picker | `gui_type: color` is edited as text | one editor case |
@@ -471,7 +474,7 @@ and the engine's plater.
 | Smooth variable-layer-height profile editor | bands (bottom/top/height) only, no adaptive curve | profile editor over `LayerHeightProfile` |
 | Fuzzy-skin *painting* | the setting exists and is exposed (Process ▸ Walls & Perimeters) | a fifth brush kind in the paint tool |
 | Vendor process and filament profiles in the catalog | done — each machine uses the vendor's own default process and filament; 30 machines have no convertible process and publish this app's standard profile instead | more keymap coverage per vendor |
-| Vendor G-code template salvage | a template naming an unknown option is dropped whole (159 start, 119 end, 13 layer, 90 filament-start templates) | line-level salvage |
+| Vendor G-code template salvage | a template naming an option this engine does not have loses only the lines that name it; nine start templates still vanish whole because every line in them was unsupported | more per-vendor macro support on the engine side |
 | Cloud, network accounts, AMS/MMU, SLA | out of scope by design, stated in the UI | — |
 
 Deliberately not on that list: the tool rail's gizmos, the bed tabs, arrange,

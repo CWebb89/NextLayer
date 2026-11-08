@@ -308,11 +308,19 @@ PLACEHOLDER_RENAMES = {
 }
 
 SPECIAL_PLACEHOLDERS = {
-    "layer_num", "layer_z", "max_layer_z", "total_layer_count", "current_extruder",
-    "next_extruder", "previous_extruder", "initial_extruder", "initial_tool",
-    "num_extruders", "input_filename_base", "printer_preset", "print_preset",
-    "filament_preset", "extruded_weight_total", "timestamp", "version",
-    "first_layer_print_min", "first_layer_print_max",
+    "total_layer_count", "current_extruder", "initial_extruder", "initial_tool",
+    "num_extruders", "input_filename_base", "extruded_weight_total", "timestamp",
+    "version", "first_layer_print_min", "first_layer_print_max",
+}
+
+# Placeholders that exist later in the print than the start sequence does. In
+# ``start_gcode`` the engine evaluates the template before any of this is known and
+# reports one of these as a slicing error that writes no G-code at all, while the
+# same name resolves in ``layer_gcode``, ``end_gcode`` or ``toolchange_gcode``.
+# Measured one name at a time against the engine, not guessed.
+START_UNAVAILABLE = {
+    "layer_num", "layer_z", "max_layer_z", "next_extruder", "previous_extruder",
+    "printer_preset", "print_preset", "filament_preset",
 }
 
 TOKEN = re.compile(r"\[(?:([a-z0-9_]+)|([^\[\]]*))\]")
@@ -322,6 +330,8 @@ QUOTED = re.compile(r'"[^"]*"|\'[^\']*\'')
 LEGACY_DECLARATION = re.compile(r'this->add\("([a-z0-9_]+)",\s*(co[A-Za-z]+)\)')
 VECTOR_TYPES = {"coFloats", "coInts", "coStrings", "coBools", "coEnums", "coPercents",
                 "coPoints"}
+BLOCK_OPEN = re.compile(r"\{[ \t]*if\b")
+BLOCK_CLOSE = re.compile(r"\{[ \t]*endif\b")
 ENGINE_OPTIONS = (Path(__file__).resolve().parents[2] / "upstream/src/slic3r-shared/src/Slic3r"
                   / "Biz/Config/Legacy/PrintConfig.cpp")
 _VECTOR_SETTINGS = None
@@ -392,13 +402,21 @@ def translate_placeholders(text):
     return BRACE.sub(replace_expression, TOKEN.sub(replace_token, text))
 
 
+def known_for(key, known_placeholders):
+    """Every name a template in this key may reference in this engine."""
+    known = known_placeholders | SPECIAL_PLACEHOLDERS | START_UNAVAILABLE
+    if key == "start_gcode":
+        known = known - START_UNAVAILABLE
+    return known
+
+
 def unknown_placeholders(text, known):
     names = set()
     for expression in TOKEN.findall(text):
         candidate = expression[0] or expression[1]
         if not candidate or candidate.isdigit():
             continue
-        if candidate in known or candidate in SPECIAL_PLACEHOLDERS:
+        if candidate in known:
             continue
         names.add(candidate)
     return names
@@ -409,9 +427,7 @@ def unknown_expression_names(text, known):
     for body in BRACE.findall(text):
         code = QUOTED.sub('""', body)
         for identifier in IDENTIFIER.findall(code):
-            if identifier in known or identifier in SPECIAL_PLACEHOLDERS:
-                continue
-            if identifier in EXPRESSION_WORDS:
+            if identifier in known or identifier in EXPRESSION_WORDS:
                 continue
             names.add(identifier)
     return names
@@ -453,14 +469,21 @@ def align_extruder_reset(values):
 
 
 def repair_gcode(values, known_placeholders):
-    """Drop custom G-code this engine's placeholder parser would refuse.
+    """Keep as much of a vendor G-code template as this engine can evaluate.
 
-    A template is kept only when every placeholder in it resolves, because the
-    engine reports one unresolvable name as a slicing error and writes no
-    G-code at all. Returns which template went missing and why, so the run report
-    says what a machine lost rather than that it lost something.
+    One macro from a machine's own firmware is enough to make the engine write no
+    G-code at all, so a template naming a setting this build does not have used to
+    be dropped whole: the machine then printed with the engine's generic start
+    sequence instead of its own priming and levelling. Only the lines carrying an
+    unresolvable name are dropped now, and a conditional goes with them as one
+    piece, because half of an ``{if}``/``{endif}`` pair is a parse error rather than
+    a smaller version of the same thing.
+
+    Returns which template went missing entirely and which one survived with lines
+    removed, so the run report says what a machine lost instead of that it lost
+    something.
     """
-    dropped = {}
+    dropped, salvaged = {}, {}
     for key in GCODE_KEYS:
         if not isinstance(values.get(key), str):
             continue
@@ -468,14 +491,57 @@ def repair_gcode(values, known_placeholders):
         if not translated.strip():
             del values[key]
             continue
-        unknown = (unknown_placeholders(translated, known_placeholders)
-                   | unknown_expression_names(translated, known_placeholders))
-        if unknown:
-            dropped[key] = sorted(unknown)
-            del values[key]
+        kept, lost = salvage_lines(translated, known_for(key, known_placeholders))
+        if not lost:
+            values[key] = translated
             continue
-        values[key] = translated
-    return dropped
+        if kept.strip():
+            values[key] = kept
+            salvaged[key] = sorted(lost)
+            continue
+        dropped[key] = sorted(lost)
+        del values[key]
+    return dropped, salvaged
+
+
+def note_gcode(result, scope, report):
+    """Say what a preset lost, where it kept only part of a G-code template."""
+    dropped, salvaged = result
+    for key, unknown in dropped.items():
+        report.append("%s: %s not imported (unknown placeholders: %s)"
+                      % (scope, key, ", ".join(unknown)))
+    for key, unknown in salvaged.items():
+        report.append("%s: %s kept without the lines naming %s"
+                      % (scope, key, ", ".join(unknown)))
+
+
+def salvage_lines(text, known):
+    """The template with the lines this engine cannot parse left out."""
+    kept, lost = [], set()
+    chunk, depth = [], 0
+
+    def unresolvable(body):
+        return unknown_placeholders(body, known) | unknown_expression_names(body, known)
+
+    def settle(lines):
+        body = "\n".join(lines)
+        names = unresolvable(body)
+        if names:
+            lost.update(names)
+        else:
+            kept.extend(lines)
+
+    for line in text.splitlines():
+        chunk.append(line)
+        depth += len(BLOCK_OPEN.findall(line)) - len(BLOCK_CLOSE.findall(line))
+        if depth > 0:
+            continue
+        depth = 0
+        settle(chunk)
+        chunk = []
+    if chunk:
+        settle(chunk)
+    return "\n".join(kept), lost
 
 
 def printer_values(data, machine_name, vendor, nozzle_float, allowed, enums,
@@ -504,14 +570,14 @@ def printer_values(data, machine_name, vendor, nozzle_float, allowed, enums,
     # would avoid the warning. A warning beats a tool changer that cannot slice.
     for key in POINT_LIST & set(values):
         values[key] = as_point_list(values[key])
-    dropped = repair_gcode(values, known_placeholders)
+    dropped, salvaged = repair_gcode(values, known_placeholders)
     # An empty layer-change template stops this build exporting at all, so where
     # the vendor has none, keep the engine's own.
     for key in ("before_layer_gcode", "layer_gcode"):
         if not str(values.get(key, "")).strip() and defaults.get(key):
             values[key] = defaults[key]
     align_extruder_reset(values)
-    return values, bucket, dropped
+    return values, bucket, dropped, salvaged
 
 
 def vendor_manifest(vendor_id, vendor_label, machines, nozzle):
@@ -693,12 +759,10 @@ def build_vendor(source_root, vendor_dir, vendor, out_root, nozzle, nozzle_float
         if not slug.startswith(vendor_slug):
             slug = vendor_slug + "-" + slug
         slug = unique_slug(machines, slug)
-        values, bucket, dropped_gcode = printer_values(data, name, vendor, nozzle_float,
-                                                      allowed["printer"], enums, placeholders,
-                                                      engine_defaults)
-        for key, unknown in dropped_gcode.items():
-            report.append("%s: %s not imported (unknown placeholders: %s)"
-                          % (name, key, ", ".join(unknown)))
+        values, bucket, dropped_gcode, salvaged_gcode = printer_values(
+            data, name, vendor, nozzle_float, allowed["printer"], enums, placeholders,
+            engine_defaults)
+        note_gcode((dropped_gcode, salvaged_gcode), name, report)
         if "bed_shape" not in values:
             report.append("skip %s: no printable area" % name)
             continue
@@ -736,9 +800,8 @@ def build_vendor(source_root, vendor_dir, vendor, out_root, nozzle, nozzle_float
                                    "print", allowed["print"], enums)
         if not values:
             continue
-        for key, unknown in repair_gcode(values, placeholders).items():
-            report.append("%s process %s: %s not imported (unknown placeholders: %s)"
-                          % (vendor, name, key, ", ".join(unknown)))
+        note_gcode(repair_gcode(values, placeholders),
+                   "%s process %s" % (vendor, name), report)
         unsupported.update(bucket["unsupported"])
         published_processes[name] = values
 
@@ -785,9 +848,8 @@ def build_vendor(source_root, vendor_dir, vendor, out_root, nozzle, nozzle_float
                                    "filament", allowed["filament"], enums)
         if not values:
             continue
-        for key, unknown in repair_gcode(values, placeholders).items():
-            report.append("%s filament %s: %s not imported (unknown placeholders: %s)"
-                          % (vendor, name, key, ", ".join(unknown)))
+        note_gcode(repair_gcode(values, placeholders),
+                   "%s filament %s" % (vendor, name), report)
         published_filaments.add(base)
         unsupported.update(bucket["unsupported"])
         unique = base if vendor.lower() in base.lower() else "%s (%s)" % (base, vendor)

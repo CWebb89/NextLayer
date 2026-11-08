@@ -153,7 +153,7 @@ Missing, and cheap enough to justify:
 | Gate | Why | How |
 |---|---|---|
 | Sanitizers | A slicer is a parser: STL, 3MF, G-code, and printer JSON all come from strangers | One `-fsanitize=address,undefined` build of `libslic3r` + app, run the oracle corpus and open 20 malformed files. Fix everything that fires. |
-| Malformed-input suite | Same, deterministically | A directory of truncated/corrupt STL and 3MF, empty file, 1 GB file, non-manifold mesh, G-code with a lying header: each must report an error, not crash or hang |
+| Malformed-input suite | Same, deterministically | **Done** — `tools/malformed-fixtures.py` generates the corpus and the `malformed input` gate in `tools/check` runs it: an empty file, a header-only STL, a truncated body, a facet count that lies about 2 billion triangles, ASCII that is not a mesh, an open shell, empty and corrupt 3MF, a one-triangle OBJ, a STEP, a truncated G-code and a binary one. Each model must be refused with a message, each G-code must preview, and no case may abort. It found two real aborts: an unterminated last line in a G-code file (uncaught throw in the engine's line reader) and any STEP file (missing app config provider before the first model load, plus an `OCCTWrapper` module that was never built beside the binary) |
 | Static analysis | Catches what tests miss | `clang-tidy` on our two source dirs with a fixed check list; `cppcheck --enable=warning,performance` in CI |
 | Huge-model test | Portability of the vertex path | A 5 M-triangle mesh loads, orbits at >20 fps, and slicing does not exceed RAM |
 | Long-run test | Preview and printer link leak | Open/slice/close 100 models; watch RSS stay flat |
@@ -219,10 +219,10 @@ That is roughly a day's work and it is the difference between "an updater" and "
 supply chain".
 
 Also: keep the version in one place. `NEXT_LAYER_VERSION` in
-`src/qt/CMakeLists.txt` is the source of truth, and today nothing checks
-it: `tools/release` takes a version on the command line and will happily stamp
-`0.3.0` onto a binary built as `0.1.0`. It should read the constant and refuse a
-mismatch.
+`src/qt/CMakeLists.txt` is the source of truth, and `tools/release` now reads it
+and refuses a mismatch — it used to stamp `0.3.0` onto a binary built as `0.1.0`,
+and on fish 4 it could not even read its own argument, because `version` is a
+read-only variable in that shell and `set version $argv[1]` failed silently.
 
 ## 9. Packaging
 

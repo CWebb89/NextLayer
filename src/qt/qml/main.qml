@@ -1243,6 +1243,11 @@ Window {
             width: root.panelWidth
             x: root.panelOnLeft ? Metrics.railWidth : shell.width - width
 
+            onRememberedPrinterMissing: (name) => {
+                root.setStatus("the printer last used, " + name + ", is no longer in the profile list")
+                setupFlow.reopen()
+            }
+
             Behavior on x { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
         }
 

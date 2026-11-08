@@ -78,6 +78,16 @@ extrusion multiplier 0.982 and an 18 mm³/s volumetric limit — the user's own
 numbers, not a generic default. 42 printer/process/filament combinations of the
 imported presets slice, and the importer refuses to publish one that does not.
 
+Those imported presets were removed from this machine afterwards, so the command
+above no longer resolves. What ships today is next-layer's own bundle:
+
+```sh
+B=upstream/build/src/next-layer-qt/next-layer-qt
+$B oracle/models/cube_20.stl --printer 'Voron 2.4 350 0.4' \
+    --process 'Standard' --filament 'Generic' --dump-config /tmp/v.json
+$B oracle/models/cube_20.stl --slice /tmp/v.json,dist/prints/voron-cube20.gcode
+```
+
 The next print should be the same cube with these presets; until that is recorded
 here, the "wrong settings" column above stands for the presets next-layer
 ships by default.

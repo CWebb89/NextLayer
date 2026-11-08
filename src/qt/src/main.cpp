@@ -1305,9 +1305,11 @@ int main(int argc, char* argv[])
             std::fprintf(stdout, "config written to %s\n",
                          parser.value(dump_config_option).toUtf8().constData());
         }
-        // A settings dump of the resolved preset is a legitimate combination, so
-        // only leave here when no dump was asked for.
-        if (!parser.isSet(dump_subtab_option) && !parser.isSet(dump_tabs_option))
+        // Naming a printer, a process and a filament is also how the window is
+        // opened on a chosen setup, so resolving is not by itself a reason to
+        // leave: only a dump of the resolved settings is.
+        if (parser.isSet(dump_config_option) || parser.isSet(dump_subtab_option)
+            || parser.isSet(dump_tabs_option))
             return 0;
     }
 
@@ -1585,6 +1587,7 @@ int main(int argc, char* argv[])
     });
 
     if (!files.isEmpty()) {
+        next_layer::SliceRuntime::ensurePlatformServices();
         if (files.size() == 1 ? !session->open(files.first()) : session->addModels(files) != files.size()) {
             std::fprintf(stderr, "load failed: %s\n", session->error().toUtf8().constData());
             return 1;

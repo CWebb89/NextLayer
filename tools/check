@@ -696,6 +696,50 @@ else
     __ok "mesh tools: "(string join '; ' -- $mesh_out)
 end
 
+# Robustness gate: a slicer is a parser, and every file it reads comes from
+# somewhere it does not control. A case counts as passing when the app says what is
+# wrong with the file and keeps running; a process that aborts on a truncated
+# download is the failure this gate exists for.
+set -l malformed /tmp/nl-check-malformed
+rm -rf $malformed
+python3 $root/tools/malformed-fixtures.py --out $malformed >/dev/null 2>&1
+set -l malformed_bad
+set -l malformed_count 0
+for fixture in (path filter -f $malformed/* | string match -rv '\.gcode$')
+    set malformed_count (math $malformed_count + 1)
+    timeout 60 $bin $fixture --dump-objects >/tmp/nl-check-malformed.out 2>&1
+    set -l ref_rc $status
+    if test $ref_rc -eq 0
+        set malformed_bad $malformed_bad (basename $fixture)"(accepted)"
+    else if not string match -q '*load failed*' -- (cat /tmp/nl-check-malformed.out)
+        set malformed_bad $malformed_bad (basename $fixture)"(no message, exit $ref_rc)"
+    end
+end
+# A truncated G-code is valid G-code whose last line has no newline. The engine's
+# processor throws on it and the throw was uncaught, so this opened as a crash.
+for fixture in $malformed/*.gcode
+    set malformed_count (math $malformed_count + 1)
+    timeout 180 $bin $model --preview $fixture --smoke --shot /tmp/nl-check-malformed.png >/tmp/nl-check-malformed.out 2>&1
+    set -l preview_rc $status
+    set -l preview_cover (string match -r 'covered ([0-9.]+)%' -- (cat /tmp/nl-check-malformed.out))
+    if test $preview_rc -ne 0
+        set malformed_bad $malformed_bad (basename $fixture)"(exit $preview_rc)"
+    else if not set -q preview_cover[2]
+        set malformed_bad $malformed_bad (basename $fixture)"(no preview frame)"
+    end
+end
+# STEP is loaded through a shared wrapper library the engine looks for beside the
+# executable, and through the same platform services a slice uses. Missing either
+# turned every STEP into a process abort.
+if not test -f (path dirname $bin)/OCCTWrapper.so
+    set malformed_bad $malformed_bad 'STEP(no OCCTWrapper.so beside the binary)'
+end
+if test (count $malformed_bad) -eq 0
+    __ok "malformed input: $malformed_count file(s) refused with a message or previewed, none crashed"
+else
+    __bad "malformed input: "(string join ', ' -- $malformed_bad)
+end
+
 # Update gate: a release channel is a manifest plus an artifact, and an install
 # has to replace the binary without ever writing into the running one. This
 # serves a stand-in release over localhost: the check must see the new version,

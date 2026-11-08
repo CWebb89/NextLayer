@@ -392,9 +392,9 @@ def cmd_start(args: argparse.Namespace) -> int:
 
     command = args.command or args.app
     if args.arg:
-        command = f"{command} {' '.join(args.arg)}"
+        command = f"{command} {' '.join(shlex.quote(value) for value in args.arg)}"
     if args.model:
-        command = f"{command} {os.path.abspath(args.model)}"
+        command = f"{command} {shlex.quote(os.path.abspath(args.model))}"
     spawn(command)
 
     address = ""
