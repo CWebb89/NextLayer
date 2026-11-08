@@ -118,8 +118,8 @@ straight onto the plate you left.
 ## Verifying a change
 
 ```sh
-tools/check          # 25 gates, ~25 s
-tools/check --fast   # the same minus the slicing oracle
+tools/check          # every gate, including the slicing oracle
+tools/check --fast   # the same minus the oracle
 ```
 
 Every gate reads its verdict out of a tool's output — a coverage percentage, a

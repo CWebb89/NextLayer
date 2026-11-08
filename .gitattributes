@@ -1,0 +1,6 @@
+# Keep GitHub's language bar on the code rather than on the recorded G-code.
+oracle/baseline/gcode/*.gcode linguist-documentation
+oracle/fixtures/** linguist-documentation
+
+*.stl binary
+*.png binary
