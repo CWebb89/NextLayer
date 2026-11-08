@@ -5,6 +5,7 @@
 
 #include <QObject>
 #include <QByteArray>
+#include <QHash>
 #include <QString>
 #include <QVariantList>
 #include <QVariantMap>
@@ -23,6 +24,11 @@ class PresetStore : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(QVariantList printers READ printers NOTIFY printersChanged)
+    /// The machines in the user's own bundles, which is what the preset bar
+    /// offers, and the catalogue, which is what the machine chooser browses. One
+    /// list of 461 machines is a catalogue, not a person's machines.
+    Q_PROPERTY(QVariantList userPrinters READ userPrinters NOTIFY printersChanged)
+    Q_PROPERTY(QVariantList catalogPrinters READ catalogPrinters NOTIFY printersChanged)
     Q_PROPERTY(QVariantList printProfiles READ printProfiles NOTIFY printProfilesChanged)
     Q_PROPERTY(QVariantList filamentProfiles READ filamentProfiles NOTIFY filamentProfilesChanged)
     Q_PROPERTY(QString currentPrinter READ currentPrinter NOTIFY currentPrinterChanged)
@@ -37,6 +43,8 @@ public:
     ~PresetStore() override;
 
     QVariantList printers() const { return m_printers; }
+    QVariantList userPrinters() const { return m_userPrinters; }
+    QVariantList catalogPrinters() const { return m_catalogPrinters; }
     QVariantList printProfiles() const { return m_printProfiles; }
     QVariantList filamentProfiles() const { return m_filamentProfiles; }
     QString currentPrinter() const { return m_currentPrinter; }
@@ -84,6 +92,22 @@ public:
     Q_INVOKABLE QString importPreset(const QString& kind, const QString& path);
     QString importedPresetName() const { return m_importedPresetName; }
 
+    /// A whole vendor bundle out to a directory: every preset file it holds plus
+    /// the manifest that describes its machines, so the machine, its processes
+    /// and its materials travel together. The engine resolves a bundle as one
+    /// package, so one preset alone is not a shareable machine.
+    Q_INVOKABLE QString exportBundle(const QString& directory) const;
+    /// What exportBundle() would write, for a dialog to name before it runs:
+    /// `vendor`, `presets`, `machines`, `directory`.
+    Q_INVOKABLE QVariantMap bundleSummary() const;
+
+    /// Two presets of one kind, side by side: every value the two set
+    /// differently, as {key, a, b}. Inherited values are not shown, because the
+    /// files do not carry them -- this compares what each preset says, which is
+    /// the answer to "how far did my copy drift from the one it came from".
+    Q_INVOKABLE QVariantList comparePresets(const QString& kind, const QString& a,
+                                            const QString& b) const;
+
     /// Writes the configuration the app would slice with -- the resolved preset
     /// plus every edit in the settings panel -- as a JSON file, and reads one
     /// back into the settings panel. The round trip is the same shape the
@@ -97,7 +121,7 @@ public:
     // definitions plus printer/process/tool/filament presets taken from the
     // edited settings, so the machine slices without any inherited profile.
     Q_INVOKABLE QString createPrinter(const QString& name, double bedWidth,
-                                      double bedHeight, double bedDepth);
+                                      double bedHeight, double bedDepth, int tools = 1);
 
     /// Reads another slicer's configuration directory -- its own presets and the
     /// vendor bundles it carries -- and writes the ones this engine can express
@@ -153,6 +177,7 @@ private:
     {
         QString repo;
         QString vendor;
+        bool local = false;
         bool valid() const { return !repo.isEmpty() && !vendor.isEmpty(); }
     };
 
@@ -173,8 +198,11 @@ private:
     static QString presetPathFor(const BundleLocation& bundle, const QString& kind,
                                  const QString& name);
     static bool validPresetName(const QString& name);
+    bool vendorIsCatalog(const QString& vendorId) const;
+    QString presetFilePath(const QString& kind, const QString& name) const;
 
     void parsePrinters(const QByteArray& json);
+    void adoptPrinters(const QVariantList& printers);
     void parseProfiles(const QByteArray& json);
     void parseResolved(const QByteArray& json);
     void noteCurrentVendor(const QString& printerName);
@@ -185,6 +213,9 @@ private:
     bool applyReload(const ReloadResult& result);
 
     QVariantList m_printers;
+    QVariantList m_userPrinters;
+    QVariantList m_catalogPrinters;
+    mutable QHash<QString, bool> m_catalogVendors;
     QVariantList m_printProfiles;
     QVariantList m_filamentProfiles;
     QString m_currentPrinter;

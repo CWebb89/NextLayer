@@ -15,6 +15,9 @@ import "../components"
 Item {
     id: root
 
+    signal machineChooserRequested()
+    signal changesRequested(string tab)
+
     property string activeTab: "process"
     property string activeSubtab: ""
     property string filterText: ""
@@ -198,9 +201,11 @@ Item {
         anchors.leftMargin: Metrics.lg
         anchors.rightMargin: Metrics.lg
         anchors.topMargin: Metrics.sm
-        height: Metrics.controlHeight * 3 + Metrics.sm * 2
-
         readonly property int presetLabelWidth: 66
+        readonly property int rowCount: 2 + Math.max(1, presetBar.toolCount)
+
+        height: Metrics.controlHeight * presetBar.rowCount
+                + Metrics.sm * (presetBar.rowCount - 1)
 
         property string printer: ""
         property string printProfile: ""
@@ -209,10 +214,45 @@ Item {
 
         readonly property var printerChoices: {
             const out = []
-            const printers = presetStore.printers
+            const printers = presetStore.userPrinters
             for (let i = 0; i < printers.length; ++i)
                 out.push({ value: printers[i].name, label: printers[i].name })
+            // The machine in force is always listed: it may be one from the
+            // catalogue, chosen in the setup flow, and a bar that cannot show
+            // what it is slicing with is worse than a list of one.
+            if (presetBar.printer.length > 0) {
+                let listed = false
+                for (let i = 0; i < out.length; ++i)
+                    if (out[i].value === presetBar.printer)
+                        listed = true
+                if (!listed)
+                    out.unshift({ value: presetBar.printer, label: presetBar.printer })
+            }
             return out
+        }
+
+        readonly property int toolCount: {
+            const printers = presetStore.printers
+            for (let i = 0; i < printers.length; ++i)
+                if (printers[i].name === presetBar.printer)
+                    return Math.max(1, printers[i].extruders)
+            return 1
+        }
+
+        // One material per tool, which is what a tool changer prints with. The
+        // single list is the machine's own; a second tool is a second row here
+        // and a second entry in the slice's filament list.
+        function filamentFor(tool) {
+            return presetStore.filaments.length > tool ? presetStore.filaments[tool] : presetBar.filament
+        }
+
+        function chooseFilament(tool, value) {
+            if (tool === 0) {
+                presetBar.filament = value
+                presetBar.resolveIfReady()
+                return
+            }
+            presetStore.setFilamentForTool(tool + 1, value)
         }
 
         function resolveIfReady() {
@@ -292,12 +332,22 @@ Item {
                 }
 
                 ComboBox {
-                    width: parent.width - presetBar.presetLabelWidth - printerGear.width - Metrics.sm * 2
+                    width: parent.width - presetBar.presetLabelWidth - printerGear.width
+                           - machinePicker.width - Metrics.sm * 3
                     choices: presetBar.printerChoices
                     currentValue: presetBar.printer
                     searchable: true
                     popupWidth: Math.min(460, root.width)
                     onSelected: (value) => presetBar.choosePrinter(value)
+                }
+
+                ToolButton {
+                    id: machinePicker
+                    width: Metrics.controlHeight
+                    height: Metrics.controlHeight
+                    icon: "grid_view"
+                    hint: "All machines (the catalogue and your own)"
+                    onClicked: root.machineChooserRequested()
                 }
 
                 ToolButton {
@@ -349,42 +399,59 @@ Item {
                 }
             }
 
-            Row {
-                width: parent.width
-                spacing: Metrics.sm
+            Repeater {
+                model: Math.max(1, presetBar.toolCount)
 
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: presetBar.presetLabelWidth
-                    text: "Filament"
-                    font.family: Type.family
-                    font.pixelSize: Type.sizeCaption
-                    font.bold: true
-                    color: Colors.textSecondary
-                }
+                delegate: Row {
+                    id: filamentRow
 
-                ComboBox {
-                    width: parent.width - presetBar.presetLabelWidth - filamentGear.width - Metrics.sm * 2
-                    enabled: presetBar.printer.length > 0
-                    choices: presetStore.filamentProfiles
-                    currentValue: presetBar.filament
-                    searchable: true
-                    popupWidth: Math.min(460, root.width)
-                    onSelected: (value) => {
-                        if (presetBar.filament === value)
-                            return
-                        presetBar.filament = value
-                        presetBar.resolveIfReady()
+                    required property int index
+
+                    width: parent.width
+                    spacing: Metrics.sm
+
+                    readonly property string presetName: presetBar.filamentFor(index)
+
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: presetBar.presetLabelWidth
+                        text: filamentRow.index === 0 ? "Filament"
+                              : presetBar.toolCount > 1 ? "T" + (filamentRow.index + 1) : "Filament"
+                        font.family: Type.family
+                        font.pixelSize: Type.sizeCaption
+                        font.bold: true
+                        color: Colors.textSecondary
                     }
-                }
 
-                ToolButton {
-                    id: filamentGear
-                    width: Metrics.controlHeight
-                    height: Metrics.controlHeight
-                    icon: "settings"
-                    hint: "Edit this filament preset"
-                    onClicked: root.openPresetEditor("filament")
+                    ComboBox {
+                        width: parent.width - presetBar.presetLabelWidth - filamentGear.width
+                               - Metrics.sm * 2
+                        enabled: presetBar.printer.length > 0
+                        choices: presetStore.filamentProfiles
+                        currentValue: filamentRow.presetName
+                        searchable: true
+                        popupWidth: Math.min(460, root.width)
+                        onSelected: (value) => {
+                            if (filamentRow.presetName === value)
+                                return
+                            presetBar.chooseFilament(filamentRow.index, value)
+                        }
+                    }
+
+                    ToolButton {
+                        visible: filamentRow.index === 0
+                        width: Metrics.controlHeight
+                        height: Metrics.controlHeight
+                        icon: "settings"
+                        hint: "Edit this filament preset"
+                        onClicked: root.openPresetEditor("filament")
+                    }
+
+                    Item {
+                        visible: filamentRow.index > 0
+                        width: Metrics.controlHeight
+                        height: Metrics.controlHeight
+                    }
                 }
             }
 
@@ -483,6 +550,13 @@ Item {
                 font.pixelSize: Type.sizeCaption
                 font.bold: true
                 color: Colors.accent
+
+                MouseArea {
+                    anchors.fill: parent
+                    anchors.margins: -Metrics.xs
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.changesRequested(root.activeTab)
+                }
             }
 
             ToolButton {

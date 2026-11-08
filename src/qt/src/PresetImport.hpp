@@ -27,6 +27,11 @@ struct Report
     QStringList elsewhere;
     QStringList droppedKeys;
     QStringList unfitted;
+    /// G-code templates left out because this engine refuses them: an unknown
+    /// placeholder, or a G92 E in a layer-change template while E is absolute.
+    /// One refused template makes the slice write no file at all, so the machine
+    /// keeps the engine's own template in its place instead.
+    QStringList droppedTemplates;
     QString error;
 
     bool ok() const { return error.isEmpty(); }

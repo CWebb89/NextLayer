@@ -72,6 +72,13 @@ KINDS = ("printer", "print", "filament")
 SETTINGS_SECTION = {"printer": "printer_settings", "print": "print_settings",
                     "filament": "filament_settings"}
 
+# A reference process whose name starts with a layer height is one of the family a
+# user picks from; the rest are inherited bases and per-machine overrides.
+LAYER_PROFILE_NAME = re.compile(r"^\d+\.?\d*mm\s", re.IGNORECASE)
+# How many of those a vendor publishes beside its machines' own defaults. Five is
+# what a person choosing a quality expects to see; more is a list to scroll.
+PROCESS_VARIANTS = 5
+
 ENUM_DECLARATION = re.compile(r'add\("([a-z0-9_]+)"[,)]')
 ENUM_VALUES = re.compile(r'make_pair\("([^"]+)"')
 
@@ -827,6 +834,38 @@ def build_vendor(source_root, vendor_dir, vendor, out_root, nozzle, nozzle_float
         unsupported.update(bucket["unsupported"])
         published_processes[name] = values
 
+    # A machine's own default is one profile. The reference gives the same machine
+    # a family of layer-height profiles, and a slicer that offers exactly one is a
+    # slicer you stop using for anything but that one. The vendor's own layer-height
+    # presets are published alongside its defaults, so every machine of that vendor
+    # offers the same handful.
+    variants = 0
+    for name in sorted(name for name in procs if LAYER_PROFILE_NAME.match(name)):
+        if variants >= PROCESS_VARIANTS:
+            break
+        if name in published_processes:
+            continue
+        # A layer height is written like a nozzle size, so the nozzle filter only
+        # applies to names that actually mention a nozzle: "0.05mm Ultradetail" is
+        # a layer height for the machine we ship, "0.05mm Optimal 0.2 nozzle" is
+        # another machine's.
+        if "nozzle" in name.lower():
+            nozzles = NOZZLE_TOKEN.findall(name)
+            if nozzles and nozzle not in nozzles:
+                continue
+        path = vendor_dir / procs[name]
+        if not path.is_file():
+            continue
+        values, bucket = converted(preset_convert.resolve_inherits(path, cache, lookup),
+                                   "print", allowed["print"], enums)
+        if not values:
+            continue
+        note_gcode(repair_gcode(values, placeholders),
+                   "%s process %s" % (vendor, name), report)
+        unsupported.update(bucket["unsupported"])
+        published_processes[name] = values
+        variants += 1
+
     # A print preset's condition is evaluated without a printer, so a condition
     # referencing the machine drops the preset instead of scoping it. Every
     # vendor process is therefore published once, under its own name, shared by
@@ -882,6 +921,29 @@ def build_vendor(source_root, vendor_dir, vendor, out_root, nozzle, nozzle_float
     if not filaments:
         (directory / "preset-filament-generic.yaml").write_text(borrowed["filament"])
 
+    # The materials the app ships for its own machine, for every machine here. The
+    # engine scopes a filament to the vendor bundle it lives in, so a shared list
+    # does not exist: each vendor carries its own copy of the same 29. Only a
+    # material a vendor already publishes under the same name is skipped.
+    library = Path(__file__).resolve().parents[2] / "src" / "qt" / "assets" / "filaments"
+    library_filaments = 0
+    for path in sorted(library.glob("*.yaml")):
+        body = path.read_text()
+        name = ""
+        for line in body.splitlines():
+            if line.startswith("name:"):
+                name = line[5:].strip().strip("'")
+                break
+        if not name:
+            continue
+        published_filaments.add(name)
+        target = directory / ("preset-filament-" + slugify(name) + ".yaml")
+        if target.exists():
+            continue
+        target.write_text(body)
+        filament_names.append(name)
+        library_filaments += 1
+
     # Which process and filament each machine resolves with, for validate.py: the
     # bundle loader reads YAML, so this record cannot be mistaken for a preset,
     # and a machine is never checked against another vendor's process.
@@ -909,7 +971,8 @@ def build_vendor(source_root, vendor_dir, vendor, out_root, nozzle, nozzle_float
 
     return {"vendor": vendor, "machines": len(machines),
             "own_processes": len(published_processes), "fallback": fallback,
-            "filaments": filaments, "unsupported": unsupported}
+            "filaments": filaments, "library_filaments": library_filaments,
+            "unsupported": unsupported}
 
 
 REFERENCE_ONLY_VENDORS = {"Custom"}
@@ -1010,9 +1073,9 @@ def main():
             continue
         totals["machines"] += result["machines"]
         totals["vendors"] += 1
-        print("%-22s %3d printers  %3d own processes  %3d filaments  %3d dropped keys"
+        print("%-22s %3d printers  %3d own processes  %3d vendor filaments  %3d library materials  %3d dropped keys"
               % (vendor, result["machines"], result["own_processes"], result["filaments"],
-                 len(result["unsupported"])))
+                 result["library_filaments"], len(result["unsupported"])))
 
     print("\n%d vendors, %d printers into %s" % (totals["vendors"], totals["machines"], out_root))
     for line in report:

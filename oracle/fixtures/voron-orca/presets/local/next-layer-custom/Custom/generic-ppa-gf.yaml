@@ -1,0 +1,27 @@
+kind: filament
+id: 'nl-generic-ppa-gf'
+name: 'Generic PPA-GF'
+values:
+  bed_temperature: 100
+  cooling_perimeter_transition_distance: 10.0
+  cooling_slowdown_logic: 'uniform_cooling'
+  disable_fan_first_layers: 3
+  end_filament_gcode: "; filament end gcode \n\n"
+  extrusion_multiplier: 0.96
+  filament_cost: 20.0
+  filament_density: 1.17
+  filament_diameter: 1.75
+  filament_max_volumetric_speed: 6.0
+  filament_minimal_purge_on_wipe_tower: 15.0
+  filament_soluble: false
+  filament_type: 'PPA-GF'
+  filament_vendor: 'Bambu Lab'
+  first_layer_bed_temperature: 100
+  first_layer_temperature: 290
+  full_fan_speed_layer: 0
+  max_fan_speed: 30
+  min_fan_speed: 10
+  min_print_speed: 20.0
+  slowdown_below_layer_time: 2
+  start_filament_gcode: '; Filament gcode'
+  temperature: 290

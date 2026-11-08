@@ -15,7 +15,7 @@ Two rules before anything else:
 ## 1. The five-minute gate run
 
 ```sh
-tools/check            # 25 gates, ~45 s once warm
+tools/check            # 30 gates, ~55 s once warm
 tools/check --ui       # + a real window, captured and read
 ```
 

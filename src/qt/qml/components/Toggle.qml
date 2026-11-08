@@ -4,51 +4,47 @@
 import QtQuick
 import "../theme"
 
-// Switch. Caller-driven: renders `checked` and emits `toggled(!checked)` on a
-// click, so a binding to the settings model is never overwritten. Knob travel
-// is animated 140 ms OutCubic.
+// Checkbox. Caller-driven: renders `checked` and emits `toggled(!checked)` on a
+// click, so a binding to the settings model is never overwritten. A square box
+// with a check mark, because a settings row that reads "on / off" is a state to
+// read, not a slider to drag.
 Item {
     id: root
 
     property bool checked: false
+    property bool hovered: area.containsMouse
     signal toggled(bool value)
 
-    implicitWidth: 44
-    implicitHeight: 24
+    implicitWidth: 18
+    implicitHeight: 18
     opacity: enabled ? 1.0 : 0.45
 
     Rectangle {
         anchors.fill: parent
-        radius: height / 2
-        color: root.checked ? Colors.alpha(Colors.accent, 0.28)
+        radius: 3
+        color: root.checked ? Colors.accent
              : area.containsMouse ? Colors.hoverFill
-             : Colors.selectedFill
+             : Colors.surfaceContainer
         border.width: Metrics.borderWidth
         border.color: root.checked ? Colors.accent
              : area.containsMouse ? Colors.edgeStrong
              : Colors.edge
-        Behavior on color { ColorAnimation { duration: 140 } }
-        Behavior on border.color { ColorAnimation { duration: 140 } }
+        Behavior on color { ColorAnimation { duration: 120 } }
+        Behavior on border.color { ColorAnimation { duration: 120 } }
     }
 
-    Rectangle {
-        id: knob
-        width: parent.height - Metrics.sm
-        height: width
-        radius: width / 2
-        anchors.verticalCenter: parent.verticalCenter
-        x: root.checked ? parent.width - width - Metrics.xxs - Metrics.hairline
-                        : Metrics.xxs + Metrics.hairline
-        color: root.checked ? Colors.accent : Colors.textSecondary
-        scale: area.containsMouse ? 1.08 : 1.0
-        Behavior on x { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-        Behavior on color { ColorAnimation { duration: 140 } }
-        Behavior on scale { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+    Icon {
+        anchors.centerIn: parent
+        name: "check"
+        size: 14
+        color: Colors.surfaceContainerLowest
+        visible: root.checked
     }
 
     MouseArea {
         id: area
         anchors.fill: parent
+        anchors.margins: -Metrics.xs
         hoverEnabled: true
         acceptedButtons: Qt.LeftButton
         cursorShape: Qt.PointingHandCursor

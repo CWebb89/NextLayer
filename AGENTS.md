@@ -40,7 +40,7 @@ the decisions, measured facts, dead ends, and the reasoning behind each.
 One command answers it:
 
 ```sh
-~/dev/next-layer/tools/check            # 45 s: 25 gates
+~/dev/next-layer/tools/check            # 55 s: 30 gates
 ~/dev/next-layer/tools/check --fast     # 8 s: skip the oracle
 ~/dev/next-layer/tools/check --ui       # + a real window, captured and read
 ```

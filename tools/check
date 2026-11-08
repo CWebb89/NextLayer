@@ -844,10 +844,20 @@ rm -rf $catalog_home
 # exports nothing looks identical in a profile dump.
 set -l filament_out ($bin --dump-presets --printer 'Voron 2.4 350 0.4' 2>&1)
 set -l filament_match (string match -r 'filament profiles: (\d+)' -- $filament_out)
+# The machine's own default process, whatever the user's bundle calls it: this gate
+# is about a material set, and the bundle is the person's own, so it names no
+# process this repository can assume.
+set -l filament_process ""
+for filament_line in (string split \n -- $filament_out)
+    if string match -q -r '^  \S' -- $filament_line
+        set filament_process (string trim -- $filament_line)
+        break
+    end
+end
 set -l filament_cfg /tmp/nl-check-filament.json
 set -l filament_gcode /tmp/nl-check-filament.gcode
 rm -f $filament_cfg $filament_gcode
-$bin --printer 'Voron 2.4 350 0.4' --process Standard --filament 'Generic PETG' --dump-config $filament_cfg >/dev/null 2>&1
+$bin --printer 'Voron 2.4 350 0.4' --process $filament_process --filament 'Generic PETG' --dump-config $filament_cfg >/dev/null 2>&1
 set -l filament_rc $status
 if not set -q filament_match[2]
     __bad 'filament presets: no profile list for our own printer'
@@ -871,6 +881,34 @@ else
         __ok "filament presets: $filament_match[2] materials for the Voron bundle, Generic PETG slices $petg_size bytes at 80 C"
     end
 end
+
+# A machine is a bundle, not a file: its printer preset, the processes and the
+# materials it resolves with, and the manifest naming the machine. Export has to
+# write all of it, and what it writes has to be a bundle this engine loads.
+set -l bundle_home (mktemp -d /tmp/nl-check-bundle-XXXXXX)
+set -l bundle_export $bundle_home/export
+set -l bundle_out ($bin --printer 'Voron 2.4 350 0.4' --process $filament_process \
+    --filament 'Generic PETG' --export-bundle $bundle_export 2>&1)
+set -l bundle_dir (find $bundle_export -maxdepth 1 -mindepth 1 -type d 2>/dev/null | head -n 1)
+set -l bundle_presets 0
+set -l bundle_parts ""
+if test -n "$bundle_dir"
+    set bundle_presets (find $bundle_dir -name 'preset-*.yaml' | wc -l)
+    for wanted in vendor.yaml printers.json
+        if test -f $bundle_dir/$wanted
+            set bundle_parts "$bundle_parts $wanted"
+        end
+    end
+end
+set -l bundle_machines (find $bundle_dir -name 'preset-printer-*.yaml' 2>/dev/null | wc -l)
+if test -z "$bundle_dir"
+    __bad "preset bundle: export wrote no directory (",(string match -r '^  .*' -- $bundle_out | head -n 1)")"
+else if test $bundle_presets -lt 3 -o $bundle_machines -lt 1 -o (count (string split ' ' -- (string trim -- $bundle_parts))) -lt 2
+    __bad "preset bundle: export wrote $bundle_presets preset file(s), $bundle_machines machine preset(s), manifest:""$bundle_parts"
+else
+    __ok "preset bundle: exported $bundle_presets preset file(s) for $bundle_machines machine(s) with""$bundle_parts"
+end
+rm -rf $bundle_home
 
 
 set -l integrity_out (python3 $root/oracle/baseline_check.py 2>&1)

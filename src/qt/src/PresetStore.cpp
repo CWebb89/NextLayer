@@ -16,6 +16,8 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QMap>
+#include <QSet>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QUuid>
@@ -172,6 +174,19 @@ QString presetIdIn(const QString& path)
         if (!line.startsWith("id:"))
             continue;
         return QString::fromUtf8(line.mid(3)).trimmed().remove(QLatin1Char('\''));
+    }
+    return {};
+}
+
+QString presetConditionIn(const QString& path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return {};
+    for (const QByteArray& line : file.readAll().split('\n')) {
+        if (!line.startsWith("condition:"))
+            continue;
+        return QString::fromUtf8(line.mid(10)).trimmed().remove(QLatin1Char('\''));
     }
     return {};
 }
@@ -425,7 +440,20 @@ void PresetStore::resolve(const QString& printer, const QString& print, const QS
     if (m_worker.joinable())
         m_worker.join();
     m_worker = std::thread([this, printer, print, filament] {
-        const QStringList requested = filamentsForResolve(printer, filament);
+        // A resolve is one material chosen for the plate: every tool prints it
+        // until a tool is assigned something of its own. The per-tool list is
+        // what reload() carries, so a second tool's edit is not undone here.
+        int tools = 1;
+        for (const QVariant& value : m_printers) {
+            const QVariantMap entry = value.toMap();
+            if (entry.value(QStringLiteral("name")).toString() == printer)
+                tools = std::max(1, entry.value(QStringLiteral("extruders")).toInt());
+        }
+        const QString material = filament.isEmpty() && !m_filaments.isEmpty()
+                               ? m_filaments.first() : filament;
+        QStringList requested;
+        for (int tool = 0; tool < tools; ++tool)
+            requested.append(material);
         const QByteArray json =
             next_layer::SliceRuntime::instance().resolvedConfig(printer, print, requested);
         QMetaObject::invokeMethod(this, [this, printer, print, filament, json] {
@@ -488,8 +516,79 @@ bool PresetStore::resolveSync(const QString& printer, const QString& print, cons
 
 void PresetStore::parsePrinters(const QByteArray& json)
 {
-    m_printers = printerListFrom(json);
+    adoptPrinters(printerListFrom(json));
+}
+
+// The list arrives two ways -- the printer query and the resolved config of a
+// reload -- and both have to end in the same three lists. A reload that only
+// filled m_printers left the preset bar's own list empty, so the machine menu
+// offered nothing but the machine already selected.
+void PresetStore::adoptPrinters(const QVariantList& printers)
+{
+    m_printers.clear();
+    m_userPrinters.clear();
+    m_catalogPrinters.clear();
+    for (const QVariant& value : printers) {
+        QVariantMap entry = value.toMap();
+        const bool catalog = vendorIsCatalog(entry.value(QStringLiteral("vendorId")).toString());
+        entry.insert(QStringLiteral("catalog"), catalog);
+        m_printers.append(entry);
+        (catalog ? m_catalogPrinters : m_userPrinters).append(entry);
+    }
     emit printersChanged();
+}
+
+// The catalogue is generated into its own bundle (`vendor-catalog`): it holds
+// every machine the reference slicer knows, most of which nobody owns. Everything
+// else the loader finds in the user's own preset tree is a machine the person
+// actually has; the engine's own shipped bundle lives elsewhere and is neither --
+// those machines are a library the user can pick from, not a list to scroll.
+bool PresetStore::vendorIsCatalog(const QString& vendorId) const
+{
+    if (vendorId.isEmpty())
+        return false;
+    const auto known = m_catalogVendors.constFind(vendorId);
+    if (known != m_catalogVendors.constEnd())
+        return known.value();
+    const BundleLocation bundle = locateBundle(vendorId);
+    const bool catalog = !bundle.valid() || !bundle.local
+                      || bundle.repo == QLatin1String("vendor-catalog");
+    m_catalogVendors.insert(vendorId, catalog);
+    return catalog;
+}
+
+QString PresetStore::presetFilePath(const QString& kind, const QString& name) const
+{
+    const BundleLocation bundle = locateBundle(m_currentVendorId);
+    if (!bundle.valid() || name.isEmpty())
+        return {};
+
+    const QString user = presetPathFor(bundle, kind, name);
+    if (QFileInfo::exists(user))
+        return user;
+
+    const QString stem = kind == QLatin1String("process") ? QStringLiteral("print") : kind;
+    const QDir directory(presetsRoot() + QStringLiteral("/local/") + bundle.repo
+                         + QLatin1Char('/') + bundle.vendor);
+    const QStringList files = directory.entryList({QStringLiteral("*.yaml")}, QDir::Files);
+    for (const QString& file : files) {
+        if (!file.startsWith(QLatin1String("preset-") + stem + QLatin1Char('-')))
+            continue;
+        const QString path = directory.filePath(file);
+        QFile input(path);
+        if (!input.open(QIODevice::ReadOnly))
+            continue;
+        const QList<QByteArray> lines = input.readAll().split('\n');
+        for (const QByteArray& line : lines) {
+            if (!line.startsWith("name:"))
+                continue;
+            const QString listed = next_layer::yaml::unquoted(QString::fromUtf8(line.mid(5)));
+            if (listed == name)
+                return path;
+            break;
+        }
+    }
+    return {};
 }
 
 void PresetStore::parseProfiles(const QByteArray& json)
@@ -535,16 +634,22 @@ PresetStore::BundleLocation PresetStore::locateBundle(const QString& vendorId)
     if (vendorId.isEmpty())
         return {};
 
+    bool firstRoot = true;
     for (const QString& root : bundleRoots()) {
+        const bool local = firstRoot;
+        firstRoot = false;
         const QDir dir(root);
         const QStringList repos = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
         for (const QString& repo : repos) {
             const QDir repoDir(dir.filePath(repo));
+            // The engine's own bundle is linked into the user's tree so the
+            // engine can find it; a link is not a bundle the person made.
+            const bool personMade = local && !QFileInfo(repoDir.absolutePath()).isSymLink();
             const QStringList vendors = repoDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
             for (const QString& vendor : vendors) {
                 const QString yaml = repoDir.filePath(vendor + QStringLiteral("/vendor.yaml"));
                 if (QFileInfo::exists(yaml) && vendorYamlMatches(yaml, vendorId))
-                    return {repo, vendor};
+                    return {repo, vendor, personMade};
             }
         }
     }
@@ -674,10 +779,8 @@ PresetStore::ReloadResult PresetStore::computeReload(const QString& printer, con
 
 bool PresetStore::applyReload(const ReloadResult& result)
 {
-    if (!result.printers.isEmpty()) {
-        m_printers = result.printers;
-        emit printersChanged();
-    }
+    if (!result.printers.isEmpty())
+        adoptPrinters(result.printers);
     m_printProfiles = result.printProfiles;
     m_filamentProfiles = result.filamentProfiles;
     emit printProfilesChanged();
@@ -731,15 +834,12 @@ QString PresetStore::saveUserPreset(const QString& kind, const QString& name, co
     // the vendor's own presets are opaque. The resolved config reports the root
     // id of every preset that produced it, which is the id a child inherits.
     const QVariantMap preset = m_resolvedPreset;
-    QVariantMap parentNode = preset
-        .value(kind == QLatin1String("filament") ? QStringLiteral("materials")
-                                                 : QStringLiteral("print"))
-        .toMap();
+    const QString block = kind == QLatin1String("filament") ? QStringLiteral("materials")
+                        : kind == QLatin1String("printer") ? QStringLiteral("printer")
+                                                          : QStringLiteral("print");
+    QVariantMap parentNode = preset.value(block).toMap();
     if (parentNode.isEmpty()) {
-        const QVariantList parents = preset
-            .value(kind == QLatin1String("filament") ? QStringLiteral("materials")
-                                                     : QStringLiteral("print"))
-            .toList();
+        const QVariantList parents = preset.value(block).toList();
         if (!parents.isEmpty())
             parentNode = parents.first().toMap();
     }
@@ -753,6 +853,15 @@ QString PresetStore::saveUserPreset(const QString& kind, const QString& name, co
     if (parent.isEmpty())
         return QStringLiteral("The current preset has no id to inherit from");
 
+    // A printer preset is attached to a model by its condition, and a child that
+    // drops the parent's condition is a machine the engine never lists. Nothing
+    // else inherits a condition here.
+    QString condition = presetConditionIn(path);
+    if (condition.isEmpty() && kind == QLatin1String("printer")) {
+        const QString parentPath = presetFilePath(kind, parentNode.value(QStringLiteral("name")).toString());
+        condition = presetConditionIn(parentPath);
+    }
+
     const QString values = m_settings->valuesYaml(tab, true);
     if (values.trimmed().isEmpty())
         return QStringLiteral("Nothing has been changed yet, so there is nothing to save");
@@ -764,7 +873,7 @@ QString PresetStore::saveUserPreset(const QString& kind, const QString& name, co
             existing = QString::fromUtf8(file.readAll());
     }
     const QString merged = mergeValues(existing, values);
-    if (!writeFile(path, presetDocument(kind, name, parent, QString(), merged, presetIdIn(path))))
+    if (!writeFile(path, presetDocument(kind, name, parent, condition, merged, presetIdIn(path))))
         return QStringLiteral("Could not write %1").arg(path);
 
     // The saved values become the new baseline, so the panel stops reporting
@@ -838,6 +947,45 @@ bool PresetStore::presetIsUser(const QString& kind, const QString& name) const
     return QFileInfo::exists(presetPathFor(bundle, kind, name));
 }
 
+// The `values:` body of a preset, as key -> the exact text it sets. Comparison is
+// textual on purpose: two presets that spell the same number differently are a
+// difference worth seeing, and nothing here needs to interpret a value.
+QMap<QString, QString> presetValuesIn(const QString& path)
+{
+    QMap<QString, QString> values;
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return values;
+
+    const QStringList lines = QString::fromUtf8(file.readAll()).split(QLatin1Char('\n'));
+    bool inValues = false;
+    QString lastKey;
+    for (const QString& line : lines) {
+        if (line.startsWith(QLatin1String("values:"))) {
+            inValues = true;
+            continue;
+        }
+        if (inValues && !line.startsWith(QLatin1String("  ")) && !line.isEmpty()) {
+            inValues = false;
+            lastKey.clear();
+            continue;
+        }
+        if (!inValues)
+            continue;
+        if (line.startsWith(QLatin1String("  - ")) || line.startsWith(QLatin1String("    "))) {
+            if (!lastKey.isEmpty())
+                values[lastKey] += QLatin1Char('\n') + line.trimmed();
+            continue;
+        }
+        const int colon = line.indexOf(QLatin1Char(':'));
+        if (colon < 0)
+            continue;
+        lastKey = line.mid(2, colon - 2).trimmed();
+        values.insert(lastKey, line.mid(colon + 1).trimmed());
+    }
+    return values;
+}
+
 QString PresetStore::exportPreset(const QString& kind, const QString& name,
                                   const QString& path) const
 {
@@ -862,6 +1010,100 @@ QString PresetStore::exportPreset(const QString& kind, const QString& name,
         output.close();
         return QStringLiteral("Could not write all of %1").arg(path);
     }
+    return {};
+}
+
+QVariantList PresetStore::comparePresets(const QString& kind, const QString& a,
+                                         const QString& b) const
+{
+    QVariantList rows;
+    if (kind.isEmpty() || a.isEmpty() || b.isEmpty() || a == b)
+        return rows;
+
+    const QString pathA = presetFilePath(kind, a);
+    const QString pathB = presetFilePath(kind, b);
+    if (pathA.isEmpty() || pathB.isEmpty())
+        return rows;
+
+    const QMap<QString, QString> valuesA = presetValuesIn(pathA);
+    const QMap<QString, QString> valuesB = presetValuesIn(pathB);
+    QSet<QString> keys;
+    for (auto it = valuesA.constBegin(); it != valuesA.constEnd(); ++it)
+        keys.insert(it.key());
+    for (auto it = valuesB.constBegin(); it != valuesB.constEnd(); ++it)
+        keys.insert(it.key());
+
+    QStringList sorted(keys.constBegin(), keys.constEnd());
+    sorted.sort();
+    for (const QString& key : sorted) {
+        const QString left = valuesA.value(key);
+        const QString right = valuesB.value(key);
+        if (left == right)
+            continue;
+        QVariantMap row;
+        row.insert(QStringLiteral("key"), key);
+        row.insert(QStringLiteral("a"), left);
+        row.insert(QStringLiteral("b"), right);
+        rows.append(row);
+    }
+    return rows;
+}
+
+QVariantMap PresetStore::bundleSummary() const
+{
+    QVariantMap summary;
+    const BundleLocation bundle = locateBundle(m_currentVendorId);
+    if (!bundle.valid())
+        return summary;
+
+    const QDir directory(presetsRoot() + QStringLiteral("/local/") + bundle.repo
+                         + QLatin1Char('/') + bundle.vendor);
+    int presets = 0;
+    for (const QString& name : directory.entryList({QStringLiteral("*.yaml")}, QDir::Files))
+        if (name.startsWith(QLatin1String("preset-")))
+            ++presets;
+
+    int machines = 0;
+    for (const QVariant& value : m_printers) {
+        if (value.toMap().value(QStringLiteral("vendorId")).toString() == m_currentVendorId)
+            ++machines;
+    }
+
+    summary.insert(QStringLiteral("vendor"), bundle.vendor);
+    summary.insert(QStringLiteral("repo"), bundle.repo);
+    summary.insert(QStringLiteral("directory"), directory.absolutePath());
+    summary.insert(QStringLiteral("presets"), presets);
+    summary.insert(QStringLiteral("machines"), machines);
+    summary.insert(QStringLiteral("catalog"), bundle.repo == QLatin1String("vendor-catalog"));
+    return summary;
+}
+
+QString PresetStore::exportBundle(const QString& directory) const
+{
+    if (directory.isEmpty())
+        return QStringLiteral("No directory to write into");
+
+    const QVariantMap summary = bundleSummary();
+    if (summary.isEmpty())
+        return QStringLiteral("No preset bundle is loaded for the current printer");
+
+    const QDir source(summary.value(QStringLiteral("directory")).toString());
+    const QString target = directory + QLatin1Char('/') + source.dirName();
+    if (!QDir().mkpath(target))
+        return QStringLiteral("Could not create %1").arg(target);
+
+    int written = 0;
+    for (const QString& name : source.entryList(QDir::Files)) {
+        const QString path = target + QLatin1Char('/') + name;
+        if (QFileInfo::exists(path) && !QFile::remove(path))
+            return QStringLiteral("Could not replace %1").arg(path);
+        if (!QFile::copy(source.filePath(name), path))
+            return QStringLiteral("Could not write %1").arg(path);
+        ++written;
+    }
+
+    if (written == 0)
+        return QStringLiteral("%1 holds no files").arg(source.absolutePath());
     return {};
 }
 
@@ -955,7 +1197,7 @@ QString PresetStore::importConfiguration(const QString& path)
 }
 
 QString PresetStore::createPrinter(const QString& name, double bedWidth, double bedHeight,
-                                   double bedDepth)
+                                   double bedDepth, int tools)
 {
     if (!validPresetName(name))
         return QStringLiteral("A printer name cannot be empty or contain a slash");
@@ -1022,7 +1264,7 @@ QString PresetStore::createPrinter(const QString& name, double bedWidth, double 
 
     next_layer::presets::installFilamentLibrary(dir);
 
-    return next_layer::presets::addCustomPrinter(name);
+    return next_layer::presets::addCustomPrinter(name, tools);
 }
 
 QVariantMap PresetStore::importSlicerPresets(const QString& directory)
@@ -1046,6 +1288,7 @@ QVariantMap PresetStore::importSlicerPresets(const QString& directory)
     result.insert(QStringLiteral("unfitted"), report.unfitted);
     result.insert(QStringLiteral("elsewhere"), report.elsewhere);
     result.insert(QStringLiteral("dropped"), report.droppedKeys);
+    result.insert(QStringLiteral("templates"), report.droppedTemplates);
     result.insert(QStringLiteral("count"), report.count());
     result.insert(QStringLiteral("firstPrinter"),
                   report.printers.isEmpty() ? QString() : report.printers.first());

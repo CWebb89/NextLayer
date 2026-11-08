@@ -1,0 +1,21 @@
+kind: filament
+id: 40d8352c-f622-4313-922f-b281f18a701e
+name: '2.4 PLA 0.6'
+values:
+  filament_type: 'PLA'
+  filament_soluble: false
+  filament_cost: 20
+  filament_density: 1.24
+  first_layer_bed_temperature: 65
+  bed_temperature: 65
+  first_layer_temperature: 215
+  temperature: 215
+  filament_diameter: 1.75
+  extrusion_multiplier: 0.972
+  pressure_advance: 'enabled'
+  min_fan_speed: 100
+  max_fan_speed: 100
+  full_fan_speed_layer: 0
+  slowdown_below_layer_time: 100
+  filament_minimal_purge_on_wipe_tower: 15
+  filament_max_volumetric_speed: 18

@@ -14,6 +14,8 @@
 #include <QUuid>
 #include <QVector>
 
+#include <algorithm>
+
 #include "PresetYaml.hpp"
 
 // Where presets live on disk and how one preset file is written. Shared by the
@@ -108,6 +110,7 @@ struct CustomPrinter
 {
     QString name;
     QString slug;
+    int tools = 1;
 };
 
 inline QString manifestPath()
@@ -126,7 +129,8 @@ inline QVector<CustomPrinter> customPrinters()
     for (const QJsonValue& value : entries) {
         const QJsonObject entry = value.toObject();
         printers.append({entry.value(QStringLiteral("name")).toString(),
-                         entry.value(QStringLiteral("slug")).toString()});
+                         entry.value(QStringLiteral("slug")).toString(),
+                         std::max(1, entry.value(QStringLiteral("tools")).toInt(1))});
     }
     return printers;
 }
@@ -145,30 +149,35 @@ inline QString vendorYaml(const QVector<CustomPrinter>& printers)
         "---\nkind: sheet\nid: pei_smooth\nname: PEI Smooth\ntype: pei_smooth\n");
     for (const CustomPrinter& printer : printers) {
         const QString name = yaml::quoted(printer.name);
+        const QString tools = QString::number(std::max(1, printer.tools));
         text += QStringLiteral("---\nkind: printer\ntechnology: FFF\nname: ") + name
               + QStringLiteral("\nid: NL_") + printer.slug
               + QStringLiteral("\nmodel:\n  base_model: NL_") + printer.slug
               + QStringLiteral("\n  model: NL_") + printer.slug
-              + QStringLiteral("_MODEL\ntool_count: 1\nfeatures: {}\n")
+              + QStringLiteral("_MODEL\ntool_count: ") + tools + QStringLiteral("\nfeatures: {}\n")
               + QStringLiteral("---\nkind: printer_config\nid: nl-") + printer.slug
               + QStringLiteral("\nname: ") + name
               + QStringLiteral("\nprinter: NL_") + printer.slug
               + QStringLiteral("\nlegacy_printer_model:\n- ") + name
-              + QStringLiteral("\ntool_count: 1\ntools:\n- tool: '0.4'\nsheet: pei_smooth\n");
+              + QStringLiteral("\ntool_count: ") + tools + QStringLiteral("\ntools:\n- tool: '0.4'\nsheet: pei_smooth\n");
     }
     return text;
 }
 
 /// Registers a printer under the user's own bundle and rewrites the manifest and
 /// the vendor description. An existing name keeps its slug, so a printer can be
-/// rewritten without becoming a second machine.
-inline QString addCustomPrinter(const QString& name)
+/// rewritten without becoming a second machine, and keeps the tool count it was
+/// given unless this call says otherwise.
+inline QString addCustomPrinter(const QString& name, int tools = 0)
 {
     QVector<CustomPrinter> printers = customPrinters();
     QString slug;
+    int existingTools = 0;
     for (const CustomPrinter& printer : printers) {
-        if (printer.name == name)
-            slug = printer.slug;
+        if (printer.name != name)
+            continue;
+        slug = printer.slug;
+        existingTools = printer.tools;
     }
     if (slug.isEmpty()) {
         slug = slugOf(name);
@@ -184,7 +193,13 @@ inline QString addCustomPrinter(const QString& name)
         };
         while (taken(slug))
             slug = base + QLatin1Char('-') + QString::number(suffix++);
-        printers.append({name, slug});
+        printers.append({name, slug, 1});
+    }
+
+    const int count = std::max(1, tools > 0 ? tools : (existingTools > 0 ? existingTools : 1));
+    for (CustomPrinter& printer : printers) {
+        if (printer.name == name)
+            printer.tools = count;
     }
 
     QJsonArray manifest;
@@ -192,6 +207,7 @@ inline QString addCustomPrinter(const QString& name)
         QJsonObject entry;
         entry.insert(QStringLiteral("name"), printer.name);
         entry.insert(QStringLiteral("slug"), printer.slug);
+        entry.insert(QStringLiteral("tools"), printer.tools);
         manifest.append(entry);
     }
     QJsonObject root;

@@ -10,10 +10,13 @@
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonValue>
+#include <QRegularExpression>
 #include <QSet>
+#include <QVector>
 
 #include <algorithm>
 
@@ -616,7 +619,12 @@ QJsonObject resolvePreset(const QString& kind, const QString& name, const KindIn
     if (found == index.constEnd())
         return {};
     const QHash<QString, QJsonObject> presets = *found;
-    QJsonObject merged;
+    // The chain runs from the preset up to the root it inherits, and the root is
+    // the least specific: merging in that order is what lets a child's value win
+    // over its parent's. Walked child-first and inserted as we go, the parent
+    // overwrites the child and every user override is lost -- which is how an
+    // imported Voron came out with the reference's generic Marlin start G-code.
+    QVector<QJsonObject> chain;
     QString current = name;
     QSet<QString> seen;
     while (!current.isEmpty() && !seen.contains(current)) {
@@ -624,12 +632,16 @@ QJsonObject resolvePreset(const QString& kind, const QString& name, const KindIn
         const auto entryFound = presets.constFind(current);
         if (entryFound == presets.constEnd())
             break;
-        const QJsonObject entry = *entryFound;
-        for (auto it = entry.constBegin(); it != entry.constEnd(); ++it) {
-            if (it.key() != QLatin1String("inherits"))
-                merged.insert(it.key(), it.value());
+        chain.append(*entryFound);
+        current = entryFound->value(QStringLiteral("inherits")).toString();
+    }
+
+    QJsonObject merged;
+    for (auto it = chain.crbegin(); it != chain.crend(); ++it) {
+        for (auto field = it->constBegin(); field != it->constEnd(); ++field) {
+            if (field.key() != QLatin1String("inherits"))
+                merged.insert(field.key(), field.value());
         }
-        current = entry.value(QStringLiteral("inherits")).toString();
     }
     return merged;
 }
@@ -664,8 +676,134 @@ QString withoutItems(QString yaml, const QString& block)
     return kept.join(QLatin1Char('\n'));
 }
 
-Report importPresets(const QString& sourceDirectory, SettingsModel& settings, bool write)
+// Engine defaults that must never be written under another slicer's name. The
+// dump below carries every setting of the tab, which is how a preset becomes a
+// complete description -- but `binary_gcode` defaults to true here, and a machine
+// imported with it set exported binary G-code and the slice runner wrote no file
+// at all. Only that one is dropped, and only when the reference never said it: a
+// broad filter also lost values the translator derives from a stated key (the tree
+// support branch diameter comes from `support_type`), which no rule could predict.
+QStringList dangerousDefaults()
 {
+    return {QStringLiteral("binary_gcode")};
+}
+
+QString withoutKeys(const QString& yaml, const QStringList& names)
+{
+    QStringList kept;
+    bool skipping = false;
+    for (const QString& line : yaml.split(QLatin1Char('\n'))) {
+        if (line.startsWith(QLatin1String("  ")) && !line.startsWith(QLatin1String("  -"))) {
+            skipping = names.contains(line.trimmed().section(QLatin1Char(':'), 0, 0));
+        }
+        if (!skipping)
+            kept.append(line);
+    }
+    return kept.join(QLatin1Char('\n'));
+}
+
+// A G-code template this engine refuses is worse than no template: one unresolvable
+// name makes the slice write no file at all, with the error naming two settings that
+// have nothing to do with it. Two rules, both taken from the catalogue generator:
+// a placeholder the engine has no setting for is either renamed to the name it has
+// here, or the whole template is dropped; and a `G92 E` in a layer-change template
+// is dropped while E is absolute, which is the combination the engine rejects.
+//
+// Measured on an imported Voron 2.4: `[bed_temperature_initial_layer_single]` and a
+// `G92 E0` before every layer each cost the whole slice.
+const QHash<QString, QString>& placeholderRenames()
+{
+    static const QHash<QString, QString> renames = {
+        {QStringLiteral("bed_temperature_initial_layer_single"),
+         QStringLiteral("first_layer_bed_temperature")},
+        {QStringLiteral("bed_temperature_initial_layer"),
+         QStringLiteral("first_layer_bed_temperature")},
+        {QStringLiteral("nozzle_temperature_initial_layer"),
+         QStringLiteral("first_layer_temperature")},
+        {QStringLiteral("nozzle_temperature"), QStringLiteral("temperature")},
+        {QStringLiteral("initial_layer_print_height"), QStringLiteral("first_layer_height")},
+        {QStringLiteral("retraction_length"), QStringLiteral("retract_length")},
+        {QStringLiteral("retraction_speed"), QStringLiteral("retract_speed")},
+        {QStringLiteral("z_hop"), QStringLiteral("retract_lift")},
+    };
+    return renames;
+}
+
+// Placeholders the engine resolves without them being settings: `[layer_z]` is a
+// position, not an option, and a rule that only accepted setting names dropped the
+// layer-change template of every machine imported. The names are the same list the
+// catalogue generator checks against.
+bool isEnginePlaceholder(const QString& name)
+{
+    static const QSet<QString> special = {
+        QStringLiteral("layer_z"), QStringLiteral("layer_num"),
+        QStringLiteral("max_layer_z"), QStringLiteral("total_layer_count"),
+        QStringLiteral("current_extruder"), QStringLiteral("initial_extruder"),
+        QStringLiteral("initial_tool"), QStringLiteral("next_extruder"),
+        QStringLiteral("previous_extruder"), QStringLiteral("num_extruders"),
+        QStringLiteral("input_filename_base"), QStringLiteral("extruded_weight_total"),
+        QStringLiteral("timestamp"), QStringLiteral("version"),
+        QStringLiteral("first_layer_print_min"), QStringLiteral("first_layer_print_max"),
+        QStringLiteral("printer_preset"), QStringLiteral("print_preset"),
+        QStringLiteral("filament_preset"),
+    };
+    return special.contains(name);
+}
+
+QStringList gcodeTemplateKeys()
+{
+    return {QStringLiteral("start_gcode"), QStringLiteral("end_gcode"),
+            QStringLiteral("before_layer_gcode"), QStringLiteral("layer_gcode"),
+            QStringLiteral("toolchange_gcode"), QStringLiteral("between_objects_gcode"),
+            QStringLiteral("color_change_gcode"), QStringLiteral("pause_print_gcode"),
+            QStringLiteral("filament_start_gcode"), QStringLiteral("filament_end_gcode")};
+}
+
+// Returns the template rewritten, or an empty string when it has to go, with the
+// reason appended to `report` in the second case.
+QString settleTemplate(const QString& key, QString body, const SettingsModel& settings,
+                       bool absoluteE, const QString& scope, QStringList& report)
+{
+    static const QRegularExpression placeholder(QStringLiteral("\\[([a-z0-9_]+)\\]"));
+    QStringList unknown;
+    auto match = placeholder.globalMatch(body);
+    QStringList renames;
+    while (match.hasNext()) {
+        const QString name = match.next().captured(1);
+        if (!settings.blockOf(name).isEmpty() || isEnginePlaceholder(name))
+            continue;
+        const QString renamed = placeholderRenames().value(name);
+        if (!renamed.isEmpty()
+                && (!settings.blockOf(renamed).isEmpty() || isEnginePlaceholder(renamed))) {
+            renames.append(name);
+            continue;
+        }
+        if (!unknown.contains(name))
+            unknown.append(name);
+    }
+    if (!unknown.isEmpty()) {
+        report.append(QStringLiteral("%1: %2 dropped, placeholders this engine has no setting "
+                                     "for: %3")
+                          .arg(scope, key, unknown.join(QStringLiteral(", "))));
+        return {};
+    }
+    for (const QString& name : renames)
+        body.replace(QLatin1Char('[') + name + QLatin1Char(']'),
+                     QLatin1Char('[') + placeholderRenames().value(name) + QLatin1Char(']'));
+
+    if (absoluteE && (key == QLatin1String("before_layer_gcode")
+                      || key == QLatin1String("layer_gcode"))) {
+        static const QRegularExpression extruderReset(QStringLiteral("(^|\\n)\\s*G92\\s+E[0-9.]*"));
+        if (extruderReset.match(body).hasMatch()) {
+            report.append(QStringLiteral("%1: %2 dropped, a G92 E while E is absolute")
+                              .arg(scope, key));
+            return {};
+        }
+    }
+    return body;
+}
+
+Report importPresets(const QString& sourceDirectory, SettingsModel& settings, bool write){
     Report report;
     if (!QDir(sourceDirectory).exists()) {
         report.error = QStringLiteral("%1 is not a directory").arg(sourceDirectory);
@@ -782,10 +920,42 @@ Report importPresets(const QString& sourceDirectory, SettingsModel& settings, bo
             }
 
             // The engine's own writer produces the block: per-tool vectors as
-            // sequences, percentages with their sign, points as '0x0'. Every value
-            // of the tab goes in, exactly as the set-up flow writes its own bundle:
-            // a preset is a complete description, not a patch over engine defaults.
-            QString yaml = withoutItems(settings.valuesYaml(block, false), block);
+            // sequences, percentages with their sign, points as '0x0'. Only the
+            // keys the reference stated are kept; the rest would be this engine's
+            // defaults wearing the reference's name.
+            // Templates are settled against the machine's own E mode before the
+            // preset is written: one the engine refuses blanks the whole slice. The
+            // settled text goes back through applyImported, because the YAML below
+            // is read out of the settings model, not out of this map.
+            const bool absoluteE = !values.value(QStringLiteral("use_relative_e_distances")).toBool();
+            for (const QString& key : gcodeTemplateKeys()) {
+                const auto found = values.find(key);
+                if (found == values.end())
+                    continue;
+                const QString settled = settleTemplate(key, found.value().toString(), settings,
+                                                       absoluteE, sourceName, report.droppedTemplates);
+                if (settled.isEmpty())
+                    values.erase(found);
+                else if (settled != found.value().toString())
+                    found.value() = settled;
+                else
+                    continue;
+                if (settings.blockOf(key).isEmpty())
+                    continue;
+                settings.applyImported(key, settled);
+            }
+
+            QSet<QString> stated;
+            for (auto it = values.constBegin(); it != values.constEnd(); ++it)
+                stated.insert(it.key());
+
+            QStringList unwanted;
+            for (const QString& key : dangerousDefaults()) {
+                if (!stated.contains(key))
+                    unwanted.append(key);
+            }
+            QString yaml = withoutKeys(withoutItems(settings.valuesYaml(block, false), block),
+                                       unwanted);
             if (applied == 0 || yaml.isEmpty()) {
                 report.refused.append(QStringLiteral("%1: nothing this engine can hold")
                                           .arg(sourceName));

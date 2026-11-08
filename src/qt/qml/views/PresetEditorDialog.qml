@@ -39,9 +39,8 @@ Popup {
             return presetStore.currentPrinter
         return presetStore.currentPrint
     }
-    readonly property bool currentIsUser: !root.printerTab
-                                          && presetStore.presetIsUser(root.presetKind,
-                                                                      root.currentName)
+    readonly property bool currentIsUser: presetStore.presetIsUser(root.presetKind,
+                                                                    root.currentName)
     readonly property int modified: settingsModel.modifiedCount(root.tab)
     readonly property var groups: root.filterText.length > 0
                                   ? settingsModel.groups("", "", root.filterText)
@@ -114,14 +113,12 @@ Popup {
     }
 
     function save() {
-        if (root.printerTab) {
-            root.message = "A second printer preset would duplicate this machine. "
-                         + "Add a printer instead."
-            return
-        }
         if (!root.currentIsUser) {
-            root.message = "This preset ships with the engine, so it cannot be "
-                         + "overwritten. Give it your own name to save a copy."
+            root.message = root.printerTab
+                         ? "This machine came from the catalogue, so it cannot be overwritten "
+                           + "here. Give it a name to save it as your own machine."
+                         : "This preset ships with the engine, so it cannot be "
+                           + "overwritten. Give it your own name to save a copy."
             return
         }
         const error = presetStore.saveUserPreset(root.presetKind, root.currentName, root.tab)
@@ -132,11 +129,6 @@ Popup {
     }
 
     function saveAs() {
-        if (root.printerTab) {
-            root.message = "A second printer preset would duplicate this machine. "
-                         + "Add a printer instead."
-            return
-        }
         const name = root.nameField.trim()
         if (name.length === 0) {
             root.message = "Give the preset a name first"
@@ -146,6 +138,13 @@ Popup {
         root.message = error
         if (error.length > 0)
             return
+        // A saved machine is a machine: it has to become the one selected, or
+        // the editor would keep editing the catalogue entry it was copied from.
+        if (root.printerTab) {
+            presetStore.selectPrinter(name)
+            root.nameField = name
+            return
+        }
         root.reloadWith(root.tab === "process" ? name : presetStore.currentPrint,
                         root.tab === "filament" ? name : presetStore.currentFilament)
     }
@@ -417,6 +416,12 @@ Popup {
                 }
 
                 Button {
+                    text: "Compare…"
+                    hint: "Another preset of this kind, setting by setting"
+                    onClicked: compareDialog.openForKind(root.presetKind, root.currentName)
+                }
+
+                Button {
                     text: "Add printer"
                     hint: "Create a new machine from the current settings"
                     visible: root.printerTab
@@ -429,6 +434,10 @@ Popup {
                     font.pixelSize: Type.sizeCaption
                     color: Colors.textTertiary
                 }
+            }
+
+            PresetDiffDialog {
+                id: compareDialog
             }
 
             // A tool changer loads one material per tool. Comma-separated preset

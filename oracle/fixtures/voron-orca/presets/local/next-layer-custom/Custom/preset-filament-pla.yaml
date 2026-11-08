@@ -1,0 +1,22 @@
+kind: filament
+id: 08864cb5-31ba-49ca-8bfc-d54ff9695002
+name: 'PLA'
+values:
+  filament_type: 'PLA'
+  filament_soluble: false
+  filament_cost: 20
+  filament_density: 1.24
+  first_layer_bed_temperature: 55
+  bed_temperature: 55
+  first_layer_temperature: 215
+  temperature: 215
+  filament_diameter: 1.75
+  extrusion_multiplier: 0.985
+  pressure_advance: 'enabled'
+  pressure_advance_value: 0.05
+  min_fan_speed: 100
+  max_fan_speed: 100
+  full_fan_speed_layer: 0
+  slowdown_below_layer_time: 100
+  filament_minimal_purge_on_wipe_tower: 15
+  filament_max_volumetric_speed: 12

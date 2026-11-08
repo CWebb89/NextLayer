@@ -230,6 +230,8 @@ Window {
           action: "Export the current configuration" },
         { id: "importConfig", keys: "Ctrl+Shift+I", key: Qt.Key_I, mods: "Ctrl+Shift", group: "File",
           action: "Load a configuration file" },
+        { id: "exportPresets", keys: "Ctrl+Shift+B", key: Qt.Key_B, mods: "Ctrl+Shift", group: "File",
+          action: "Export the preset bundle" },
         { id: "preferences", keys: "Ctrl+,", key: Qt.Key_Comma, mods: "Ctrl", group: "Application",
           action: "Open preferences" },
         { id: "shortcuts", keys: "?", key: Qt.Key_Question, mods: "Shift", group: "Application",
@@ -330,6 +332,7 @@ Window {
         case "slice": footer.startSlice(); break
         case "export": exportDialog.open(); break
         case "exportConfig": exportConfigDialog.open(); break
+        case "exportPresets": exportPresetsDialog.open(); break
         case "importConfig": importConfigDialog.open(); break
         case "calibration": root.calibrationVisible = true; break
         case "sendToPrinter": printHostDialog.open(); break
@@ -1275,6 +1278,10 @@ Window {
                 setupFlow.reopen()
             }
 
+            onMachineChooserRequested: setupFlow.reopen()
+
+            onChangesRequested: (tab) => presetDiffDialog.openFor(tab)
+
             Behavior on x { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
         }
 
@@ -1792,6 +1799,7 @@ Window {
             { id: "sendToPrinter", label: "Send to printer…", keys: "" },
             { id: "exportConfig", label: "Export configuration…", keys: "Ctrl+Shift+E" },
             { id: "importConfig", label: "Load configuration…", keys: "Ctrl+Shift+I" },
+            { id: "exportPresets", label: "Export preset bundle…", keys: "Ctrl+Shift+B" },
             { id: "sepCalibration", label: "" },
             { id: "calibration", label: "Calibration…", keys: "" },
             { id: "sep2", label: "" },
@@ -2124,6 +2132,25 @@ Window {
         onAccepted: {
             const error = presetStore.importConfiguration(selectedFile)
             root.setStatus(error.length > 0 ? error : "loaded the configuration")
+        }
+    }
+
+    // A machine is a package: its printer preset, the processes and materials it
+    // resolves with, and the manifest that names them. One preset on its own is
+    // not a shareable machine, so this writes the whole bundle directory.
+    FolderDialog {
+        id: exportPresetsDialog
+        title: "Export the preset bundle into"
+        acceptLabel: "Export here"
+        onAccepted: {
+            const error = presetStore.exportBundle(selectedFolder)
+            if (error.length > 0) {
+                root.setStatus(error)
+                return
+            }
+            const summary = presetStore.bundleSummary()
+            root.setStatus("exported " + summary.vendor + ": " + summary.presets
+                           + " preset files for " + summary.machines + " machine(s)")
         }
     }
 

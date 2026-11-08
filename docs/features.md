@@ -111,18 +111,19 @@ shape; a second material needs the multi-slot UI, which is not built.
 | Modified counters per tab and per sub-tab | done |
 | Preset dropdowns (system / user profiles) | done — Printer / Process / Filament, cascading + auto-resolve via the engine's own bundle |
 | Preset editor dialog behind the gear | done — tabs, preset combo, revert, Save / Save as / Rename / Delete, search across every tab, Add printer |
-| One editor per setting type | done — boolean, closed and open enums, numbers with the definition's range and units, mm/% switch, X/Y pairs, point lists, bed shape, colour, file picker, G-code substitutions, string lists, multi-line G-code |
+| One editor per setting type | done — boolean as a square checkbox, closed and open enums, numbers with the definition's range and units, mm/% switch, X/Y pairs, point lists, bed shape, colour, file picker, G-code substitutions, string lists, multi-line G-code |
 | Per-setting revert | done — the ⟲ on a modified row |
 | Revert a whole tab from the dialog | done |
 | Rename / delete a user preset | done — both refuse a vendor preset and say why |
 | Add a custom printer (bed size, height) | done — writes a self-contained vendor bundle (vendor + printer + tool + sheet + printer/process/tool/filament presets) from the current settings, then selects it; hand-authoring the 3.0 YAML was the risk and it is gone |
 | Filament library | done — 29 generic materials (PLA, PLA Matte/Silk/High Speed/CF, PETG, PETG HF/CF, ABS, ASA, PC, PCTG, PA, PA-CF, PP/PP-CF/PP-GF, PPA-CF/PPA-GF, PE/PE-CF, PHA, SBS, CoPE, EVA, HIPS, PVA, BVOH, TPU) converted from the reference's own system filament library and installed into a machine's bundle when that machine is created or first seen. The engine scopes a filament to the vendor bundle it lives in, so the library ships as data (`src/qt/assets/filaments`, built by `tools/filament-library/generate.py`) and is copied beside the machine rather than resolved globally |
-| Save a *printer* preset from the Printer tab | staged — a second printer preset on an existing hardware config appears as a duplicate profile name, so a new machine is the supported route |
+| Save a *printer* preset from the Printer tab | done — Save as writes a machine preset into the user's own bundle under the name typed, keeps the parent's model condition (a child without it is a machine the engine never lists) and selects it. A catalogue machine is copied, never overwritten |
 | Preset visibility modes (Simple / Advanced / Expert) | n/a by decision — every setting is shown from the first launch, as asked for: no mode field, no gating. What makes 347 flat settings navigable is search across every tab (results labelled Tab › Sub-tab › Group), the per-tab "Advanced" sub-tabs holding the 17 legacy/identity settings, and the engine's own description on every row's hover |
 | Physical printer / print host setup | needs-engine — no printer-host API in the app layer yet |
-| Preset export bundle, compare-presets diff | not started |
-| Multi-extruder per-slot editing | staged — the settings model collapses filament values to slot 0, which matches a single-tool machine |
-| "Compare presets" / diff view | not started |
+| Preset export bundle | done — File ▸ Export preset bundle (Ctrl+Shift+B) writes the current machine's whole vendor bundle, every preset file and manifest included, into a folder; `--export-bundle DIR` does the same headlessly. One preset alone is not a shareable machine, because the engine resolves a bundle as a package |
+| Machine list: the user's own machines, and the catalogue | done — the Printer dropdown lists the machines in the user's own bundles (a real directory in their preset tree, not the generated catalogue and not the engine's linked bundle), with the machine in force always shown; the grid button beside it opens the setup flow's full catalogue of 460 machines |
+| Multi-extruder per-slot editing | done — one Filament row per tool in the panel, per-tool pickers in the editor, `resolve()` honours the chosen material for every tool, and a machine created by the set-up flow or by an import takes a tool count (`printers.json` carries it, `vendor.yaml` writes `tool_count`) |
+| "Compare presets" | done — the preset editor's Compare… opens two of the same kind side by side, every value they set differently; the panel's "N changed" label opens the same window in its pending-edits mode |
 | Per-object override editor | needs-engine — object config containers exist in Domain, no plater API |
 | `FloatOrPercentage` unit switch (mm ↔ %) | done — a two-state button beside the value, which rewrites the stored value in the other unit |
 | Keyboard shortcut map | not started — only Ctrl+O, Space, Return, R, Esc |
@@ -348,7 +349,8 @@ engine resolves it like any other preset.
 | --- | --- |
 | Machine geometry (bed size, height, nozzle, extruder count, limits) | done — 428 machines, every one sliced end to end |
 | Per-vendor printer listing and search | done — 460 hardware configs in an isolated `--dump-presets`, no duplicate names, `tools/check` slices one of them |
-| Process and filament settings | done — each machine slices with the vendor's own default process and filament preset, not this app's generic profile |
+| Process and filament settings | done — each machine slices with the vendor's own default process and filament preset, not this app's generic profile; the vendor's layer-height family (0.05 mm Ultradetail … 0.30 mm Superdraft, five of them) is published beside it, so a machine offers a choice of quality instead of one profile: 544 process presets across the catalogue |
+| Filament library everywhere | done — the same 29 generic materials the app ships for its own machine are written into every vendor bundle (2,233 filament presets), because the engine scopes a filament to the bundle it lives in and a shared list does not exist |
 | Vendor start/end G-code | done for all but nine machines — a template that names an option this build does not have now loses only the lines carrying that name instead of being dropped whole, so a machine keeps its purge, home and mesh even when one firmware macro is unsupported. 372 of the 381 templates that used to be dropped whole are published with their remaining lines; nine `start_gcode` templates still drop entirely because every line in them was unsupported. Each loss is named in the catalog run report |
 | Per-vendor profile UI (vendor > machine > variant tree) | staged — the flat searchable list stands in for a grouped picker |
 

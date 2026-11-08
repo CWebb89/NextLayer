@@ -12,6 +12,7 @@ ToolRail 1.0 ToolRail.qml
 TransformPanel 1.0 TransformPanel.qml
 SettingsTree 1.0 SettingsTree.qml
 PresetEditorDialog 1.0 PresetEditorDialog.qml
+PresetDiffDialog 1.0 PresetDiffDialog.qml
 BedShapeDialog 1.0 BedShapeDialog.qml
 ColourDialog 1.0 ColourDialog.qml
 SubstitutionsDialog 1.0 SubstitutionsDialog.qml
