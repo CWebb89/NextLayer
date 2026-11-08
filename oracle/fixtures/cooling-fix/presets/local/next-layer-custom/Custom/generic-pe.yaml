@@ -1,0 +1,27 @@
+kind: filament
+id: 'nl-generic-pe'
+name: 'Generic PE'
+values:
+  bed_temperature: 55
+  cooling_perimeter_transition_distance: 10.0
+  cooling_slowdown_logic: 'uniform_cooling'
+  disable_fan_first_layers: 1
+  end_filament_gcode: "; filament end gcode \n\n"
+  extrusion_multiplier: 1.0
+  filament_cost: 20.0
+  filament_density: 1.24
+  filament_diameter: 1.75
+  filament_max_volumetric_speed: 12.0
+  filament_minimal_purge_on_wipe_tower: 15.0
+  filament_soluble: false
+  filament_type: 'PE'
+  filament_vendor: 'Generic'
+  first_layer_bed_temperature: 55
+  first_layer_temperature: 220
+  full_fan_speed_layer: 0
+  max_fan_speed: 100
+  min_fan_speed: 100
+  min_print_speed: 20.0
+  slowdown_below_layer_time: 4
+  start_filament_gcode: "; filament start gcode\n{if  (bed_temperature[current_extruder] >45)||(first_layer_bed_temperature[current_extruder] >45)}M106 P3 S255\n{elsif(bed_temperature[current_extruder] >35)||(first_layer_bed_temperature[current_extruder] >35)}M106 P3 S180\n{endif}\n"
+  temperature: 220
