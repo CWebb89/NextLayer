@@ -294,7 +294,10 @@ same parameters, and the same nine tests plus a squish ladder.
 Every test is built from the engine's primitives plus the plate's own layer
 G-code, so it slices, previews and sends like any plate. The band command is
 chosen by the printer's own `gcode_flavor`, because `SET_PRESSURE_ADVANCE` on a
-Marlin machine is an error and `M900` on Klipper stops the print. Nothing on the
+Marlin machine is an error and `M900` on Klipper stops the print, and the
+headless selftest measures both flavours: the catalog machine as it ships
+(Marlin) and the same machine told it speaks Klipper, where every band command
+the suite emits has to reach the G-code. Nothing on the
 plate is a borrowed mesh: the reference's test models carry its logo printed in
 the geometry, and this suite builds its own.
 
@@ -311,9 +314,9 @@ removes the test you just built rather than nothing.
 | Retraction | start / end / step in mm | done — defaults 0 / 2 / 0.1, two towers 60 mm apart, one band per length |
 | VFA | start / end / step in mm/s, auto-adjust, model | done — defaults 40 / 200 / 10; feed override per ring. Auto-adjust and auto-scale are accepted but adjust nothing yet |
 | Cornering | model (Ringing / Fast / SCV-V2), start / end | done — defaults 1 / 15, `SET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY` on Klipper, `M205 J` on Marlin, `M566` on RepRap |
-| Input shaping: frequency | model, shaper type, X / Y frequency start and end, damping | done — defaults 15-110 Hz on both axes, damp 0.15; `SET_INPUT_SHAPER` per band, five Klipper shaper types |
+| Input shaping: frequency | model, shaper type, X / Y frequency start and end, damping | done — defaults 15-110 Hz on both axes, damp 0.15; `SET_INPUT_SHAPER` per band, five Klipper shaper types. That command is Klipper's alone: on Marlin or RepRap the test refuses and names the flavour rather than printing a command the firmware ignores, because their `M593` takes different arguments on each and is not implemented |
 | Input shaping: damping | model, shaper type, frequency X / Y, damping start and end | done — frequency 30 Hz, damp 0.00-0.40 |
-| First layer squish | No reference equivalent; first-layer calibration elsewhere is a single line | done — six patches, each at its own `SET_GCODE_OFFSET Z`, so the ladder is a real Z test rather than six identical patches |
+| First layer squish | No reference equivalent; first-layer calibration elsewhere is a single line | done — six patches, each exactly one layer tall and starting on the plate's own layer grid (one first layer, then one layer each), so a 0.3 mm profile gets 0.3 mm patches instead of a 0.2 mm patch that slices to no layers at all. Each patch carries its own `SET_GCODE_OFFSET Z`, so the ladder is a real Z test rather than six identical patches |
 | Numbers printed on the plate | always on for PA and the towers | done — the value is extruded as geometry (the app's own text object) in a row in front of the tower, so a band is identifiable in the preview and on the bed |
 | Save the measured value | The reference four-step wizard ends by writing the value into a preset and re-slicing | partly — "Apply to `<setting>`" writes the measurement into the live settings (temperature, pressure advance, flow ratio, max volumetric flow, retract length), where it shows as modified in the panel and rides the next preset save. The wizard's own coarse-then-fine re-run is not automated |
 

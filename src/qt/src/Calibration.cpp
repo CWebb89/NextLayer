@@ -113,6 +113,7 @@ QVariantList shaperChoices()
 struct Machine
 {
     Family family = Family::Klipper;
+    QString flavour;
     double nozzle = 0.4;
     double filament = 1.75;
     double flow = 1.0;
@@ -185,6 +186,9 @@ Machine machineProfile(SettingsModel* settings)
     machine.firstLayer = absoluteLength(get("first_layer_height"), machine.layer,
                                         machine.layer);
     machine.family = familyOf(get("gcode_flavor").toString());
+    machine.flavour = get("gcode_flavor").toString();
+    if (machine.flavour.isEmpty())
+        machine.flavour = QStringLiteral("marlin");
     return machine;
 }
 
@@ -865,26 +869,40 @@ QString Calibration::build(const QString& kind, const QVariantMap& values)
         // the squish is the gap the nozzle leaves, so it is the offset that
         // varies, and a negative one has to stay off the geometry or the plate
         // starts below the bed and never slices.
+        //
+        // The patch is exactly one layer tall and starts on a layer boundary of
+        // the profile about to slice it: the first patch is one first layer,
+        // every later one is one layer above the previous. A patch shorter than
+        // the layer height produces no layer at all and the plate fails to
+        // slice, which is what a fixed 0.2 mm patch did on a 0.3 mm profile; a
+        // patch that straddles a boundary contributes to two layers and its
+        // offset lands in the wrong one.
+        const double firstLayer = machine.firstLayer > 0.0 ? machine.firstLayer
+                                                          : (machine.layer > 0.0 ? machine.layer : 0.2);
+        const double layer = machine.layer > 0.0 ? machine.layer : 0.2;
         const double offsets[] = {0.0, -1.0, 1.0, -2.0, 2.0, -3.0};
         const int count = int(std::size(offsets));
-        for (int patch = 0; patch < count; ++patch) {
-            const int id = m_document->addShape(QStringLiteral("box"), size, size, 0.2);
+        double bottom = 0.0;
+        for (int index = 0; index < count; ++index) {
+            const double height = index == 0 ? firstLayer : layer;
+            const int id = m_document->addShape(QStringLiteral("box"), size, size, height);
             if (id < 0)
                 return failure("could not build a first layer patch");
             m_document->renameObject(id, QStringLiteral("Squish %1 (%2 mm)")
-                                              .arg(patch + 1)
-                                              .arg(number(offsets[patch] * step, 2)));
-            m_document->setPosition(id, QVector3D(centre.x(), centre.y(), float(patch * 0.2)));
-            m_document->addLayerGcode(patch * 0.2 + 0.02, QStringLiteral("gcode"),
+                                              .arg(index + 1)
+                                              .arg(number(offsets[index] * step, 2)));
+            m_document->setPosition(id, QVector3D(centre.x(), centre.y(), float(bottom)));
+            m_document->addLayerGcode(bottom + height * 0.5, QStringLiteral("gcode"),
                                       QStringLiteral("SET_GCODE_OFFSET Z=%1 ; calibration band %2")
-                                          .arg(number(offsets[patch] * step, 2))
-                                          .arg(patch + 1));
+                                          .arg(number(offsets[index] * step, 2))
+                                          .arg(index + 1));
+            bottom += height;
         }
-        m_document->addLayerGcode(count * 0.2 + 0.02, QStringLiteral("gcode"),
+        m_document->addLayerGcode(bottom + 0.02, QStringLiteral("gcode"),
                                   QStringLiteral("SET_GCODE_OFFSET Z=0 ; squish ladder done"));
         if (params.flag("numbers", true))
             addLabels(count, -(size / 2.0 + 14.0),
-                      [&](int patch) { return number(offsets[patch] * step, 2); });
+                      [&](int index) { return number(offsets[index] * step, 2); });
         return QStringLiteral("first layer: %1 patches from %2 mm to %3 mm of nozzle height")
             .arg(count)
             .arg(number(-3.0 * step, 2), number(2.0 * step, 2));
@@ -913,6 +931,14 @@ QString Calibration::build(const QString& kind, const QVariantMap& values)
 
     if (kind == QLatin1String("input_shaping_freq")
         || kind == QLatin1String("input_shaping_damp")) {
+        // SET_INPUT_SHAPER is a Klipper command. Marlin and RepRap Firmware do
+        // take input shaping, but through M593, whose arguments differ enough
+        // between the two that a tower built for one is a fiction on the other.
+        // Refusing says so; a tower that changes nothing between bands does not.
+        if (family != Family::Klipper)
+            return QStringLiteral("input shaping is a Klipper feature: this printer speaks %1, "
+                                  "where SET_INPUT_SHAPER is not a command. No test was built")
+                .arg(machine.flavour);
         const bool damping = kind == QLatin1String("input_shaping_damp");
         const QString shaper = params.text("shaper", "mzv");
         const double startX = params.number("start_x", params.number("freq_x", 30));

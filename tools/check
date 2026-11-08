@@ -652,21 +652,38 @@ end
 # Calibration gate: every test builds a plate and the towers actually change
 # something between bands. The change is the plate's own layer G-code, so a
 # marker that never reaches the G-code is a calibration tower that prints flat.
+#
+# The band command depends on the firmware flavour, so the suite is measured
+# twice: once on the catalog machine as it ships (Marlin, where the two input
+# shaping tests refuse themselves with a reason) and once with that same machine
+# told it speaks Klipper, which is where all twelve build and the SET_* commands
+# have to appear.
 set -l cal_cfg /tmp/nl-check-calibration.json
-rm -f $cal_cfg
-env XDG_DATA_HOME=$tools_home $bin --printer 'Anycubic Kobra 2 0.4' --process $catalog_process --filament $catalog_filament \
-    --dump-config $cal_cfg >/dev/null 2>&1
-set -l cal_out (env $bin --calibration-test $cal_cfg 2>&1 | grep -E '^(temperature|pressure_advance|flow|max_flow|vfa|cornering|input_shaping_freq|input_shaping_damp|retraction|first_layer|calibration):')
-set -l cal_rc $status
-set -l cal_summary (string match -r 'calibration: ([0-9]+) test\(s\) built and sliced' -- $cal_out)
-if test $cal_rc -ne 0
-    __bad "calibration: "(string join '; ' -- $cal_out)
-else if test (count $cal_summary) -lt 2
-    __bad "calibration: the summary line is missing from "(string join '; ' -- $cal_out)
-else if test $cal_summary[2] -lt 12
-    __bad "calibration: only $cal_summary[2] of the 12 tests built"
-else
-    __ok "calibration: $cal_summary[2] test(s) built and sliced, every band command in the G-code"
+for cal_flavour in klipper marlin
+    rm -f $cal_cfg
+    set -l cal_extra
+    if test $cal_flavour = klipper
+        set cal_extra --set gcode_flavor=klipper
+    end
+    env XDG_DATA_HOME=$tools_home $bin --printer 'Anycubic Kobra 2 0.4' --process $catalog_process --filament $catalog_filament \
+        $cal_extra --dump-config $cal_cfg >/dev/null 2>&1
+    set -l cal_out (env $bin --calibration-test $cal_cfg 2>&1 | grep -E '^(temperature|pressure_advance|flow|max_flow|vfa|cornering|input_shaping_freq|input_shaping_damp|retraction|first_layer|calibration):')
+    set -l cal_rc $status
+    set -l cal_summary (string match -r 'calibration: ([0-9]+) test\(s\) built and sliced' -- $cal_out)
+    set -l cal_refused (string match -r 'refused on' -- $cal_out)
+    if test $cal_rc -ne 0
+        __bad "calibration ($cal_flavour): "(string join '; ' -- $cal_out)
+    else if test (count $cal_summary) -lt 2
+        __bad "calibration ($cal_flavour): the summary line is missing from "(string join '; ' -- $cal_out)
+    else if test (math "$cal_summary[2] + "(count $cal_refused)) -lt 12
+        __bad "calibration ($cal_flavour): only $cal_summary[2] of the 12 tests built, and "(count $cal_refused)" refused"
+    else if test $cal_flavour = klipper; and test (count $cal_refused) -gt 0
+        __bad "calibration ($cal_flavour): $cal_summary[2] built but "(count $cal_refused)" refused on a machine that speaks the command"
+    else if test $cal_flavour = marlin; and test (count $cal_refused) -ne 2
+        __bad "calibration ($cal_flavour): expected the two input shaping tests to refuse themselves, "(count $cal_refused)" did"
+    else
+        __ok "calibration ($cal_flavour): $cal_summary[2] test(s) built and sliced, "(count $cal_refused)" refused as unsupported, every band command in the G-code"
+    end
 end
 
 # Settings gate: the sidebar has to expose the engine's own config, not a

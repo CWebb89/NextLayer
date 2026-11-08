@@ -11,6 +11,8 @@
 #include "SliceRuntime.hpp"
 
 #include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QTemporaryDir>
 
 #include "Scratch.hpp"
@@ -1348,36 +1350,80 @@ int runCalibrationSelftest(const QString& configPath, const QString& dataDir)
     }
     next_layer::Calibration calibration(&document, &settings);
 
+    enum class Firmware { Klipper, Marlin, RepRap };
+    const QString flavour = [&configPath] {
+        QFile file(configPath);
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+            return QString();
+        const QJsonObject configuration = QJsonDocument::fromJson(file.readAll())
+                                              .object()
+                                              .value(QStringLiteral("configuration"))
+                                              .toObject();
+        return configuration.value(QStringLiteral("printer_settings"))
+            .toObject()
+            .value(QStringLiteral("gcode_flavor"))
+            .toString();
+    }();
+    Firmware firmware = Firmware::Marlin;
+    if (flavour.startsWith(QLatin1String("klipper")))
+        firmware = Firmware::Klipper;
+    else if (flavour.startsWith(QLatin1String("reprap"))
+             || flavour.startsWith(QLatin1String("smoothie"))
+             || flavour.startsWith(QLatin1String("griffin")))
+        firmware = Firmware::RepRap;
+
     struct Expectation
     {
         const char* kind;
-        const char* marker;
+        const char* klipperMarker;
+        const char* marlinMarker;
+        const char* reprapMarker;
+        bool klipperOnly;
         int minimumBands;
         int minimumObjects;
         QVariantMap params;
     };
     const Expectation expectations[] = {
-        {"temperature", "M104 S", 6, 1, {}},
-        {"pressure_advance", "M900 K", 6, 1, {{QStringLiteral("method"), QStringLiteral("tower")}}},
-        {"pressure_advance", "M900 K", 6, 1, {{QStringLiteral("method"), QStringLiteral("line")}}},
-        {"pressure_advance", "M900 K", 6, 1, {{QStringLiteral("method"), QStringLiteral("pattern")}}},
-        {"flow", "M221 S", 5, 6, {}},
-        {"max_flow", "M220 S", 6, 6, {}},
-        {"vfa", "M220 S", 6, 6, {}},
-        {"cornering", "M205 J", 6, 6, {}},
-        {"input_shaping_freq", "SET_INPUT_SHAPER", 6, 6, {}},
-        {"input_shaping_damp", "SET_INPUT_SHAPER", 4, 6, {}},
-        {"retraction", "M207 S", 6, 6, {}},
-        {"first_layer", "", 6, 6, {}},
+        {"temperature", "M104 S", "M104 S", "M104 S", false, 6, 1, {}},
+        {"pressure_advance", "SET_PRESSURE_ADVANCE", "M900 K", "M572 D0 S", false, 6, 1,
+         {{QStringLiteral("method"), QStringLiteral("tower")}}},
+        {"pressure_advance", "SET_PRESSURE_ADVANCE", "M900 K", "M572 D0 S", false, 6, 1,
+         {{QStringLiteral("method"), QStringLiteral("line")}}},
+        {"pressure_advance", "SET_PRESSURE_ADVANCE", "M900 K", "M572 D0 S", false, 6, 1,
+         {{QStringLiteral("method"), QStringLiteral("pattern")}}},
+        {"flow", "M221 S", "M221 S", "M221 S", false, 5, 6, {}},
+        {"max_flow", "M220 S", "M220 S", "M220 S", false, 6, 6, {}},
+        {"vfa", "M220 S", "M220 S", "M220 S", false, 6, 6, {}},
+        {"cornering", "SET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY", "M205 J", "M566", false, 6,
+         6, {}},
+        {"input_shaping_freq", "SET_INPUT_SHAPER", "", "", true, 6, 6, {}},
+        {"input_shaping_damp", "SET_INPUT_SHAPER", "", "", true, 4, 6, {}},
+        {"retraction", "SET_RETRACTION", "M207 S", "M207 S", false, 6, 6, {}},
+        {"first_layer", "SET_GCODE_OFFSET Z=", "SET_GCODE_OFFSET Z=", "SET_GCODE_OFFSET Z=", false,
+         6, 6, {}},
     };
 
     int built = 0;
     for (const Expectation& expectation : expectations) {
+        const char* marker = firmware == Firmware::Klipper ? expectation.klipperMarker
+                           : firmware == Firmware::RepRap  ? expectation.reprapMarker
+                                                           : expectation.marlinMarker;
         const QString message = calibration.build(QString::fromLatin1(expectation.kind),
                                                   expectation.params);
         if (message.isEmpty() || message.contains(QLatin1String("not a calibration test"))) {
             std::fprintf(stderr, "%s: %s\n", expectation.kind, qPrintable(message));
             return 1;
+        }
+        if (expectation.klipperOnly && firmware != Firmware::Klipper) {
+            if (!message.contains(QLatin1String("Klipper feature"))) {
+                std::fprintf(stderr,
+                             "%s: built a plate on %s, which has no command for it\n",
+                             expectation.kind, qPrintable(flavour));
+                return 1;
+            }
+            std::printf("%s: refused on %s -- %s\n", expectation.kind, qPrintable(flavour),
+                        message.toUtf8().constData());
+            continue;
         }
         if (document.count() < expectation.minimumObjects) {
             std::fprintf(stderr, "%s built %d object(s), expected at least %d\n", expectation.kind,
@@ -1404,7 +1450,7 @@ int runCalibrationSelftest(const QString& configPath, const QString& dataDir)
         QList<double> temperatures;
         while (!file.atEnd()) {
             const QByteArray line = file.readLine();
-            if (!line.contains(expectation.marker))
+            if (!line.contains(marker))
                 continue;
             ++markers;
             if (line.startsWith("M104 S")) {
@@ -1415,7 +1461,7 @@ int runCalibrationSelftest(const QString& configPath, const QString& dataDir)
         }
         std::printf("%s: %d object(s), %d band command(s) in the G-code -- %s\n", expectation.kind,
                     document.count(), markers, message.toUtf8().constData());
-        if (!expectation.marker[0])
+        if (!marker[0])
             continue;
         if (markers < expectation.minimumBands) {
             std::fprintf(stderr,
