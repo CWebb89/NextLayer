@@ -218,6 +218,15 @@ alongside, and have the updater check it against a public key baked into the bin
 That is roughly a day's work and it is the difference between "an updater" and "a
 supply chain".
 
+The update check used to segfault before it reached the network. The engine's
+dependency tree builds its own `libssl.a`/`libcrypto.a`, the executable exports
+dynamic symbols, so Qt's TLS plugin bound to that static copy while `libssl.so.3`
+used the system one; loading the default CA bundle dereferenced the mismatch.
+`--exclude-libs,libssl.a` and `--exclude-libs,libcrypto.a` in
+`src/qt/CMakeLists.txt` keep every OpenSSL call on the system library, and
+`LD_DEBUG=bindings` is what showed the wrong binding. Until a release exists the
+manifest is a 404, which the updater reports as "up to date", not as a failure.
+
 Also: keep the version in one place. `NEXT_LAYER_VERSION` in
 `src/qt/CMakeLists.txt` is the source of truth, and `tools/release` now reads it
 and refuses a mismatch — it used to stamp `0.3.0` onto a binary built as `0.1.0`,

@@ -114,7 +114,15 @@ target_link_libraries(next-layer-qt PRIVATE
     Qt6::WebEngineQuick
 )
 
-target_link_options(next-layer-qt PRIVATE -Wl,--wrap=glewInit)
+target_link_options(next-layer-qt PRIVATE
+    -Wl,--wrap=glewInit
+# The engine's dependency tree builds a static OpenSSL, and this executable
+# exports dynamic symbols, so Qt's TLS plugin was binding to that copy while
+# libssl.so.3 used the system one; loading the default CA bundle segfaulted.
+# Hiding the static archives keeps every OpenSSL call on the system library.
+    "LINKER:--exclude-libs,libssl.a"
+    "LINKER:--exclude-libs,libcrypto.a"
+)
 
 # STEP goes through the engine's OCCT wrapper, which is a module library it looks
 # for beside the executable. Built without it beside the binary, every STEP file

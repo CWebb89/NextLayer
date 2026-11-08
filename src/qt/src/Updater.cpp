@@ -156,10 +156,14 @@ bool Updater::checkSync(const QString& channel, ReleaseInfo& out)
     loop.exec();
 
     const QByteArray body = reply->readAll();
-    const QString failure = reply->error() == QNetworkReply::NoError
-                                ? QString()
-                                : reply->errorString();
+    const QNetworkReply::NetworkError error = reply->error();
+    const QString failure = error == QNetworkReply::NoError ? QString() : reply->errorString();
     reply->deleteLater();
+
+    if (error == QNetworkReply::ContentNotFoundError) {
+        out = ReleaseInfo();
+        return false;
+    }
 
     if (!failure.isEmpty()) {
         out.error = failure;
