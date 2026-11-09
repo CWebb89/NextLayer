@@ -123,7 +123,7 @@ Card {
             }
 
             Text {
-                Layout.preferredWidth: 60
+                Layout.preferredWidth: 66
                 horizontalAlignment: Text.AlignRight
                 visible: !root.rangeMode
                 text: "Time"
@@ -134,7 +134,7 @@ Card {
             }
 
             Text {
-                Layout.preferredWidth: 36
+                Layout.preferredWidth: 48
                 horizontalAlignment: Text.AlignRight
                 visible: !root.rangeMode
                 text: "%"
@@ -145,7 +145,7 @@ Card {
             }
 
             Text {
-                Layout.preferredWidth: 90
+                Layout.preferredWidth: 96
                 horizontalAlignment: Text.AlignRight
                 visible: !root.rangeMode
                 text: "Usage"
@@ -205,7 +205,7 @@ Card {
 
                     Text {
                         Layout.alignment: Qt.AlignVCenter
-                        Layout.preferredWidth: 60
+                        Layout.preferredWidth: 66
                         horizontalAlignment: Text.AlignRight
                         visible: !root.rangeMode
                         text: root.clock(Number(legendRow.modelData.seconds))
@@ -216,7 +216,7 @@ Card {
 
                     Text {
                         Layout.alignment: Qt.AlignVCenter
-                        Layout.preferredWidth: 36
+                        Layout.preferredWidth: 48
                         horizontalAlignment: Text.AlignRight
                         visible: !root.rangeMode
                         text: Number(legendRow.modelData.percent).toFixed(1) + "%"
@@ -227,7 +227,7 @@ Card {
 
                     Text {
                         Layout.alignment: Qt.AlignVCenter
-                        Layout.preferredWidth: 90
+                        Layout.preferredWidth: 96
                         horizontalAlignment: Text.AlignRight
                         visible: !root.rangeMode
                         text: root.length(legendRow.modelData.lengthMm) + " "
@@ -346,7 +346,7 @@ Card {
 
                     Text {
                         Layout.alignment: Qt.AlignVCenter
-                        Layout.preferredWidth: 60
+                        Layout.preferredWidth: 66
                         horizontalAlignment: Text.AlignRight
                         text: Number(optionRow.modelData.seconds) > 0
                               ? root.clock(Number(optionRow.modelData.seconds)) : ""

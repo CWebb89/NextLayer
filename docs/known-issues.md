@@ -26,12 +26,15 @@ complete inventory, this is the part you need before you start a print.
   the variable layer height, the painted facets and the timeline markers -- and
   this app reads all of that back. A *Bambu/Orca* project keeps an object's
   settings as plain metadata in `Metadata/model_settings.config` under that
-  slicer's own names; what this engine has a definition for is restored, the rest
-  is named in the status bar and left out. The names it cannot map are the ones
-  that mean the same thing under a different name -- `sparse_infill_density` for
-  `fill_density`, `wall_loops` for `perimeters`, `enable_support` for
-  `support_material` -- and that table is not written, because guessing it would
-  change prints silently. `docs/features.md` has the measured state of both.
+  slicer's own names, and `ForeignSettings` translates the ones that mean the same
+  thing under a different word (`sparse_infill_density` → `fill_density`,
+  `wall_loops` → `perimeters`, `enable_support` → `support_material`,
+  `support_type` → `support_material_style`, and the differing `brim_type` and
+  `seam_position` values). Settings describing behaviour this engine does not have
+  -- skeleton and skin infill density, support spacing given in millimetres,
+  filament mapping -- are listed in `ForeignSettings.cpp` and dropped; a name
+  nothing here recognises is reported in the status bar. `docs/features.md` has the
+  measured state of both.
 - **Opening a single-object 3MF now honours the file.** A 3MF is treated as a
   scene with its own placement rather than as a mesh to drop on the bed, which is
   what the importer did before; an object exported from CAD at the origin opens at

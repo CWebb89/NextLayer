@@ -149,6 +149,9 @@ Rectangle {
         spacing: Metrics.xs
         clip: true
         boundsBehavior: Flickable.StopAtBounds
+        // A plate of eighteen objects is taller than the drawer: without the bar the
+        // list simply looked like it ended at whichever row the clip fell on.
+        ScrollBar.vertical: ThemedScrollBar { policy: ScrollBar.AlwaysOn }
 
         delegate: Rectangle {
             id: row

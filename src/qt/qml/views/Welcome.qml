@@ -43,7 +43,7 @@ Item {
     }
 
     readonly property var highlights: [
-        { title: "A real slicing engine", text: "The geometry, supports and G-code come from a mature engine library. next-layer is the application around it, and everything you see here is ours." },
+        { title: "A real slicing engine", text: "The geometry, supports and G-code come from a mature engine library. NextLayer is the application around it, and everything you see here is ours." },
         { title: "Shapes, volumes, paint", text: "Add a box, cut it with a negative volume, force support where you want it, paint seams and tools." },
         { title: "Built for tool changers", text: "Per-tool colours and tool changes — implemented, and only printed on a single-extruder machine so far." },
         { title: "Local, always", text: "No account, no sign-in, no telemetry. Projects are one file on your disk." }
@@ -290,7 +290,7 @@ Item {
             Text {
                 width: parent.width
                 visible: root.importResult.restartNeeded === true
-                text: "The engine reads its preset bundle once per start, so these machines appear after next-layer restarts."
+                text: "The engine reads its preset bundle once per start, so these machines appear after NextLayer restarts."
                 wrapMode: Text.WordWrap
                 font.family: Type.family
                 font.pixelSize: Type.sizeCaption
@@ -301,7 +301,7 @@ Item {
                 spacing: Metrics.sm
 
                 Button {
-                    text: root.importResult.restartNeeded === true ? "Restart next-layer" : "Use these printers"
+                    text: root.importResult.restartNeeded === true ? "Restart NextLayer" : "Use these printers"
                     primary: true
                     onClicked: {
                         importPanel.visible = false
@@ -365,7 +365,7 @@ Item {
                     spacing: Metrics.xxs
 
                     Text {
-                        text: "next-layer"
+                        text: "NextLayer"
                         font.family: Type.family
                         font.pixelSize: Type.sizeXLarge
                         font.bold: true
@@ -668,7 +668,7 @@ Item {
 
                 Text {
                     width: parent.width
-                    text: "next-layer " + root.version + "  ·  local, offline, no account"
+                    text: "NextLayer " + root.version + "  ·  local, offline, no account"
                     wrapMode: Text.WordWrap
                     font.family: Type.family
                     font.pixelSize: Type.sizeCaption

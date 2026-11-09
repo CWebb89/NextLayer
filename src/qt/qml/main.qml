@@ -118,7 +118,7 @@ Window {
         root.closeWithoutSaving()
     }
     property bool addMenuVisible: false
-    property point addMenuAt: Qt.point(Metrics.railWidth + Metrics.md,
+    property point addMenuAt: Qt.point(Metrics.panelPadding + Metrics.md,
                                        Metrics.headerHeight + Metrics.md)
     property bool layerMenuVisible: false
     property bool plateMenuVisible: false
@@ -221,7 +221,7 @@ Window {
         { id: "quit", keys: "Ctrl+Q", key: Qt.Key_Q, mods: "Ctrl", group: "Application",
           action: "Quit" },
         { id: "about", keys: "", key: 0, mods: "", group: "Application",
-          action: "About next-layer" },
+          action: "About NextLayer" },
         { id: "slice", keys: "Return", key: Qt.Key_Return, mods: "", group: "File",
           action: "Slice the plate" },
         { id: "export", keys: "Ctrl+E", key: Qt.Key_E, mods: "Ctrl", group: "File",
@@ -826,7 +826,7 @@ Window {
     minimumWidth: 1000
     minimumHeight: 700
     visible: true
-    title: "next-layer"
+    title: "NextLayer"
     color: Colors.background
 
     // A window that comes up without keyboard focus swallows every key until
@@ -994,27 +994,12 @@ Window {
             }
         }
 
-        Rail {
-            id: rail
-            anchors.left: parent.left
-            anchors.top: header.bottom
-            anchors.bottom: footer.top
-            width: Metrics.railWidth
-            currentView: root.mode
-            objectListVisible: root.objectListVisible
-            objectCount: plateDocument.count
-            onViewRequested: (requested) => root.mode = requested
-            onObjectListRequested: root.objectListVisible = !root.objectListVisible
-            onResetViewRequested: viewport.resetView()
-            onSetupRequested: setupFlow.reopen()
-        }
-
         Welcome {
             id: welcome
             anchors.fill: parent
             version: root.appVersion
             onSetupRequested: setupFlow.reopen()
-            onSkipRequested: root.setStatus("printer setup is in the rail gear and Ctrl+,")
+            onSkipRequested: root.setStatus("printer setup is under File > Printer setup, and Ctrl+Alt+S")
             onImported: (printer) => {
                 if (printer.length === 0) {
                     root.setStatus("imported presets, no printer among them")
@@ -1059,10 +1044,8 @@ Window {
 
             anchors.top: header.bottom
             anchors.bottom: footer.top
-            x: root.panelOnLeft
-               ? Metrics.railWidth + root.panelWidth
-               : Metrics.railWidth
-            width: shell.width - Metrics.railWidth - root.panelWidth
+            x: root.panelOnLeft ? root.panelWidth : 0
+            width: shell.width - root.panelWidth
             visible: Host.bedShape.length < 3 && root.mode !== root.deviceMode
             z: 4
 
@@ -1094,7 +1077,7 @@ Window {
 
                     Text {
                         width: parent.width
-                        text: "next-layer ships no machine of its own. Pick your printer and the bed, its height and its materials become yours; until then there is nothing to slice onto."
+                        text: "NextLayer ships no machine of its own. Pick your printer and the bed, its height and its materials become yours; until then there is nothing to slice onto."
                         wrapMode: Text.WordWrap
                         font.family: Type.family
                         font.pixelSize: Type.sizeSmall
@@ -1117,10 +1100,8 @@ Window {
             objectName: "viewport"
             anchors.top: header.bottom
             anchors.bottom: footer.top
-            x: root.panelOnLeft
-               ? Metrics.railWidth + root.panelWidth
-               : Metrics.railWidth
-            width: shell.width - Metrics.railWidth - root.panelWidth
+            x: root.panelOnLeft ? root.panelWidth : 0
+            width: shell.width - root.panelWidth
             visible: root.mode !== root.deviceMode
             mode: root.mode
             moveEnabled: root.activeTool === "move"
@@ -1155,10 +1136,8 @@ Window {
             id: deviceView
             anchors.top: header.bottom
             anchors.bottom: footer.top
-            x: root.panelOnLeft
-               ? Metrics.railWidth + root.panelWidth
-               : Metrics.railWidth
-            width: shell.width - Metrics.railWidth - root.panelWidth
+            x: root.panelOnLeft ? root.panelWidth : 0
+            width: shell.width - root.panelWidth
             visible: root.mode === root.deviceMode
             onStatus: (message) => root.setStatus(message)
         }
@@ -1232,9 +1211,13 @@ Window {
             visible: root.viewportStatus.length > 0
             anchors.left: viewport.left
             anchors.bottom: viewport.bottom
+            // The object drawer sits over this corner: the message moves clear of it
+            // rather than being half-covered by it.
             anchors.leftMargin: Metrics.md
+                             + (root.objectListVisible ? objectList.width + Metrics.sm : 0)
             anchors.bottomMargin: Metrics.md
-            width: Math.min(statusLabel.implicitWidth + Metrics.md * 2, viewport.width - Metrics.md * 2)
+            width: Math.min(statusLabel.implicitWidth + Metrics.md * 2,
+                            viewport.width - anchors.leftMargin - Metrics.md)
             height: Metrics.rowHeight
             radius: Metrics.radiusSmall
             color: Colors.alpha(Colors.surfaceContainerLow, 0.94)
@@ -1304,7 +1287,7 @@ Window {
             anchors.top: header.bottom
             anchors.bottom: footer.top
             width: root.panelWidth
-            x: root.panelOnLeft ? Metrics.railWidth : shell.width - width
+            x: root.panelOnLeft ? 0 : shell.width - width
 
             onRememberedPrinterMissing: (name) => {
                 root.setStatus("the printer last used, " + name + ", is no longer in the profile list")
@@ -1527,7 +1510,7 @@ Window {
         function onModelChanged() {
             toolpath.clear()
             root.mode = root.modelMode
-            root.title = "next-layer · " + session.displayName()
+            root.title = "NextLayer · " + session.displayName()
             // Only a different model moves the camera. Re-framing on every document
             // change is what made a plain move or delete look like a zoom.
             if (session.path !== root.lastModelPath) {
@@ -1582,11 +1565,21 @@ Window {
     }
 
     Settings {
+        id: windowSettings
         category: "next-layer"
         property alias panelOnLeft: root.panelOnLeft
         property alias panelWidth: root.panelWidth
         property alias lastModelFolder: root.lastModelFolder
+        /// Which chrome this file's width was measured against. A width someone
+        /// dragged is theirs to keep, so a layout change widens it once instead of
+        /// resetting it.
+        property int layoutVersion: 0
     }
+
+    // The rail between the window edge and the settings panel is gone, and its
+    // width is the panel's now: a width saved before that was measured against the
+    // rail, so it grows by exactly what the rail took, once.
+    readonly property int reclaimedRailWidth: 44
 
     DropArea {
         anchors.fill: parent
@@ -1902,9 +1895,10 @@ Window {
             { id: "sepCalibration", label: "" },
             { id: "calibration", label: "Calibration…", keys: "" },
             { id: "sep2", label: "" },
+            { id: "setup", label: "Printer setup…", keys: "Ctrl+Alt+S" },
             { id: "preferences", label: "Preferences…", keys: "Ctrl+," },
             { id: "shortcuts", label: "Keyboard shortcuts", keys: "F1" },
-            { id: "about", label: "About next-layer", keys: "" },
+            { id: "about", label: "About NextLayer", keys: "" },
             { id: "sep3", label: "" },
             { id: "quit", label: "Quit", keys: "Ctrl+Q" }
         ]
@@ -2335,6 +2329,11 @@ Window {
         shell.forceActiveFocus()
         preferencesDialog.load()
         root.applyPreferences()
+        if (windowSettings.layoutVersion < 2) {
+            root.panelWidth = Math.min(root.maxPanelWidth,
+                                       root.panelWidth + root.reclaimedRailWidth)
+            windowSettings.layoutVersion = 2
+        }
         if (typeof startupPanelLeft !== "undefined" && startupPanelLeft)
             root.panelOnLeft = true
         Colors.loadFromHost()
@@ -2365,7 +2364,7 @@ Window {
             viewport.setView(startupCameraView)
         if (typeof startupOrthographic !== "undefined")
             viewport.orthographic = startupOrthographic
-        root.title = "next-layer · " + session.displayName()
+        root.title = "NextLayer · " + session.displayName()
         if (setupFlow.firstRun()) {
             if (!welcome.seen)
                 welcome.open()

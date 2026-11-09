@@ -19,7 +19,7 @@ Popup {
     focus: true
 
     property var fonts: []
-    property string text: "next-layer"
+    property string text: "NextLayer"
     property real textHeight: 10
     property real depth: 1.2
     property int fontIndex: 0

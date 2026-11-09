@@ -27,29 +27,72 @@ Item {
     readonly property real startWidth: root.ready ? root.dialog.width : 0
     readonly property real startHeight: root.ready ? root.dialog.height : 0
 
-    implicitWidth: 18
-    implicitHeight: 18
+    implicitWidth: Metrics.gripSize + Metrics.xs
+    implicitHeight: Metrics.gripSize + Metrics.xs
     z: 1000
 
-    Row {
+    // A solid triangle in the corner, the shape every window manager has used for
+    // this since forever, with two ribs inside it so it reads as a grip rather
+    // than decoration. Drawn as geometry because a font glyph would be at the mercy
+    // of whichever font resolved.
+    Item {
+        id: grip
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        anchors.rightMargin: Metrics.xxs
-        anchors.bottomMargin: Metrics.xxs
-        spacing: 2
+        width: Metrics.gripSize
+        height: Metrics.gripSize
 
-        Repeater {
-            model: 3
+        readonly property color tint: area.containsMouse || area.pressed
+                                      ? Colors.accent : Colors.textTertiary
 
-            delegate: Rectangle {
-                required property int index
+        Canvas {
+            id: canvas
+            anchors.fill: parent
+            // Quiet until reached for: a dialog usually has a button in this corner,
+            // and a permanent bright wedge next to it reads as clutter.
+            opacity: area.pressed ? 0.95 : (area.containsMouse ? 0.8 : 0.28)
 
-                width: Metrics.xs
-                height: 1
-                y: (2 - index) * Metrics.xxs
-                color: Colors.textTertiary
-                opacity: 0.45 + index * 0.2
+            onPaint: {
+                const context = getContext("2d")
+                context.reset()
+                const size = Math.min(width, height)
+
+                context.beginPath()
+                context.moveTo(size, 0)
+                context.lineTo(size, size)
+                context.lineTo(0, size)
+                context.closePath()
+                context.fillStyle = grip.tint
+                context.fill()
+
+                // Two ribs: the same triangle, cut out of the fill.
+                context.strokeStyle = Colors.surfaceContainer
+                context.lineWidth = 1.6
+                for (let step = 1; step <= 2; ++step) {
+                    const offset = step * (size / 3.2)
+                    context.beginPath()
+                    context.moveTo(size - offset, size)
+                    context.lineTo(size, size - offset)
+                    context.stroke()
+                }
             }
+
+            Connections {
+                target: grip
+                function onTintChanged() { canvas.requestPaint() }
+            }
+        }
+
+        Rectangle {
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.rightMargin: -Metrics.xs
+            anchors.bottomMargin: -Metrics.xs
+            width: Metrics.xxs
+            height: Metrics.xxs
+            radius: width / 2
+            color: grip.tint
+            opacity: 0.8
         }
     }
 
@@ -59,6 +102,7 @@ Item {
         id: area
         anchors.fill: parent
         preventStealing: true
+        hoverEnabled: true
 
         property real fromWidth: 0
         property real fromHeight: 0

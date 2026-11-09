@@ -272,7 +272,7 @@ Item {
                     spacing: Metrics.xxs
 
                     Text {
-                        text: "next-layer"
+                        text: "NextLayer"
                         textFormat: Text.PlainText
                         font.family: Type.family
                         font.pixelSize: Type.sizeHeading
@@ -473,7 +473,7 @@ Item {
                           ? "The material loaded now. This is the machine's own compatible filament set, with its own temperatures, cooling and flow."
                           : root.step === 2
                           ? "Print quality. These are the machine's own process profiles: every layer height, speed and shell count follows from this choice."
-                          : "That is what next-layer will slice with. Nothing leaves this machine: no account, no cloud, no telemetry."
+                          : "That is what NextLayer will slice with. Nothing leaves this machine: no account, no cloud, no telemetry."
                     textFormat: Text.PlainText
                     wrapMode: Text.WordWrap
                     font.family: Type.family

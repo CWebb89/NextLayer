@@ -4,6 +4,7 @@
 #include "PlateDocument.hpp"
 
 #include "ConfigBoxJson.hpp"
+#include "ForeignSettings.hpp"
 #include "Scratch.hpp"
 #include "ThreeMfProject.hpp"
 
@@ -1283,18 +1284,52 @@ void PlateDocument::applyForeignSettings(int id, const QHash<QString, QString>& 
         object->name = name;
 
     QStringList refused;
-    const QVariantMap accepted = next_layer::settingsFromText(settings, refused);
+    QHash<QString, QString> translated;
+    QStringList unmapped;
+    for (auto entry = settings.constBegin(); entry != settings.constEnd(); ++entry) {
+        QString name;
+        QString value;
+        switch (next_layer::translateForeignSetting(entry.key(), entry.value(), name, value)) {
+        case next_layer::ForeignSetting::Translated:
+            translated.insert(name, value);
+            break;
+        case next_layer::ForeignSetting::NoCounterpart:
+            break;
+        case next_layer::ForeignSetting::Unknown:
+            unmapped.append(entry.key());
+            break;
+        }
+    }
+
+    const QVariantMap accepted = next_layer::settingsFromText(translated, refused);
     for (auto entry = accepted.constBegin(); entry != accepted.constEnd(); ++entry) {
         if (!object->settings.contains(entry.key()))
             object->settings.insert(entry.key(), entry.value());
     }
-    if (!refused.isEmpty()) {
-        ++m_foreignObjects;
-        for (const QString& name : refused) {
-            if (!m_foreignNames.contains(name))
-                m_foreignNames.append(name);
-        }
+
+    // Every tool this app can address is one it has; a file that names a fourth
+    // tool on a single-tool machine would otherwise put the object out of reach.
+    const int tools = qMax(1, int(m_toolColours.size()));
+    const auto tool = object->settings.find(QStringLiteral("extruder"));
+    if (tool != object->settings.end()) {
+        const int named = tool.value().toInt();
+        if (named > tools)
+            *tool = tools;
+        else if (named < 1)
+            object->settings.erase(tool);
     }
+
+    m_foreignObjects += 0;
+    for (const QString& name : refused) {
+        if (!m_foreignNames.contains(name))
+            m_foreignNames.append(name);
+    }
+    for (const QString& name : unmapped) {
+        if (!m_foreignNames.contains(name))
+            m_foreignNames.append(name);
+    }
+    if (!m_foreignNames.isEmpty())
+        ++m_foreignObjects;
 }
 
 void PlateDocument::layoutProject(const QList<int>& added, const next_layer::ThreeMfProject& project)

@@ -44,19 +44,19 @@ Item {
         Image {
             anchors.verticalCenter: parent.verticalCenter
             source: "qrc:/next-layer/brand/next-layer-mark.svg"
-            sourceSize: Qt.size(Type.iconStandalone, Type.iconStandalone)
+            sourceSize: Qt.size(Type.iconStandalone * 2, Type.iconStandalone * 2)
             fillMode: Image.PreserveAspectFit
-            width: Type.iconStandalone
-            height: Type.iconStandalone
+            width: Type.iconStandalone * 2
+            height: Type.iconStandalone * 2
         }
 
         Text {
             anchors.verticalCenter: parent.verticalCenter
-            text: "next-layer"
+            text: "NextLayer"
             font.family: Type.family
-            font.pixelSize: Type.sizeTitle
+            font.pixelSize: Type.sizeHeading
             font.bold: true
-            font.letterSpacing: 0.4
+            font.letterSpacing: 0.2
             color: Colors.textPrimary
         }
 

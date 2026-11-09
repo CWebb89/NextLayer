@@ -1,7 +1,6 @@
 DeviceView 1.0 DeviceView.qml
 DeviceWebView 1.0 DeviceWebView.qml
 Header 1.0 Header.qml
-Rail 1.0 Rail.qml
 Viewport 1.0 Viewport.qml
 SettingsPanel 1.0 SettingsPanel.qml
 FooterBar 1.0 FooterBar.qml

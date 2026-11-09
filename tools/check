@@ -608,23 +608,34 @@ else
 end
 
 # A project from another slicer. Bambu and Orca keep an object's settings as plain
-# metadata under their own setting names, and write no model config at all. What
-# this engine defines has to come back as an override; what it does not must be
-# named and left out, never guessed at, and never a reason to refuse the file.
+# metadata under their own setting names, and write no model config at all. Names
+# that mean the same thing here under a different word have to become the setting
+# this engine has; names describing behaviour this engine does not have are dropped
+# without a word; a name nothing here knows is named and left out. Never guessed at,
+# and never a reason to refuse the file.
 set -l foreign_mf /tmp/nl-check-foreign.3mf
 python3 $root/oracle/fixtures/bambu_project.py $foreign_mf >/dev/null 2>&1
 set -l foreign_rc $status
-set -l foreign_out (env QT_QPA_PLATFORM=eglfs XDG_DATA_HOME=$tools_home $bin $foreign_mf --dump-objects 2>&1)
-set -l foreign_object (string match -r "obj 1 plate 1 'cube' faces ([0-9]+) at [-0-9. ]+, ([0-9]+) override" -- $foreign_out)
+set -l foreign_out (env QT_QPA_PLATFORM=eglfs XDG_DATA_HOME=$tools_home $bin $foreign_mf --dump-applied 2>&1)
+set -l foreign_object (string match -r "obj 1 plate 1 'cube': ([0-9]+) setting" -- $foreign_out)
 set -l foreign_note (string match -r 'left out: (.*)$' -- $foreign_out)
+set -l foreign_expect 'support_material = everywhere' 'support_material_style = organic' 'fill_density = 15%' 'perimeters = 3' 'layer_height = 0.12'
+set -l foreign_missing
+for wanted in $foreign_expect
+    if not string match -q -- "*$wanted*" $foreign_out
+        set -a foreign_missing $wanted
+    end
+end
 if test $foreign_rc -ne 0
     __bad 'foreign project: the fixture would not write'
-else if test (count $foreign_object) -lt 3 -o $foreign_object[3] -lt 2
-    __bad "foreign project: the object came back with $foreign_object[3] override(s)"
-else if test (count $foreign_note) -lt 2 -o "$foreign_note[2]" != sparse_infill_density
+else if test (count $foreign_object) -lt 2 -o "$foreign_object[2]" != 6
+    __bad "foreign project: the object came back with $foreign_object[2] setting(s), not the six its file implies"
+else if test (count $foreign_missing) -gt 0
+    __bad "foreign project: $foreign_missing did not survive the translation"
+else if test (count $foreign_note) -lt 2 -o "$foreign_note[2]" != made_up_setting
     __bad "foreign project: the unknown setting was not the one reported ($foreign_note)"
 else
-    __ok "foreign project: a Bambu/Orca file opens with its object label, its plate and $foreign_object[3] overrides ($foreign_object[2] faces), and names the one setting this engine has no definition for ($foreign_note[2]) instead of guessing at it"
+    __ok "foreign project: a Bambu/Orca file opens with its label, its plate and $foreign_object[2] settings -- its own names translated ($foreign_expect), its unsupported ones dropped silently, and the one name nothing here knows ($foreign_note[2]) reported instead of guessed at"
 end
 
 # User-preset gate: a preset a person saves has to survive a restart, resolve

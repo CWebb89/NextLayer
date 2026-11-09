@@ -16,11 +16,30 @@ unverified.
   as a bare mesh and dropped onto the bed, and every object's build transform was
   applied a second time on top of the instance the engine already had, which
   cancelled the author's rotation.
-- **A Bambu/Orca project opens with its plates, its placement and the settings
-  this engine shares names with it**; the ones it names differently are listed in
-  the status bar instead of being guessed at. An object keeps the label its author
-  gave it, and a project file no longer reports its own object names as a setting
-  it failed to read.
+- **A Bambu/Orca project opens with its object settings translated**, not merely
+  the names that happen to be spelled the same: `sparse_infill_density`,
+  `wall_loops`, `enable_support`, `support_type` and the wall and infill widths
+  and speeds become the settings this engine has, with their values converted
+  (`enable_support=1` to `support_material=everywhere`, `tree(auto)` to
+  `organic`). Settings describing behaviour this engine does not have are dropped
+  and listed in the source; a name nothing here knows is still reported. Every
+  downloaded project measured so far now opens with no note at all. An object also
+  keeps the label its author gave it, and a project file no longer reports its own
+  object names as a setting it failed to read.
+- **The window's left rail is gone.** It duplicated the mode switch in the header
+  and the object list in the tool strip, and cost every plate 44 px of width. Its
+  two remaining actions moved where they belong: printer setup to
+  `File > Printer setup…` (`Ctrl+Alt+S`), reset view to the camera strip under the
+  viewport (`R`). The settings panel is 44 px wider, and a width already dragged is
+  widened once by exactly what the rail took.
+- **The product is spelled NextLayer** in the window title, the header, the About
+  dialog and the setup flow. The G-code producer line is unchanged.
+- **The resize corner is a triangle**, quiet until the pointer reaches it, instead
+  of three hairlines that read as part of the content.
+- Fixed: a context menu opened near the bottom of the window ran off the screen;
+  the preview legend's percentage column printed over the length beside it; the
+  device view was transparent, so the bed grid showed through its address bar; the
+  object list had no scroll indicator, and the status toast sat under it.
 
 ## 0.1.0 — 2026-11-08
 

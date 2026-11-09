@@ -39,10 +39,10 @@ QtObject {
 
     readonly property int windowWidth: 1600
     readonly property int windowHeight: 950
-    readonly property int railWidth: 44
+    readonly property int gripSize: 16
     readonly property int headerHeight: 56
     readonly property int footerHeight: 64
-    readonly property int settingsWidth: 470
-    readonly property int drawerWidth: 340
+    readonly property int settingsWidth: 514
+    readonly property int drawerWidth: 386
     readonly property int drawerHandleWidth: 18
 }

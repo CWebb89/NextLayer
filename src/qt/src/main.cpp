@@ -788,6 +788,10 @@ int main(int argc, char* argv[])
     const QCommandLineOption dump_tabs_option("dump-tabs", "Print the settings tab tree with per-sub-tab counts and exit.");
     const QCommandLineOption dump_plates_option("dump-plates", "Print the plate count and the objects on each plate after loading, then exit.");
     const QCommandLineOption dump_objects_option("dump-objects", "Print every loaded object's name, facet count, plate and position, then exit.");
+    const QCommandLineOption dump_applied_option(
+        "dump-applied",
+        "Print every loaded object's applied overrides and their values, then exit -- what a "
+        "project file's records and another slicer's settings became here.");
     const QCommandLineOption hover_test_option("hover-test",
         "Highlight the face under facet N of the first object and report how many triangles it came out as, then exit.", "facet");
     const QCommandLineOption dump_names_option("dump-setting-names",
@@ -914,7 +918,7 @@ int main(int argc, char* argv[])
         "Write the current printer's whole preset bundle into a directory: every preset "
         "file plus the manifest that names its machines. Prints what it wrote.", "dir");
     parser.addOptions({qml_option, smoke_option, shot_option, slice_option, preview_option, dump_config_option,
-                       dump_tabs_option, dump_names_option, dump_subtab_option, dump_plates_option, dump_objects_option, transform_option, hide_feature_option,
+                       dump_tabs_option, dump_names_option, dump_subtab_option, dump_plates_option, dump_objects_option, dump_applied_option, transform_option, hide_feature_option,
                        view_type_option, hide_option_option,
                        single_layer_option, layer_option, layer_from_option, moves_option, view_option, camera_view_option,
                        ortho_option, plates_option,
@@ -1761,6 +1765,40 @@ int main(int argc, char* argv[])
                              int(object->mesh->its.indices.size() / 3), double(position.x()),
                              double(position.y()), double(position.z()),
                              static_cast<long long>(object->settings.size()));
+            }
+        }
+        if (!document->error().isEmpty())
+            std::fprintf(stdout, "  note: %s\n", document->error().toUtf8().constData());
+        return 0;
+    }
+
+    if (parser.isSet(dump_applied_option)) {
+        for (int plate = 0; plate < document->plateCount(); ++plate) {
+            for (const int id : document->idsOnPlate(plate)) {
+                const PlateDocument::Object* object = document->object(id);
+                if (object == nullptr)
+                    continue;
+                const QVariantMap settings = document->objectSettings(id);
+                std::fprintf(stdout, "  obj %d plate %d '%s': %lld setting(s)\n", object->id,
+                             object->plate + 1, object->name.toUtf8().constData(),
+                             static_cast<long long>(settings.size()));
+                QStringList names = QStringList(settings.keys());
+                names.sort();
+                for (const QString& name : names) {
+                    const QVariant value = settings.value(name);
+                    QString printed;
+                    if (value.metaType().id() == QMetaType::QVariantMap) {
+                        const QVariantMap numbers = value.toMap();
+                        const bool percent = numbers.value(QStringLiteral("is_percent")).toBool();
+                        printed = QStringLiteral("%1%2")
+                                      .arg(numbers.value(QStringLiteral("value")).toString(),
+                                           percent ? QStringLiteral("%") : QString());
+                    } else {
+                        printed = value.toString();
+                    }
+                    std::fprintf(stdout, "    %s = %s\n", name.toUtf8().constData(),
+                                 printed.toUtf8().constData());
+                }
             }
         }
         if (!document->error().isEmpty())

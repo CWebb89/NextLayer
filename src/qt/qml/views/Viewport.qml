@@ -1057,6 +1057,14 @@ Item {
             ToolButton {
                 width: Metrics.rowHeight - Metrics.sm
                 height: Metrics.rowHeight - Metrics.sm
+                icon: "restart_alt"
+                hint: "Reset view (R)"
+                onClicked: root.resetView()
+            }
+
+            ToolButton {
+                width: Metrics.rowHeight - Metrics.sm
+                height: Metrics.rowHeight - Metrics.sm
                 icon: "zoom_out_map"
                 hint: "Fit plate (F)"
                 onClicked: root.fitPlate()

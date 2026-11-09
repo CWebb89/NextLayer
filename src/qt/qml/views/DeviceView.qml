@@ -102,6 +102,13 @@ Item {
         root.stateLine = printerLink.printerState()
     }
 
+    // The view sits over the plate, which is still there and still drawing: without
+    // a fill of its own the bed's grid shows through the address bar.
+    Rectangle {
+        anchors.fill: parent
+        color: Colors.viewportBackground
+    }
+
     ColumnLayout {
         anchors.fill: parent
         anchors.topMargin: Metrics.sm

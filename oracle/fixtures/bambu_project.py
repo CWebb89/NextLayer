@@ -3,9 +3,13 @@
 
 The point of the fixture is the dialect, not the geometry: those slicers keep an
 object's settings as plain metadata in ``Metadata/model_settings.config``, under
-their own setting names, and they do not write a ``Slic3r_PE_model.config`` at
-all. One setting here is a name this engine has (``layer_height``), one is a name
-it does not (``sparse_infill_density``), so a gate can tell the two apart.
+their own setting names, and they do not write a ``Slic3r_PE_model.config`` at all.
+The settings here cover the three outcomes a gate has to tell apart: a name this
+engine accepts as written (``layer_height``), names that mean something here under
+a different word (``sparse_infill_density``, ``wall_loops``, ``enable_support``,
+``support_type``), a name whose behaviour this engine does not have
+(``support_object_xy_distance``, ``brim_type=auto_brim``), and a name nothing here
+knows (``made_up_setting``), which must be the only one reported.
 
     python3 oracle/fixtures/bambu_project.py OUT.3mf
 """
@@ -50,7 +54,13 @@ SETTINGS = """<?xml version="1.0" encoding="UTF-8"?>
     <metadata key="name" value="cube"/>
     <metadata key="extruder" value="1"/>
     <metadata key="layer_height" value="0.12"/>
+    <metadata key="enable_support" value="1"/>
+    <metadata key="support_type" value="tree(auto)"/>
+    <metadata key="support_object_xy_distance" value="0.4"/>
     <metadata key="sparse_infill_density" value="15%"/>
+    <metadata key="wall_loops" value="3"/>
+    <metadata key="brim_type" value="auto_brim"/>
+    <metadata key="made_up_setting" value="1"/>
     <part id="1" subtype="normal_part">
       <metadata key="name" value="cube"/>
       <metadata key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>

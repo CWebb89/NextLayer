@@ -40,8 +40,12 @@ Item {
 
     Rectangle {
         id: panel
-        x: root.anchorX
-        y: root.anchorY
+        // A menu opened near an edge is pulled back inside the window: an entry that
+        // falls off the bottom of the screen is a command nobody can reach.
+        x: Math.max(Metrics.xs,
+                    Math.min(root.width - root.menuWidth - Metrics.xs, root.anchorX))
+        y: Math.max(Metrics.xs,
+                    Math.min(root.height - panel.height - Metrics.xs, root.anchorY))
         width: root.menuWidth
         height: column.implicitHeight + Metrics.sm * 2
         radius: Metrics.radiusMedium

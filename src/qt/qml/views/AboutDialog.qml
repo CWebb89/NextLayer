@@ -69,7 +69,7 @@ Popup {
                     spacing: 0
 
                     Text {
-                        text: "next-layer"
+                        text: "NextLayer"
                         font.family: Type.family
                         font.pixelSize: Type.sizeHeading
                         font.bold: true
