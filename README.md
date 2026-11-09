@@ -36,6 +36,9 @@ version of every claim on this page, with the code behind each one.
   it has already been done better than we would.
 - Not stable. Settings names, file formats and the CLI may move between tags.
 
+If any of the above reads as more detail than you want, `docs/what-is-next-layer.md`
+is the same thing in plain words, with the current bugs listed and no marketing.
+
 ## Requirements
 
 Linux, a C++ compiler, CMake, Ninja, Qt 6.12 (Quick, Quick3D, Svg, WebEngine,
