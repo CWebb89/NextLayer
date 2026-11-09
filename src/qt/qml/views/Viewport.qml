@@ -270,28 +270,31 @@ Item {
     // Distance that frames the whole build plate, which is the framing the app
     // opens in and what the "fit plate" button restores.
     //
-    // The plate's chrome hangs off both of its sides -- the icon column to the
-    // right, the name and its pencil to the left -- and it lives in the plate's own
+    // The plate's chrome hangs off its edges -- the icon column to the right, the
+    // name and its pencil above the back edge -- and it lives in the plate's own
     // plane, so it is not a screen-space overlay that can be clamped. The fit has to
     // carry it instead: framed on the bed alone, the column and the name land
-    // outside the viewport and the plate's own actions become unreachable. A name
+    // outside the viewport and the plate's own actions become unreachable. The name
     // is measured the same way the decal measures it, from its length, because the
-    // fit is computed above the per-plate delegate.
-    readonly property real plateApronRight: plateChrome.iconSize + plateChrome.gapLeft * 2
-    readonly property real plateApronLeft: {
+    // fit is computed above the per-plate delegate; a long name is centred on the
+    // plate and so overhangs it on both sides.
+    readonly property real plateApronRight: Math.max(plateChrome.iconSize + plateChrome.gapLeft * 2,
+                                                     (root.longestPlateName - root.bedSize.x / 2) / 2)
+    readonly property real plateApronTop: plateChrome.gapTop + plateChrome.nameHeight
+                                            + plateChrome.gapLeft
+    readonly property real longestPlateName: {
         let longest = 0
         for (let i = 0; i < plateDocument.plates.length; ++i) {
             const label = plateDocument.plates[i].label || ""
             longest = Math.max(longest, label.length)
         }
         const aspect = Math.max(1.2, Math.min(6, longest * 0.55))
-        return plateChrome.gapLeft + plateChrome.pencilSize
-               + 9 * plateChrome.iconScale * aspect * 1.3
+        return plateChrome.nameHeight * aspect * 1.3 + plateChrome.gapLeft + plateChrome.pencilSize
     }
-    readonly property real plateApron: Math.max(root.plateApronRight, root.plateApronLeft)
     readonly property real bedRadius: {
-        const half = Qt.vector3d(root.bedSize.x / 2 + root.plateApron, root.bedSize.z / 2, 0)
-        return Math.max(1, Math.sqrt(half.x * half.x + half.z * half.z))
+        const halfWidth = root.bedSize.x / 2 + root.plateApronRight
+        const halfDepth = root.bedSize.y / 2 + root.plateApronTop
+        return Math.max(1, Math.sqrt(halfWidth * halfWidth + halfDepth * halfDepth))
     }
 
     readonly property real bedFitZoom: {
@@ -1450,8 +1453,9 @@ Item {
                      (root.bedMax.x - root.bedMin.x) * 0.2 / 22))
         readonly property real iconSize: 16 * plateChrome.iconScale
         readonly property real pencilSize: 15 * plateChrome.iconScale
+        readonly property real nameHeight: 9 * plateChrome.iconScale
         readonly property real gapLeft: 3 * plateChrome.iconScale
-        readonly property real gapTop: 3 * plateChrome.iconScale
+        readonly property real gapTop: 6 * plateChrome.iconScale
         readonly property real gapY: 5 * plateChrome.iconScale
         readonly property real decalLift: 0.25
 
@@ -1569,30 +1573,48 @@ Item {
                     return plateChrome.quadMatrix(q0, q1, q2, q3, w, h)
                 }
 
-                // The plate's name sits along the back edge, starting at its left
-                // corner, in the 9 mm name height. The decal's local box takes the
-                // name's own aspect so the text is not stretched by the projection:
-                // a square box on a 40 x 16 mm quad would shear the glyphs.
-                readonly property real nameHeight: 9 * plateChrome.iconScale
+                // The plate's name sits above the back edge, off the bed, in the
+                // 9 mm name height; the pencil follows it on the same row. The
+                // decal's local box takes the name's own aspect so the text is not
+                // stretched by the projection: a square box on a 40 x 16 mm quad
+                // would shear the glyphs.
                 readonly property real nameAspect: Math.max(1.2,
                                                             Math.min(6,
                                                                      nameMeasure.implicitWidth
                                                                      / Math.max(1, nameMeasure.implicitHeight)))
-                readonly property real nameWidth: plateItem.nameHeight * plateItem.nameAspect * 1.3
+                readonly property real nameWidth: plateChrome.nameHeight * plateItem.nameAspect * 1.3
                 readonly property real nameLocalHeight: 100 / plateItem.nameAspect
-                // The name and its pencil sit off the plate, along the back edge to
-                // the left of it, reading name, pencil, then the bed they belong to.
+                readonly property real nameTop: root.bedMax.y + plateChrome.gapTop
+                // The name and its pencil are centred above the back edge, reading
+                // as a caption on the plate rather than a label stuck to a corner.
+                readonly property real nameLeft: root.bedCentre.x
+                                                 - (plateItem.nameWidth + plateChrome.gapLeft
+                                                    + plateChrome.pencilSize) / 2
                 readonly property var nameMatrix: plateItem.decal(
-                    root.bedMin.x - plateChrome.gapLeft - plateChrome.pencilSize
-                        - plateItem.nameWidth,
-                    root.bedMax.y - plateItem.nameHeight,
-                    root.bedMin.x - plateChrome.gapLeft - plateChrome.pencilSize,
-                    root.bedMax.y, 100, plateItem.nameLocalHeight)
+                    plateItem.nameLeft, plateItem.nameTop,
+                    plateItem.nameLeft + plateItem.nameWidth,
+                    plateItem.nameTop + plateChrome.nameHeight,
+                    100, plateItem.nameLocalHeight)
                 readonly property var pencilMatrix: plateItem.decal(
-                    root.bedMin.x - plateChrome.gapLeft - plateChrome.pencilSize,
-                    root.bedMax.y - plateItem.nameHeight * 0.5 - plateChrome.pencilSize * 0.5,
-                    root.bedMin.x - plateChrome.gapLeft,
-                    root.bedMax.y - plateItem.nameHeight * 0.5 + plateChrome.pencilSize * 0.5,
+                    plateItem.nameLeft + plateItem.nameWidth + plateChrome.gapLeft,
+                    plateItem.nameTop + (plateChrome.nameHeight - plateChrome.pencilSize) / 2,
+                    plateItem.nameLeft + plateItem.nameWidth + plateChrome.gapLeft + plateChrome.pencilSize,
+                    plateItem.nameTop + (plateChrome.nameHeight + plateChrome.pencilSize) / 2,
+                    100, 100)
+                // The row's clickable quad, inflated around the name and the pencil.
+                // Projected into the plate's plane at a shallow camera angle the name
+                // is a strip a few pixels tall, and clicking text that small is a
+                // game of pin the pixel; the label is decoration and this is the
+                // target.
+                readonly property real hitPad: plateChrome.nameHeight * 0.6
+                readonly property var rowHitMatrix: plateItem.decal(
+                    plateItem.nameLeft - plateItem.hitPad,
+                    plateItem.nameTop
+                        + (plateChrome.nameHeight - plateChrome.pencilSize) / 2 - plateItem.hitPad,
+                    plateItem.nameLeft + plateItem.nameWidth + plateChrome.gapLeft
+                        + plateChrome.pencilSize + plateItem.hitPad,
+                    plateItem.nameTop + (plateChrome.nameHeight + plateChrome.pencilSize) / 2
+                        + plateItem.hitPad,
                     100, 100)
 
                 // Measures the name at a fixed reference size so the decal can take its
@@ -1614,8 +1636,42 @@ Item {
                     root.bedMax.x - plateChrome.gapLeft * 2,
                     root.bedMin.y + plateChrome.gapLeft * 2 + plateChrome.iconSize, 100, 100)
 
-                // Name, on the bed: the plate name is rendered into a texture and
-                // laid along the back edge; this is the same decal, drawn as text.
+                // The label row is one target: name and pencil in a single inflated
+                // quad that carries the hover state, the tooltip and the click. The
+                // name and pencil below it are decoration, so the click does not
+                // depend on hitting a glyph.
+                Item {
+                    id: nameRow
+
+                    visible: plateItem.rowHitMatrix !== null
+                    width: 100
+                    height: 100
+                    x: 0
+                    y: 0
+                    transformOrigin: Item.TopLeft
+                    transform: Matrix4x4 { matrix: plateItem.rowHitMatrix ?? Qt.matrix4x4() }
+
+                    MouseArea {
+                        id: nameRowMouse
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: plateItem.current ? root.plateRenameRequested(plateItem.index)
+                                                     : root.plateSelected(plateItem.index)
+                    }
+
+                    Tooltip {
+                        target: nameRow
+                        text: plateItem.current
+                              ? "Rename " + plateItem.modelData.name
+                              : "Switch to " + plateItem.modelData.name
+                        shown: nameRowMouse.containsMouse
+                        delay: 400
+                    }
+                }
+
+                // Name, above the back edge: the plate name is rendered into a
+                // texture and laid on the plate's plane; this is the same decal,
+                // drawn as text.
                 Item {
                     id: nameDecal
 
@@ -1639,26 +1695,9 @@ Item {
                         font.bold: plateItem.current
                         color: plateItem.current ? Colors.accent : Colors.textTertiary
                     }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: plateItem.current ? root.plateRenameRequested(plateItem.index)
-                                                     : root.plateSelected(plateItem.index)
-                    }
-
-                    Tooltip {
-                        target: nameDecal
-                        text: plateItem.current
-                              ? "Rename " + plateItem.modelData.name
-                              : "Switch to " + plateItem.modelData.name
-                        shown: nameHover.hovered
-                        delay: 400
-                    }
-                    HoverHandler { id: nameHover }
                 }
 
-                // The pencil, also on the bed, right after the name.
+                // The pencil, right after the name on the same row.
                 Item {
                     id: pencilDecal
 
@@ -1676,21 +1715,6 @@ Item {
                         size: 76
                         color: plateItem.current ? Colors.accent : Colors.textTertiary
                     }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: plateItem.current ? root.plateRenameRequested(plateItem.index)
-                                                     : root.plateSelected(plateItem.index)
-                    }
-
-                    Tooltip {
-                        target: pencilDecal
-                        text: plateItem.current ? "Rename this plate" : "Switch to this plate"
-                        shown: pencilHover.hovered
-                        delay: 400
-                    }
-                    HoverHandler { id: pencilHover }
                 }
 
                 // The button column: six icons hanging down from the back-right

@@ -24,6 +24,11 @@ Item {
     readonly property bool filtering: root.filterText.length > 0
     readonly property int editorWidth: Math.round(width * 0.46)
     readonly property bool empty: root.groups.length === 0
+    // The scroll bar is attached to the flickable, so the style lays it over the
+    // content rather than beside it -- the rows ran underneath it and its hairline
+    // cut through every section rule. The column keeps clear of the bar instead.
+    readonly property real scrollBarWidth: Metrics.xs + Metrics.xxs
+    readonly property real scrollReserve: root.scrollBarWidth + Metrics.xs
 
     function openDialog(kind, item) {
         switch (kind) {
@@ -67,7 +72,7 @@ Item {
 
         Column {
             id: fieldColumn
-            width: flick.width
+            width: flick.width - root.scrollReserve
             spacing: Metrics.lg
 
             Text {

@@ -35,11 +35,17 @@ unverified.
   another slicer writes `inner_wall_speed = 150` where this engine's setting is a
   list; it now reads as the one-element list that means, and a
   semicolon-separated list still reads as written.
-- **The plate's chrome sits off the bed.** Name, pencil and the action column are
-  drawn on the plate's own plane but outside its edges -- the name to the left (a
-  pencil-sized target now, it was 5 px), the six actions to the right -- and the
-  camera's fit grew an apron on both sides so they are framed with the plate instead
-  of drifting out of the window.
+- **The plate's chrome sits off the bed.** The name and its pencil are a caption
+  above the back edge -- on the plate's own plane, so they still skew and rotate
+  with it, centred on the plate rather than stuck to a corner -- and the six actions
+  hang off the right edge. The camera's fit grew an apron for each, so they are
+  framed with the plate instead of drifting out of the window, and the whole name
+  row is one inflated click target: projected at a shallow angle the label is a few
+  pixels tall, so it carries the hover state, the tooltip and the click while the
+  glyphs stay decoration.
+- **The settings scroll bar has its own strip.** It is attached to the flickable,
+  so the style drew it over the rows and its hairline cut through every section
+  rule; the column now keeps clear of the bar's width instead.
 - **The window's left rail is gone.** It duplicated the mode switch in the header
   and the object list in the tool strip, and cost every plate 44 px of width. Its
   two remaining actions moved where they belong: printer setup to
