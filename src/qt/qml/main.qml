@@ -472,24 +472,30 @@ Window {
             return 0
         }
         const models = []
+        const sliced = []
         for (let i = 0; i < paths.length; ++i) {
             if (plateDocument.isPreSlicedFile(paths[i]))
-                root.openPreSliced(paths[i])
+                sliced.push(paths[i])
             else
                 models.push(paths[i])
         }
-        if (models.length === 0)
-            return 0
-        const added = session.addModels(models)
-        if (added > 0) {
-            root.mode = root.modelMode
-            // A model that lands somewhere the camera is not looking is a model the
-            // user has to hunt for: frame what was just added, once.
-            viewport.frameContent()
-            root.setStatus(added === 1 ? "added 1 model" : "added " + added + " models")
-        } else if (session.error.length > 0) {
-            root.setStatus(session.error)
+        let added = 0
+        if (models.length > 0) {
+            added = session.addModels(models)
+            if (added > 0) {
+                root.mode = root.modelMode
+                // A model that lands somewhere the camera is not looking is a model
+                // the user has to hunt for: frame what was just added, once.
+                viewport.frameContent()
+                root.setStatus(added === 1 ? "added 1 model" : "added " + added + " models")
+            } else if (session.error.length > 0) {
+                root.setStatus(session.error)
+            }
         }
+        // A print somebody already sliced opens last, so a drop holding both a model
+        // and a sliced file ends on the toolpaths rather than losing them.
+        for (let i = 0; i < sliced.length; ++i)
+            root.openPreSliced(sliced[i])
         return added
     }
 

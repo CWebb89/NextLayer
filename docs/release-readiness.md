@@ -26,7 +26,7 @@ What that obliges, concretely:
 |---|---|
 | Ship the licence | `LICENSE` at the repo root, verbatim AGPL-3.0 text |
 | Offer complete corresponding source | The public repo *is* that offer; the About box and README link to it |
-| State modifications | The build hook and the one preview role in `patches/` are the whole delta, exported against the pinned engine commit (`§3`) |
+| State modifications | `patches/` is the whole delta against the pinned engine commit (`§3`): one build-system change plus the engine features this app needs and the engine does not have — the internal-bridge role, role-aware fan, and the in-layer G-code channel |
 | Third-party notices | `THIRD-PARTY.md`: PrusaSlicer (AGPL-3.0), OrcaSlicer profiles (AGPL-3.0), Qt (LGPL-3.0), and each library in `upstream/deps` |
 | No implied endorsement | README says plainly: not affiliated with, endorsed by, or supported by Prusa Research or the OrcaSlicer project. PrusaSlicer and OrcaSlicer are their trademarks; the app is called next-layer, not "Prusa-anything" |
 
@@ -86,13 +86,15 @@ empty program.
 The layout now in the tree, which is **A below, implemented**:
 
 - `src/qt` and `src/cli` are at the repo root, tracked here with all our history.
-- `patches/0001-app-subdirectories.patch` is the whole of our footprint in the
-  engine: two `add_subdirectory` lines, pointing at our sources from outside the
-  engine tree, with an explicit binary directory.
-- `tools/bootstrap` fetches the engine at its pinned commit and applies that
-  patch. `upstream/` is gitignored and disposable.
-- `tools/check` 24/24 and the oracle 12/12 on both runners passed in the new
-  layout before it was committed.
+- `patches/0001-app-subdirectories.patch` is the build-system change: two
+  `add_subdirectory` lines, pointing at our sources from outside the engine tree,
+  with an explicit binary directory. Everything else in `patches/` is engine work
+  this app needs and the engine does not have — the internal-bridge role,
+  role-aware fan, and the in-layer G-code channel.
+- `tools/bootstrap` fetches the engine at its pinned commit and applies the
+  patches in name order. `upstream/` is gitignored and disposable.
+- `tools/check` (45 gates) and the oracle 12/12 pass in the new layout, and did
+  before it was committed.
 
 The two options, kept because the reasoning still applies to any future move:
 

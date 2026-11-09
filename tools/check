@@ -1429,6 +1429,10 @@ end
 if test $ui -eq 1
     set -l cockpit $root/tools/cockpit/cockpit
     set -l ui_shot /tmp/nl-check-ui.png
+    # A session file can outlive its window -- an earlier run killed, or a person's
+    # own cockpit session left behind -- and `start` then reports "already running"
+    # on a window that is gone, which reads as this gate failing for no reason.
+    $cockpit stop >/dev/null 2>&1
     set -l start_out ($cockpit start next-layer --model $model 2>&1)
     if test $status -ne 0
         __bad "cockpit start: $start_out"
