@@ -16,12 +16,13 @@ unverified.
   as a bare mesh and dropped onto the bed, and every object's build transform was
   applied a second time on top of the instance the engine already had, which
   cancelled the author's rotation.
-- **A project from another slicer never reports a setting at you.** Fifty
+- **A project from another slicer never reports a setting at you.** A hundred and nine
   Bambu/Orca names are translated into this engine's — the wall, surface, sparse and
   internal-solid-infill width, speed and acceleration families, `wall_loops`,
-  `top_shell_layers`, `initial_layer_print_height`, the whole `support_*` family,
-  `bridge_flow`, `retraction_*` and both `prime_tower_*` widths — with their
-  values converted where the two write the same setting differently
+  `top_shell_layers`, `initial_layer_print_height`, the whole `support_*` and
+  `tree_support_*` families, the fan table and the overhang speed steps, `z_hop`,
+  the machine and filament start/end G-code, and both `prime_tower_*` widths — with
+  their values converted where the two write the same setting differently
   (`enable_support=1` to `support_material=everywhere`, `tree(auto)` to
   `organic`, `seam_position=back` to `rear`). A name with no counterpart here and
   a name nothing here knows are both dropped silently: the status bar stays empty,
@@ -34,12 +35,11 @@ unverified.
   another slicer writes `inner_wall_speed = 150` where this engine's setting is a
   list; it now reads as the one-element list that means, and a
   semicolon-separated list still reads as written.
-- **The plate's action buttons sit inside the plate**, down the right-hand edge
-  where the plate number is, instead of hanging off it into empty space. Anchored
-  outside the bed they drifted out of the window as soon as the camera zoomed in,
-  which made the plate's own actions unreachable exactly when the plate filled the
-  view. They are still drawn on the bed plane and skew with it, like the reference
-  slicer.
+- **The plate's chrome sits off the bed.** Name, pencil and the action column are
+  drawn on the plate's own plane but outside its edges -- the name to the left (a
+  pencil-sized target now, it was 5 px), the six actions to the right -- and the
+  camera's fit grew an apron on both sides so they are framed with the plate instead
+  of drifting out of the window.
 - **The window's left rail is gone.** It duplicated the mode switch in the header
   and the object list in the tool strip, and cost every plate 44 px of width. Its
   two remaining actions moved where they belong: printer setup to

@@ -619,7 +619,7 @@ set -l foreign_rc $status
 set -l foreign_out (env QT_QPA_PLATFORM=eglfs XDG_DATA_HOME=$tools_home $bin $foreign_mf --dump-applied 2>&1)
 set -l foreign_object (string match -r "obj 1 plate 1 'cube': ([0-9]+) setting" -- $foreign_out)
 set -l foreign_note (string match -r 'left out: (.*)$' -- $foreign_out)
-set -l foreign_expect 'support_material = everywhere' 'support_material_style = organic' 'fill_density = 15%' 'fill_pattern = gyroid' 'perimeters = 3' 'layer_height = 0.12' 'first_layer_height = 0.2' 'perimeter_speed = 150' 'external_perimeter_extrusion_width = 0.42' 'seam_position = rear' 'top_solid_layers = 4' 'bottom_solid_layers = 3' 'support_material_threshold = 40' 'brim_type = outer_only'
+set -l foreign_expect 'support_material = everywhere' 'support_material_style = organic' 'fill_density = 15%' 'fill_pattern = gyroid' 'perimeters = 3' 'layer_height = 0.12' 'first_layer_height = 0.2' 'perimeter_speed = 150' 'external_perimeter_extrusion_width = 0.42' 'seam_position = rear' 'top_solid_layers = 4' 'bottom_solid_layers = 3' 'support_material_threshold = 40' 'brim_type = outer_only' 'support_material_xy_spacing = 0.4'
 set -l foreign_missing
 for wanted in $foreign_expect
     if not string match -q -- "*$wanted*" $foreign_out
@@ -629,8 +629,8 @@ end
 set -l foreign_complaint (string match -r 'note: .*' -- $foreign_out)
 if test $foreign_rc -ne 0
     __bad 'foreign project: the fixture would not write'
-else if test (count $foreign_object) -lt 2 -o "$foreign_object[2]" != 15
-    __bad "foreign project: the object came back with $foreign_object[2] setting(s), not the fifteen its file implies"
+else if test (count $foreign_object) -lt 2 -o "$foreign_object[2]" != 16
+    __bad "foreign project: the object came back with $foreign_object[2] setting(s), not the sixteen its file implies"
 else if test (count $foreign_missing) -gt 0
     __bad "foreign project: $foreign_missing did not survive the translation"
 else if test (count $foreign_complaint) -gt 0

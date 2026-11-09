@@ -10,10 +10,11 @@ different word (``wall_loops``, ``sparse_infill_density``, ``top_shell_layers``,
 ``inner_wall_speed``, ``outer_wall_line_width``, ``initial_layer_print_height``,
 ``enable_support``, ``support_type``), names whose values are spelled differently on
 the two sides (``seam_position=back``, ``enable_support=1``), names whose behaviour
-this engine does not have (``support_object_xy_distance``,
-``skeleton_infill_density``), and a name nothing here knows
-(``made_up_setting``). The last three are dropped without a word: nothing a person
-opening a downloaded project could do about them.
+this engine does not have (``skeleton_infill_density``), and a name nothing here
+knows (``made_up_setting``). The last two are dropped without a word: nothing a
+person opening a downloaded project could do about them. ``support_object_xy_distance``
+is the one that used to be dropped and now lands: this engine states the same gap as
+a distance in millimetres or a share of the perimeter width.
 
     python3 oracle/fixtures/bambu_project.py OUT.3mf
 """
@@ -69,9 +70,9 @@ SETTINGS = """<?xml version="1.0" encoding="UTF-8"?>
     <metadata key="enable_support" value="1"/>
     <metadata key="support_type" value="tree(auto)"/>
     <metadata key="support_threshold_angle" value="40"/>
+    <metadata key="support_object_xy_distance" value="0.4"/>
     <metadata key="brim_type" value="outer_only"/>
     <metadata key="seam_position" value="back"/>
-    <metadata key="support_object_xy_distance" value="0.4"/>
     <metadata key="skeleton_infill_density" value="25%"/>
     <metadata key="made_up_setting" value="1"/>
     <part id="1" subtype="normal_part">

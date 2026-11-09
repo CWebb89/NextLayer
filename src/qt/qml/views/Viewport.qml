@@ -269,10 +269,26 @@ Item {
 
     // Distance that frames the whole build plate, which is the framing the app
     // opens in and what the "fit plate" button restores.
-    // The icon column hangs off the plate's right edge, so the plate's own fit has
-    // to include it -- the plate is framed the same way, and without the apron the
-    // column lands off-screen and the plate's chrome is nowhere to be seen.
-    readonly property real plateApron: plateChrome.iconSize + plateChrome.gapLeft
+    //
+    // The plate's chrome hangs off both of its sides -- the icon column to the
+    // right, the name and its pencil to the left -- and it lives in the plate's own
+    // plane, so it is not a screen-space overlay that can be clamped. The fit has to
+    // carry it instead: framed on the bed alone, the column and the name land
+    // outside the viewport and the plate's own actions become unreachable. A name
+    // is measured the same way the decal measures it, from its length, because the
+    // fit is computed above the per-plate delegate.
+    readonly property real plateApronRight: plateChrome.iconSize + plateChrome.gapLeft * 2
+    readonly property real plateApronLeft: {
+        let longest = 0
+        for (let i = 0; i < plateDocument.plates.length; ++i) {
+            const label = plateDocument.plates[i].label || ""
+            longest = Math.max(longest, label.length)
+        }
+        const aspect = Math.max(1.2, Math.min(6, longest * 0.55))
+        return plateChrome.gapLeft + plateChrome.pencilSize
+               + 9 * plateChrome.iconScale * aspect * 1.3
+    }
+    readonly property real plateApron: Math.max(root.plateApronRight, root.plateApronLeft)
     readonly property real bedRadius: {
         const half = Qt.vector3d(root.bedSize.x / 2 + root.plateApron, root.bedSize.z / 2, 0)
         return Math.max(1, Math.sqrt(half.x * half.x + half.z * half.z))
@@ -1433,7 +1449,7 @@ Item {
             Math.min((root.bedMax.y - root.bedMin.y) / 200,
                      (root.bedMax.x - root.bedMin.x) * 0.2 / 22))
         readonly property real iconSize: 16 * plateChrome.iconScale
-        readonly property real pencilSize: 9 * plateChrome.iconScale
+        readonly property real pencilSize: 15 * plateChrome.iconScale
         readonly property real gapLeft: 3 * plateChrome.iconScale
         readonly property real gapTop: 3 * plateChrome.iconScale
         readonly property real gapY: 5 * plateChrome.iconScale
@@ -1564,15 +1580,20 @@ Item {
                                                                      / Math.max(1, nameMeasure.implicitHeight)))
                 readonly property real nameWidth: plateItem.nameHeight * plateItem.nameAspect * 1.3
                 readonly property real nameLocalHeight: 100 / plateItem.nameAspect
-                readonly property var nameMatrix: plateItem.decal(root.bedMin.x,
-                                                                  root.bedMax.y - plateItem.nameHeight,
-                                                                  root.bedMin.x + plateItem.nameWidth,
-                                                                  root.bedMax.y, 100, plateItem.nameLocalHeight)
+                // The name and its pencil sit off the plate, along the back edge to
+                // the left of it, reading name, pencil, then the bed they belong to.
+                readonly property var nameMatrix: plateItem.decal(
+                    root.bedMin.x - plateChrome.gapLeft - plateChrome.pencilSize
+                        - plateItem.nameWidth,
+                    root.bedMax.y - plateItem.nameHeight,
+                    root.bedMin.x - plateChrome.gapLeft - plateChrome.pencilSize,
+                    root.bedMax.y, 100, plateItem.nameLocalHeight)
                 readonly property var pencilMatrix: plateItem.decal(
-                    root.bedMin.x + plateItem.nameWidth,
-                    root.bedMax.y - plateChrome.pencilSize,
-                    root.bedMin.x + plateItem.nameWidth + plateChrome.pencilSize,
-                    root.bedMax.y, 100, 100)
+                    root.bedMin.x - plateChrome.gapLeft - plateChrome.pencilSize,
+                    root.bedMax.y - plateItem.nameHeight * 0.5 - plateChrome.pencilSize * 0.5,
+                    root.bedMin.x - plateChrome.gapLeft,
+                    root.bedMax.y - plateItem.nameHeight * 0.5 + plateChrome.pencilSize * 0.5,
+                    100, 100)
 
                 // Measures the name at a fixed reference size so the decal can take its
                 // aspect; never drawn.
@@ -1693,7 +1714,8 @@ Item {
 
                         required property var modelData
 
-                        readonly property real buttonRight: root.bedMax.x - plateChrome.gapLeft * 2
+                        readonly property real buttonRight: root.bedMax.x + plateChrome.gapLeft
+                                                            + plateChrome.iconSize
                         readonly property real buttonTop: root.bedMax.y - plateChrome.gapTop
                                                     - (actionDecal.modelData.slot + 1)
                                                     * (plateChrome.iconSize + plateChrome.gapY)
