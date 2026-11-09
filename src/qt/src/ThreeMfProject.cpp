@@ -4,6 +4,7 @@
 #include "ThreeMfProject.hpp"
 
 #include <QByteArray>
+#include <QRegularExpression>
 #include <QSet>
 #include <QXmlStreamReader>
 
@@ -309,6 +310,25 @@ void readPaint(const QByteArray& scene, ThreeMfProject& project)
     }
 }
 
+/// A marker's type, as the integer this format standardised on, or as the name
+/// another writer may have used instead.
+int markerType(const QStringView value)
+{
+    bool numeric = false;
+    const int number = value.toInt(&numeric);
+    if (numeric)
+        return number;
+    if (value.compare(QLatin1String("ColorChange"), Qt::CaseInsensitive) == 0)
+        return 0;
+    if (value.compare(QLatin1String("PausePrint"), Qt::CaseInsensitive) == 0)
+        return 1;
+    if (value.compare(QLatin1String("ToolChange"), Qt::CaseInsensitive) == 0)
+        return 2;
+    if (value.compare(QLatin1String("Template"), Qt::CaseInsensitive) == 0)
+        return 3;
+    return 4;
+}
+
 /// The timeline markers, per bed: pauses, colour and tool changes and custom
 /// G-code, each at its own Z.
 void readLayerGcodes(const QByteArray& body, ThreeMfProject& project)
@@ -325,10 +345,19 @@ void readLayerGcodes(const QByteArray& body, ThreeMfProject& project)
         } else if (xml.name() == QLatin1String("code")) {
             ThreeMfLayerGcode marker;
             marker.z = attributes.value(QLatin1String("print_z")).toDouble();
-            marker.type = attributes.value(QLatin1String("type")).toInt();
+            marker.type = markerType(attributes.value(QLatin1String("type")));
             const QString extra = attributes.value(QLatin1String("extra")).toString();
-            marker.text = extra.isEmpty() ? attributes.value(QLatin1String("color")).toString()
-                                          : extra;
+            const QString color = attributes.value(QLatin1String("color")).toString();
+            // The colour field holds a colour, not a note. A file written before
+            // this was enforced -- this app's own exports among them -- carries free
+            // text there, so the text is read from wherever it actually is rather
+            // than from the field's name.
+            const bool realColor = QRegularExpression(QStringLiteral("^#[0-9A-Fa-f]{6}$"))
+                                       .match(color)
+                                       .hasMatch();
+            marker.text = extra.isEmpty() ? color : extra;
+            if (marker.type == 0 && !realColor)
+                marker.type = 4;
             if (marker.z > 0.0)
                 project.layerGcodes[bed].append(marker);
         }

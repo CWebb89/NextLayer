@@ -52,6 +52,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <QRegularExpression>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 
@@ -568,7 +569,14 @@ std::optional<SelectionId> SliceRuntime::preparePlate(Runtime& runtime,
                 item.type = Slic3r::Domain::CustomGCode::Type::ToolChange;
             else
                 item.type = Slic3r::Domain::CustomGCode::Type::Custom;
-            if (item.type == Slic3r::Domain::CustomGCode::Type::PausePrint)
+            // The colour field is a colour and nothing else. It used to carry the
+            // marker's text, which writes "check the first layer" into a field every
+            // other slicer reads as #RRGGBB. Text belongs in `extra`, which is where
+            // the readers look first.
+            if (item.type == Slic3r::Domain::CustomGCode::Type::ColorChange
+                && QRegularExpression(QStringLiteral("^#[0-9A-Fa-f]{6}$"))
+                       .match(source.text)
+                       .hasMatch())
                 item.color = source.text.toStdString();
             info.gcodes.push_back(std::move(item));
         }

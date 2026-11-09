@@ -270,27 +270,28 @@ Item {
     // Distance that frames the whole build plate, which is the framing the app
     // opens in and what the "fit plate" button restores.
     //
-    // The plate's chrome hangs off its edges -- the name and its pencil to the left,
-    // the icon column to the right -- and it lives in the plate's own plane, so it is
-    // not a screen-space overlay that can be clamped. The fit has to carry it
-    // instead: framed on the bed alone, both land outside the viewport and the
-    // plate's own actions become unreachable. The name is measured the same way the
-    // decal measures it, from its length, because the fit is computed above the
-    // per-plate delegate.
-    readonly property real plateApronRight: plateChrome.iconSize + plateChrome.gapLeft * 2
-    readonly property real plateApronLeft: {
+    // The plate's chrome: the icon column off the right edge, the name and its pencil
+    // above the back edge. It lives in the plate's own plane, so it is not a
+    // screen-space overlay that can be clamped; the fit has to carry it instead.
+    // Framed on the bed alone, both land outside the viewport and the plate's own
+    // actions become unreachable. The name is measured the same way the decal
+    // measures it, from its length, because the fit is computed above the per-plate
+    // delegate; a long name is centred on the plate and so overhangs it on both sides.
+    readonly property real plateApronRight: Math.max(plateChrome.iconSize + plateChrome.gapLeft * 2,
+                                                     (root.longestPlateName - root.bedSize.x / 2) / 2)
+    readonly property real plateApronTop: plateChrome.gapTop + plateChrome.nameHeight
+                                            + plateChrome.gapLeft
+    readonly property real longestPlateName: {
         let longest = 0
         for (let i = 0; i < plateDocument.plates.length; ++i) {
             const label = plateDocument.plates[i].label || ""
             longest = Math.max(longest, label.length)
         }
         const aspect = Math.max(1.2, Math.min(6, longest * 0.55))
-        return plateChrome.gapLeft + plateChrome.pencilSize
-               + plateChrome.nameHeight * aspect * 1.3
+        return plateChrome.nameHeight * aspect * 1.3 + plateChrome.gapLeft + plateChrome.pencilSize
     }
-    readonly property real plateApronTop: plateChrome.gapTop + plateChrome.gapLeft
     readonly property real bedRadius: {
-        const halfWidth = root.bedSize.x / 2 + Math.max(root.plateApronLeft, root.plateApronRight)
+        const halfWidth = root.bedSize.x / 2 + root.plateApronRight
         const halfDepth = root.bedSize.y / 2 + root.plateApronTop
         return Math.max(1, Math.sqrt(halfWidth * halfWidth + halfDepth * halfDepth))
     }
@@ -1453,7 +1454,7 @@ Item {
         readonly property real pencilSize: 15 * plateChrome.iconScale
         readonly property real nameHeight: 9 * plateChrome.iconScale
         readonly property real gapLeft: 3 * plateChrome.iconScale
-        readonly property real gapTop: 3 * plateChrome.iconScale
+        readonly property real gapTop: 6 * plateChrome.iconScale
         readonly property real gapY: 5 * plateChrome.iconScale
         readonly property real decalLift: 0.25
 
@@ -1582,21 +1583,22 @@ Item {
                                                                      / Math.max(1, nameMeasure.implicitHeight)))
                 readonly property real nameWidth: plateChrome.nameHeight * plateItem.nameAspect * 1.3
                 readonly property real nameLocalHeight: 100 / plateItem.nameAspect
-                readonly property real nameTop: root.bedMax.y - plateChrome.nameHeight
-                // The name runs along the back edge, off the bed to its left,
-                // reading name, pencil, then the plate they belong to.
-                readonly property real nameLeft: root.bedMin.x - plateChrome.gapLeft
-                                                 - plateChrome.pencilSize
-                                                 - plateItem.nameWidth
+                readonly property real nameTop: root.bedMax.y + plateChrome.gapTop
+                // The name and its pencil sit above the plate's back edge, centred on
+                // it: a caption on the plate rather than a label stuck to a corner.
+                readonly property real nameLeft: root.bedCentre.x
+                                                 - (plateItem.nameWidth + plateChrome.gapLeft
+                                                    + plateChrome.pencilSize) / 2
                 readonly property var nameMatrix: plateItem.decal(
                     plateItem.nameLeft, plateItem.nameTop,
                     plateItem.nameLeft + plateItem.nameWidth,
                     plateItem.nameTop + plateChrome.nameHeight,
                     100, plateItem.nameLocalHeight)
                 readonly property var pencilMatrix: plateItem.decal(
-                    root.bedMin.x - plateChrome.gapLeft - plateChrome.pencilSize,
+                    plateItem.nameLeft + plateItem.nameWidth + plateChrome.gapLeft,
                     plateItem.nameTop + (plateChrome.nameHeight - plateChrome.pencilSize) / 2,
-                    root.bedMin.x - plateChrome.gapLeft,
+                    plateItem.nameLeft + plateItem.nameWidth + plateChrome.gapLeft
+                        + plateChrome.pencilSize,
                     plateItem.nameTop + (plateChrome.nameHeight + plateChrome.pencilSize) / 2,
                     100, 100)
                 // The row's clickable quad, inflated around the name and the pencil.
@@ -1609,7 +1611,8 @@ Item {
                     plateItem.nameLeft - plateItem.hitPad,
                     plateItem.nameTop
                         + (plateChrome.nameHeight - plateChrome.pencilSize) / 2 - plateItem.hitPad,
-                    root.bedMin.x - plateChrome.gapLeft + plateItem.hitPad,
+                    plateItem.nameLeft + plateItem.nameWidth + plateChrome.gapLeft
+                        + plateChrome.pencilSize + plateItem.hitPad,
                     plateItem.nameTop + (plateChrome.nameHeight + plateChrome.pencilSize) / 2
                         + plateItem.hitPad,
                     100, 100)
