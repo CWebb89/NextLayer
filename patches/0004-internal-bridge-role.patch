@@ -1,0 +1,143 @@
+diff --git a/src/libpgcode/src/Slic3r/Biz/libpgcode/ProcessorImpl.cpp b/src/libpgcode/src/Slic3r/Biz/libpgcode/ProcessorImpl.cpp
+index 24033f4..9447e2f 100644
+--- a/src/libpgcode/src/Slic3r/Biz/libpgcode/ProcessorImpl.cpp
++++ b/src/libpgcode/src/Slic3r/Biz/libpgcode/ProcessorImpl.cpp
+@@ -1822,6 +1822,8 @@ GCodeExtrusionRole string_to_gcode_extrusion_role(const std::string_view role)
+         return GCodeExtrusionRole::Custom;
+     else if (role == "Bottom surface")
+         return GCodeExtrusionRole::BottomSurface;
++    else if (role == "Internal bridge infill")
++        return GCodeExtrusionRole::InternalBridge;
+     else
+         return GCodeExtrusionRole::None;
+ }
+@@ -2048,6 +2050,7 @@ void ProcessorImpl::process_bambustudio_tags(const std::string_view comment)
+         { "Custom"sv,                GCodeExtrusionRole::Custom},
+         { "Gap infill"sv,            GCodeExtrusionRole::GapFill },
+         { "Inner wall"sv,            GCodeExtrusionRole::Perimeter },
++        { "Internal bridge"sv,       GCodeExtrusionRole::InternalBridge },
+         { "Internal solid infill"sv, GCodeExtrusionRole::SolidInfill },
+         { "Ironing"sv,               GCodeExtrusionRole::Ironing },
+         { "Multiple"sv,              GCodeExtrusionRole::None},
+@@ -2402,7 +2405,7 @@ void ProcessorImpl::process_orcaslicer_tags(const std::string_view comment)
+         { "Custom"sv,                GCodeExtrusionRole::Custom},
+         { "Gap infill"sv,            GCodeExtrusionRole::GapFill },
+         { "Inner wall"sv,            GCodeExtrusionRole::Perimeter },
+-        { "Internal bridge"sv,       GCodeExtrusionRole::None },
++        { "Internal bridge"sv,       GCodeExtrusionRole::InternalBridge },
+         { "Internal solid infill"sv, GCodeExtrusionRole::SolidInfill },
+         { "Ironing"sv,               GCodeExtrusionRole::Ironing },
+         { "Multiple"sv,              GCodeExtrusionRole::None},
+diff --git a/src/libslic3r/src/libslic3r/ExtrusionRole.cpp b/src/libslic3r/src/libslic3r/ExtrusionRole.cpp
+index a59e3de..de3f9ef 100644
+--- a/src/libslic3r/src/libslic3r/ExtrusionRole.cpp
++++ b/src/libslic3r/src/libslic3r/ExtrusionRole.cpp
+@@ -23,6 +23,7 @@ GCodeExtrusionRole extrusion_role_to_gcode_extrusion_role(ExtrusionRole role)
+     if (role == ExtrusionRole::TopSolidInfill)      return GCodeExtrusionRole::TopSolidInfill;
+     if (role == ExtrusionRole::Ironing)             return GCodeExtrusionRole::Ironing;
+     if (role == ExtrusionRole::BridgeInfill)        return GCodeExtrusionRole::BridgeInfill;
++    if (role == ExtrusionRole::InternalBridgeInfill) return GCodeExtrusionRole::InternalBridge;
+     if (role == ExtrusionRole::GapFill)             return GCodeExtrusionRole::GapFill;
+     if (role == ExtrusionRole::Skirt)               return GCodeExtrusionRole::Skirt;
+     if (role == ExtrusionRole::SupportMaterial)     return GCodeExtrusionRole::SupportMaterial;
+@@ -44,6 +45,7 @@ std::string gcode_extrusion_role_to_string(GCodeExtrusionRole role)
+         case GCodeExtrusionRole::TopSolidInfill               : return L("Top solid infill");
+         case GCodeExtrusionRole::Ironing                      : return L("Ironing");
+         case GCodeExtrusionRole::BridgeInfill                 : return L("Bridge infill");
++        case GCodeExtrusionRole::InternalBridge               : return L("Internal bridge infill");
+         case GCodeExtrusionRole::GapFill                      : return L("Gap fill");
+         case GCodeExtrusionRole::Skirt                        : return L("Skirt/Brim");
+         case GCodeExtrusionRole::SupportMaterial              : return L("Support material");
+diff --git a/src/libslic3r/src/libslic3r/ExtrusionRole.hpp b/src/libslic3r/src/libslic3r/ExtrusionRole.hpp
+index 3b63e82..ec72e74 100644
+--- a/src/libslic3r/src/libslic3r/ExtrusionRole.hpp
++++ b/src/libslic3r/src/libslic3r/ExtrusionRole.hpp
+@@ -73,7 +73,7 @@ struct ExtrusionRole : public ExtrusionRoleModifiers
+     static constexpr const ExtrusionRoleModifiers Ironing{ ExtrusionRoleModifier::Infill | ExtrusionRoleModifier::Solid | ExtrusionRoleModifier::Ironing | ExtrusionRoleModifier::External };
+     // Visible bridging infill at the bottom of an object.
+     static constexpr const ExtrusionRoleModifiers BridgeInfill{ ExtrusionRoleModifier::Infill | ExtrusionRoleModifier::Solid | ExtrusionRoleModifier::Bridge | ExtrusionRoleModifier::External };
+-//    static constexpr const ExtrusionRoleModifiers InternalBridgeInfill{ ExtrusionRoleModifier::Infill | ExtrusionRoleModifier::Solid | ExtrusionRoleModifier::Bridge };
++    static constexpr const ExtrusionRoleModifiers InternalBridgeInfill{ ExtrusionRoleModifier::Infill | ExtrusionRoleModifier::Solid | ExtrusionRoleModifier::Bridge };
+     // Gap fill extrusion, currently used for any variable width extrusion: Thin walls outside of the outer extrusion,
+     // gap fill in between perimeters, gap fill between the inner perimeter and infill.
+     //FIXME revise GapFill and ThinWall types, split Gap Fill to Gap Fill and ThinWall.
+diff --git a/src/libslic3r/src/libslic3r/Fill/Fill.cpp b/src/libslic3r/src/libslic3r/Fill/Fill.cpp
+index b39bb79..130cf8d 100644
+--- a/src/libslic3r/src/libslic3r/Fill/Fill.cpp
++++ b/src/libslic3r/src/libslic3r/Fill/Fill.cpp
+@@ -184,7 +184,7 @@ std::vector<SurfaceFill> group_fills(const Layer &layer)
+ 		            continue;
+ 
+ 		        if (is_bridge) {
+-		            params.extrusion_role = ExtrusionRole::BridgeInfill;
++		            params.extrusion_role = surface.surface_type == stInternalBridge ? ExtrusionRole::InternalBridgeInfill : ExtrusionRole::BridgeInfill;
+                 } else {
+                     if (surface.is_solid()) {
+                         if (surface.is_top()) {
+diff --git a/src/libvgcode/include/Slic3r/App/libvgcode/Settings.hpp b/src/libvgcode/include/Slic3r/App/libvgcode/Settings.hpp
+index fc9cabf..90f0fff 100644
+--- a/src/libvgcode/include/Slic3r/App/libvgcode/Settings.hpp
++++ b/src/libvgcode/include/Slic3r/App/libvgcode/Settings.hpp
+@@ -55,7 +55,8 @@ struct Settings
+ 				true, // SupportMaterialInterface
+ 				true, // WipeTower
+ 				true, // Custom
+-				true  // BottomSurface
++				true, // BottomSurface
++				true  // InternalBridge
+ 		};
+ };
+ 
+diff --git a/src/libvgcode/src/Slic3r/App/libvgcode/FdmViewer.cpp b/src/libvgcode/src/Slic3r/App/libvgcode/FdmViewer.cpp
+index 937ad95..f6c4ece 100644
+--- a/src/libvgcode/src/Slic3r/App/libvgcode/FdmViewer.cpp
++++ b/src/libvgcode/src/Slic3r/App/libvgcode/FdmViewer.cpp
+@@ -106,7 +106,8 @@ static const std::array<ColorRGB, GCODE_EXTRUSION_ROLES_COUNT> DEFAULT_EXTRUSION
+     { 0.00f, 0.50f, 0.00f }, // SupportMaterialInterface
+     { 0.70f, 0.89f, 0.67f }, // WipeTower
+     { 0.37f, 0.82f, 0.58f }, // Custom
+-    { 0.24f, 0.62f, 0.94f }  // BottomSurface
++    { 0.24f, 0.62f, 0.94f }, // BottomSurface
++    { 0.00f, 0.72f, 0.78f }  // InternalBridge
+ }};
+ 
+ static const std::array<ColorRGB, OPTION_TYPES_COUNT> DEFAULT_OPTIONS_COLORS{{
+diff --git a/src/libvgcode/src/Slic3r/App/libvgcode/ViewerImpl.cpp b/src/libvgcode/src/Slic3r/App/libvgcode/ViewerImpl.cpp
+index 4e0cd9f..6f4c1da 100644
+--- a/src/libvgcode/src/Slic3r/App/libvgcode/ViewerImpl.cpp
++++ b/src/libvgcode/src/Slic3r/App/libvgcode/ViewerImpl.cpp
+@@ -94,7 +94,8 @@ static const std::array<ColorRGB, GCODE_EXTRUSION_ROLES_COUNT> DEFAULT_EXTRUSION
+     { 0.00f, 0.50f, 0.00f }, // SupportMaterialInterface
+     { 0.70f, 0.89f, 0.67f }, // WipeTower
+     { 0.37f, 0.82f, 0.58f }, // Custom
+-    { 0.24f, 0.62f, 0.94f }  // BottomSurface
++    { 0.24f, 0.62f, 0.94f }, // BottomSurface
++    { 0.00f, 0.72f, 0.78f }  // InternalBridge
+ }};
+ 
+ static const std::array<ColorRGB, OPTION_TYPES_COUNT> DEFAULT_OPTIONS_COLORS{{
+diff --git a/src/slic3r-domain/include/Slic3r/Domain/GCodeExtrusionRole.hpp b/src/slic3r-domain/include/Slic3r/Domain/GCodeExtrusionRole.hpp
+index 6ce90e7..7e610f9 100644
+--- a/src/slic3r-domain/include/Slic3r/Domain/GCodeExtrusionRole.hpp
++++ b/src/slic3r-domain/include/Slic3r/Domain/GCodeExtrusionRole.hpp
+@@ -25,6 +25,8 @@ enum class GCodeExtrusionRole : uint8_t {
+     Custom,
+     // Visible bottom surface, the first `bottom_solid_layers` layers.
+     BottomSurface,
++    // Bridging infill printed over air inside the object, not visible from outside.
++    InternalBridge,
+     // Stopper to count number of enums.
+     Count
+ };
+diff --git a/src/slic3r-shared/src/Slic3r/App/Preview/Types.cpp b/src/slic3r-shared/src/Slic3r/App/Preview/Types.cpp
+index 9e612e7..cdcdf50 100644
+--- a/src/slic3r-shared/src/Slic3r/App/Preview/Types.cpp
++++ b/src/slic3r-shared/src/Slic3r/App/Preview/Types.cpp
+@@ -53,6 +53,7 @@ std::string to_string(GCodeExtrusionRole role)
+     case GCodeExtrusionRole::WipeTower:                { return _u8L("Wipe tower"); }
+     case GCodeExtrusionRole::Custom:                   { return _u8L("Custom"); }
+     case GCodeExtrusionRole::BottomSurface:            { return _u8L("Bottom surface"); }
++    case GCodeExtrusionRole::InternalBridge:           { return _u8L("Internal bridge infill"); }
+     }
+ }
+ 

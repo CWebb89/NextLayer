@@ -67,6 +67,7 @@ const char* const kRoleNames[kRoleCount] = {
     "Wipe tower",
     "Custom",
     "Bottom surface",
+    "Internal bridge infill",
 };
 
 pg::ProcessorConfig configFor(const std::string& gcode)

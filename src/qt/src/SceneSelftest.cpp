@@ -1331,7 +1331,8 @@ int runMeshToolsSelftest(const QString& configPath, const QString& dataDir)
     return 0;
 }
 
-int runCalibrationSelftest(const QString& configPath, const QString& dataDir)
+int runCalibrationSelftest(const QString& configPath, const QString& dataDir,
+                           const QString& keepGcodePath)
 {
     Q_UNUSED(dataDir)
     std::setvbuf(stdout, nullptr, _IONBF, 0);
@@ -1383,26 +1384,27 @@ int runCalibrationSelftest(const QString& configPath, const QString& dataDir)
         bool klipperOnly;
         int minimumBands;
         int minimumObjects;
+        int minimumInLayerMoves;
         QVariantMap params;
     };
     const Expectation expectations[] = {
-        {"temperature", "M104 S", "M104 S", "M104 S", false, 6, 1, {}},
-        {"pressure_advance", "SET_PRESSURE_ADVANCE", "M900 K", "M572 D0 S", false, 6, 1,
+        {"temperature", "M104 S", "M104 S", "M104 S", false, 6, 1, 0, {}},
+        {"pressure_advance", "SET_PRESSURE_ADVANCE", "M900 K", "M572 D0 S", false, 6, 1, 0,
          {{QStringLiteral("method"), QStringLiteral("tower")}}},
-        {"pressure_advance", "SET_PRESSURE_ADVANCE", "M900 K", "M572 D0 S", false, 6, 1,
+        {"pressure_advance", "SET_PRESSURE_ADVANCE", "M900 K", "M572 D0 S", false, 6, 1, 3,
          {{QStringLiteral("method"), QStringLiteral("line")}}},
-        {"pressure_advance", "SET_PRESSURE_ADVANCE", "M900 K", "M572 D0 S", false, 6, 1,
+        {"pressure_advance", "SET_PRESSURE_ADVANCE", "M900 K", "M572 D0 S", false, 6, 1, 6,
          {{QStringLiteral("method"), QStringLiteral("pattern")}}},
-        {"flow", "M221 S", "M221 S", "M221 S", false, 5, 6, {}},
-        {"max_flow", "M220 S", "M220 S", "M220 S", false, 6, 6, {}},
-        {"vfa", "M220 S", "M220 S", "M220 S", false, 6, 6, {}},
+        {"flow", "M221 S", "M221 S", "M221 S", false, 5, 5, 0, {}},
+        {"max_flow", "M220 S", "M220 S", "M220 S", false, 6, 6, 0, {}},
+        {"vfa", "M220 S", "M220 S", "M220 S", false, 6, 6, 0, {}},
         {"cornering", "SET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY", "M205 J", "M566", false, 6,
-         6, {}},
-        {"input_shaping_freq", "SET_INPUT_SHAPER", "", "", true, 6, 6, {}},
-        {"input_shaping_damp", "SET_INPUT_SHAPER", "", "", true, 4, 6, {}},
-        {"retraction", "SET_RETRACTION", "M207 S", "M207 S", false, 6, 6, {}},
+         6, 0, {}},
+        {"input_shaping_freq", "SET_INPUT_SHAPER", "", "", true, 6, 6, 0, {}},
+        {"input_shaping_damp", "SET_INPUT_SHAPER", "", "", true, 4, 5, 0, {}},
+        {"retraction", "SET_RETRACTION", "M207 S", "M207 S", false, 6, 6, 0, {}},
         {"first_layer", "SET_GCODE_OFFSET Z=", "SET_GCODE_OFFSET Z=", "SET_GCODE_OFFSET Z=", false,
-         6, 6, {}},
+         6, 6, 0, {}},
     };
 
     int built = 0;
@@ -1440,29 +1442,49 @@ int runCalibrationSelftest(const QString& configPath, const QString& dataDir)
         QString error;
         if (!next_layer::SliceRuntime::instance().slicePlate(document.sliceObjects(), configPath,
                                                              gcode, error,
-                                                             document.layerGcodeList())) {
+                                                             document.layerGcodeList(),
+                                                             document.inLayerList())) {
             std::fprintf(stderr, "%s did not slice: %s\n", expectation.kind, qPrintable(error));
             return 1;
+        }
+        if (!keepGcodePath.isEmpty()) {
+            const QString variant = expectation.params.value(QStringLiteral("method")).toString();
+            QFile::remove(keepGcodePath);
+            QFile::remove(QStringLiteral("%1-%2.gcode").arg(keepGcodePath, variant));
+            QFile::copy(gcode, QStringLiteral("%1-%2%3.gcode")
+                                    .arg(keepGcodePath, QString::fromLatin1(expectation.kind), variant));
         }
 
         QFile file(gcode);
         if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
             return 1;
         int markers = 0;
+        int inLayerMoves = 0;
+        bool inFirstBand = false;
         QList<double> temperatures;
         while (!file.atEnd()) {
             const QByteArray line = file.readLine();
-            if (!line.contains(marker))
+            if (marker[0] && line.contains(marker)) {
+                if (inFirstBand)
+                    inFirstBand = false;
+                else
+                    inFirstBand = markers == 0;
+                ++markers;
+                if (line.startsWith("M104 S")) {
+                    const int valueStart = 6;
+                    const int stop = line.indexOf(' ', valueStart);
+                    temperatures.append(line.mid(valueStart, stop - valueStart).toDouble());
+                }
                 continue;
-            ++markers;
-            if (line.startsWith("M104 S")) {
-                const int valueStart = 6;
-                const int stop = line.indexOf(' ', valueStart);
-                temperatures.append(line.mid(valueStart, stop - valueStart).toDouble());
             }
+            if (inFirstBand && line.startsWith("G1 ") && line.contains(" X") && line.contains(" E")
+                && !line.contains(" E-"))
+                ++inLayerMoves;
         }
-        std::printf("%s: %d object(s), %d band command(s) in the G-code -- %s\n", expectation.kind,
-                    document.count(), markers, message.toUtf8().constData());
+        std::printf("%s: %d object(s), %d band command(s) in the G-code, %d extruding move(s) "
+                    "in the first band -- %s\n",
+                    expectation.kind, document.count(), markers, inLayerMoves,
+                    message.toUtf8().constData());
         if (!marker[0])
             continue;
         if (markers < expectation.minimumBands) {
@@ -1475,6 +1497,13 @@ int runCalibrationSelftest(const QString& configPath, const QString& dataDir)
         if (temperatures.size() >= 2 && temperatures.first() <= temperatures.last()) {
             std::fprintf(stderr, "%s: the bands do not descend in temperature (%g then %g)\n",
                          expectation.kind, temperatures.first(), temperatures.last());
+            return 1;
+        }
+        if (inLayerMoves < expectation.minimumInLayerMoves) {
+            std::fprintf(stderr,
+                         "%s: %d extruding move(s) between the first two band commands, "
+                         "expected at least %d, so the test is not printing its own geometry\n",
+                         expectation.kind, inLayerMoves, expectation.minimumInLayerMoves);
             return 1;
         }
     }

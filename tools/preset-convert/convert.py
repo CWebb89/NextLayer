@@ -138,6 +138,7 @@ RENAMES = {
     "enable_overhang_speed": ("enable_dynamic_overhang_speeds", "bool"),
     "fan_min_speed": ("min_fan_speed", "int"),
     "fan_max_speed": ("max_fan_speed", "int"),
+    "reduce_fan_stop_start_freq": ("fan_always_on", "bool"),
     "slow_down_min_layer_time": ("slowdown_below_layer_time", "float"),
     "filament_shrink": ("filament_shrinkage_compensation_xy", "percent_obj"),
     "filament_shrinkage_compensation_z": ("filament_shrinkage_compensation_z", "float"),

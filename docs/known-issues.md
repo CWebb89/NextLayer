@@ -17,6 +17,18 @@ complete inventory, this is the part you need before you start a print.
   Input shaping is Klipper-only by design and refuses on other flavours rather
   than emit commands that do nothing; the Marlin-side equivalents (`M593`) are
   not implemented.
+- **The PA line and pattern tests have been sliced, not printed.** Their geometry
+  is now real toolpaths extruded inside the first layer (or the first four, for
+  the pattern) through the engine's in-layer channel, and `tools/check` reads the
+  extruding moves back out of the G-code to prove they are there — but no plate
+  from the calibration suite has been through a nozzle yet, so nothing is known
+  about how the lines look in practice, whether 3.5 mm of spacing is the right
+  spacing, or whether the stroke-drawn value labels are legible on the bed.
+- **A calibration plate saved as a project loses its in-layer geometry.** The
+  polylines the PA line and pattern tests print live on the plate in memory, not
+  in the project file: reopening a saved project gives the same objects and bands
+  but not the generated toolpaths. Rebuilding the test from the calibration dialog
+  is the way back.
 
 ## Slicing and files
 

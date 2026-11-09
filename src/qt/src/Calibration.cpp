@@ -6,6 +6,7 @@
 #include "PlateDocument.hpp"
 #include "SettingsModel.hpp"
 
+#include <QLineF>
 #include <QVector3D>
 
 #include <algorithm>
@@ -128,6 +129,71 @@ struct Machine
     }
 };
 
+/// A five-cell stroke font for the numbers a calibration test prints beside each
+/// band. Glyphs are drawn in a 3 by 5 cell box, y up, and come back as line
+/// segments in cells so the caller decides the physical size. The set is digits
+/// and the marks a value needs — enough for "0.024", "-10", "100" — because a
+/// label with words in it would need a real typeface, and a real typeface on the
+/// bed is a mesh that occupies the plate.
+QVector<QLineF> glyphStrokes(QChar c)
+{
+    static const QLineF top(0.0, 5.0, 3.0, 5.0);
+    static const QLineF upperRight(3.0, 5.0, 3.0, 2.5);
+    static const QLineF lowerRight(3.0, 2.5, 3.0, 0.0);
+    static const QLineF bottom(0.0, 0.0, 3.0, 0.0);
+    static const QLineF lowerLeft(0.0, 2.5, 0.0, 0.0);
+    static const QLineF upperLeft(0.0, 5.0, 0.0, 2.5);
+    static const QLineF middle(0.0, 2.5, 3.0, 2.5);
+
+    switch (c.unicode()) {
+    case '0': return {top, upperRight, lowerRight, bottom, lowerLeft, upperLeft};
+    case '1': return {upperRight, lowerRight};
+    case '2': return {top, upperRight, middle, lowerLeft, bottom};
+    case '3': return {top, upperRight, middle, lowerRight, bottom};
+    case '4': return {upperLeft, middle, upperRight, lowerRight};
+    case '5': return {top, upperLeft, middle, lowerRight, bottom};
+    case '6': return {top, upperLeft, middle, lowerLeft, bottom, lowerRight};
+    case '7': return {top, upperRight, lowerRight};
+    case '8': return {top, upperRight, lowerRight, bottom, lowerLeft, upperLeft, middle};
+    case '9': return {top, upperRight, lowerRight, bottom, upperLeft, middle};
+    case '-': return {middle};
+    case '.': return {QLineF(0.0, 0.0, 0.9, 0.0)};
+    case ',': return {QLineF(0.0, 0.6, 0.6, 0.0)};
+    case 'x':
+    case 'X': return {QLineF(0.0, 4.0, 3.0, 0.0), QLineF(0.0, 0.0, 3.0, 4.0)};
+    case '/': return {QLineF(0.0, 0.0, 3.0, 5.0)};
+    default: return {};
+    }
+}
+
+/// One label as printer millimetres, stroke by stroke: `origin` is the left end
+/// of the baseline, `cell` the size of one font cell.
+QVector<QVector<QPointF>> labelStrokes(const QString& text, const QPointF& origin, double cell)
+{
+    QVector<QVector<QPointF>> strokes;
+    double cursor = 0.0;
+    for (const QChar c : text) {
+        if (c == QLatin1Char(' ')) {
+            cursor += cell * 4.0;
+            continue;
+        }
+        for (const QLineF& segment : glyphStrokes(c)) {
+            QVector<QPointF> stroke;
+            stroke.append(origin + QPointF(cursor + segment.x1() * cell, segment.y1() * cell));
+            stroke.append(origin + QPointF(cursor + segment.x2() * cell, segment.y2() * cell));
+            strokes.append(stroke);
+        }
+        cursor += cell * 4.0;
+    }
+    return strokes;
+}
+
+/// How wide a label prints, in millimetres, for laying a row of them out.
+double labelWidth(const QString& text, double cell)
+{
+    return std::max(0.0, double(text.size()) * 4.0 - 1.0) * cell;
+}
+
 double firstNumber(const QVariant& value, double fallback)
 {
     if (value.canConvert<QVariantList>()) {
@@ -204,76 +270,6 @@ QString pressureAdvanceCommand(Family family, double value)
     }
     return QStringLiteral("M900 K%1").arg(number(value, 3));
 }
-
-/// Writes a bead that does not care whether the profile counts E in absolute
-/// or relative millimetres: every extrusion is preceded by a G92 E0 and carries
-/// its own volume, which is a length in relative mode and a position from zero
-/// in absolute mode. The engine resets E at the layer boundary where this block
-/// lands, so the closing G92 costs nothing either way.
-class Toolpath
-{
-public:
-    Toolpath(Family family, double layerZ, double flowPerMm3)
-        : m_family(family), m_z(layerZ), m_flowPerMm3(flowPerMm3)
-    {
-        m_text += QStringLiteral("G92 E0\n");
-        m_text += QStringLiteral("G1 Z%1 F600\n").arg(m_z, 0, 'f', 3);
-    }
-
-    void finish()
-    {
-        m_text += pressureAdvanceCommand(m_family, 0.0) + QLatin1Char('\n');
-        m_text += QStringLiteral("G92 E0\n");
-    }
-
-    void pressureAdvance(double value)
-    {
-        m_text += pressureAdvanceCommand(m_family, value) + QLatin1Char('\n');
-    }
-
-    void role(const char* name)
-    {
-        m_text += QStringLiteral(";TYPE:%1\n").arg(QString::fromLatin1(name));
-    }
-
-    void travel(double x, double y)
-    {
-        m_text += QStringLiteral("G1 E-0.8 F2400\n");
-        m_text += QStringLiteral("G1 Z%1 F600\n").arg(m_z + 0.4, 0, 'f', 3);
-        m_text += QStringLiteral("G1 X%1 Y%2 F12000\n")
-                      .arg(x, 0, 'f', 3)
-                      .arg(y, 0, 'f', 3);
-        m_text += QStringLiteral("G1 Z%1 F600\n").arg(m_z, 0, 'f', 3);
-        m_text += QStringLiteral("G1 E0.8 F2400\n");
-        m_text += QStringLiteral("G92 E0\n");
-        m_x = x;
-        m_y = y;
-    }
-
-    void line(double x, double y, double feed, double width, double height)
-    {
-        const double length = std::hypot(x - m_x, y - m_y);
-        const double volume = length * width * height * m_flowPerMm3;
-        m_text += QStringLiteral("G92 E0\n");
-        m_text += QStringLiteral("G1 X%1 Y%2 E%3 F%4\n")
-                      .arg(x, 0, 'f', 3)
-                      .arg(y, 0, 'f', 3)
-                      .arg(volume, 0, 'f', 5)
-                      .arg(feed, 0, 'f', 0);
-        m_x = x;
-        m_y = y;
-    }
-
-    const QString& text() const { return m_text; }
-
-private:
-    Family m_family;
-    double m_z;
-    double m_flowPerMm3;
-    double m_x = 0.0;
-    double m_y = 0.0;
-    QString m_text;
-};
 
 class Params
 {
@@ -502,6 +498,7 @@ QString Calibration::build(const QString& kind, const QVariantMap& values)
 
     m_document->clear();
     m_document->clearLayerGcodes();
+    m_document->clearInLayerPolylines();
 
     const auto bandCount = [](double start, double end, double step, int limit) {
         const double span = std::fabs(start - end);
@@ -543,27 +540,27 @@ QString Calibration::build(const QString& kind, const QVariantMap& values)
         return true;
     };
 
-    /// One row of labels on the bed in front of the test. Laid out after the
-    /// glyphs are built, so the spacing follows the real width of each word.
-    auto addLabels = [this, centre](int count, double front,
-                                    const std::function<QString(int)>& text) {
-        QList<int> ids;
-        QList<double> widths;
-        for (int band = 0; band < count; ++band) {
-            const int id = m_document->addText(text(band), 6.0, 0.8, QString());
-            if (id < 0)
-                return;
-            ids.append(id);
-            widths.append(m_document->objectInfo(id).value(QStringLiteral("width")).toDouble());
-        }
+    /// One row of labels in front of the test, printed inside the first layer as
+    /// strokes rather than laid on the bed as text meshes: a label that is part of
+    /// the print costs no plate space, cannot be pushed off the bed by the test
+    /// itself, and prints with the layer it belongs to.
+    auto addLabels = [this, centre, machine](int count, double front,
+                                             const std::function<QString(int)>& text) {
+        const double cell = 1.2;
+        QList<QString> words;
         double total = 0.0;
-        for (double width : widths)
-            total += width + 4.0;
+        for (int band = 0; band < count; ++band) {
+            words.append(text(band));
+            total += labelWidth(words.back(), cell) + 4.0;
+        }
         double cursor = centre.x() - total / 2.0;
-        for (int band = 0; band < ids.size(); ++band) {
-            m_document->setPosition(ids[band], QVector3D(float(cursor + widths[band] / 2.0),
-                                                         float(centre.y() + front), 0.0f));
-            cursor += widths[band] + 4.0;
+        for (int band = 0; band < count; ++band) {
+            const QVector<QVector<QPointF>> strokes =
+                labelStrokes(words[band], QPointF(cursor, centre.y() + front), cell);
+            for (const QVector<QPointF>& stroke : strokes)
+                m_document->addInLayerPolyline(machine.firstLayer, stroke, machine.lineWidth,
+                                               machine.firstLayer, 30.0);
+            cursor += labelWidth(words[band], cell) + 4.0;
         }
     };
 
@@ -633,8 +630,6 @@ QString Calibration::build(const QString& kind, const QVariantMap& values)
         const int count = bandCount(start, end, step, method == QLatin1String("line") ? 48 : 32);
         const auto advance = [start, step](int band) { return start + step * band; };
         const QVector3D bed = m_document->plateSize();
-        const double radius = machine.filament / 2.0;
-        const double flowPerMm3 = machine.flow / (M_PI * radius * radius);
         const auto anchorHeight = std::max(machine.firstLayer, machine.layer);
 
         auto addAnchor = [this, centre, bed](double height) {
@@ -655,31 +650,44 @@ QString Calibration::build(const QString& kind, const QVariantMap& values)
             const double totalLength = shortLength * 2.0 + longLength;
             const double x0 = centre.x() - totalLength / 2.0;
             const double y0 = centre.y() - (count - 1) * spacing / 2.0;
+            const double z = machine.firstLayer;
 
-            Toolpath path(machine.family, machine.firstLayer, flowPerMm3);
-            path.role("External perimeter");
+            // Orca's line test in its own terms: three segments per line — short,
+            // long, short — so one line shows the same pressure-advance value at two
+            // speeds and the extrusion that follows. The segments are extruded by
+            // the engine through its writer, which keeps E and the nozzle position
+            // correct; the value itself travels as the command in front of each line.
             for (int line = 0; line < count; ++line) {
                 const double y = y0 + line * spacing;
-                path.pressureAdvance(advance(line));
-                path.travel(x0, y);
-                path.line(x0 + shortLength, y, 1200.0, machine.lineWidth, machine.firstLayer);
-                path.line(x0 + shortLength + longLength, y, 6000.0, machine.lineWidth,
-                          machine.firstLayer);
-                path.line(x0 + totalLength, y, 1200.0, machine.lineWidth, machine.firstLayer);
+                const QString command = pressureAdvanceCommand(machine.family, advance(line));
+                const struct
+                {
+                    double from;
+                    double to;
+                    double speed;
+                } segments[] = {{x0, x0 + shortLength, 20.0},
+                                {x0 + shortLength, x0 + shortLength + longLength, 100.0},
+                                {x0 + shortLength + longLength, x0 + totalLength, 20.0}};
+                bool first = true;
+                for (const auto& segment : segments) {
+                    m_document->addInLayerPolyline(
+                        z, {QPointF(segment.from, y), QPointF(segment.to, y)},
+                        machine.lineWidth, machine.firstLayer, segment.speed,
+                        first ? command : QString());
+                    first = false;
+                }
             }
-            path.finish();
             if (!addAnchor(anchorHeight))
                 return failure("could not build the PA line test");
-            m_document->addLayerGcode(machine.firstLayer, QStringLiteral("gcode"), path.text());
 
             if (params.flag("numbers", true)) {
+                const double cell = 0.6;
                 for (int line = 0; line < count; line += 2) {
-                    const int id = m_document->addText(number(advance(line), 3), 3.0, 0.6,
-                                                       QString());
-                    if (id < 0)
-                        continue;
-                    m_document->setPosition(id, QVector3D(float(x0 + totalLength + 12.0),
-                                                          float(y0 + line * spacing), 0.0f));
+                    const QPointF origin(x0 + totalLength + 12.0, y0 + line * spacing - 1.5);
+                    for (const QVector<QPointF>& stroke :
+                         labelStrokes(number(advance(line), 3), origin, cell))
+                        m_document->addInLayerPolyline(z, stroke, machine.lineWidth,
+                                                       machine.firstLayer, 30.0);
                 }
             }
             return QStringLiteral("PA line: %1 lines from %2 to %3 (%4)")
@@ -703,36 +711,38 @@ QString Calibration::build(const QString& kind, const QVariantMap& values)
             const int layers = 4;
 
             for (int layer = 0; layer < layers; ++layer) {
-                const double layerHeight = layer == 0 ? machine.firstLayer : machine.layer;
                 const double z = machine.firstLayer + layer * machine.layer;
-                Toolpath path(machine.family, z, flowPerMm3);
-                path.role("External perimeter");
                 for (int pattern = 0; pattern < count; ++pattern) {
                     const double base = x0 + pattern * patternAdvance;
-                    path.pressureAdvance(advance(pattern));
+                    bool first = true;
                     for (int wall = 0; wall < 3; ++wall) {
                         const double x = base + (wall + 1) * wallAdvance;
-                        path.travel(x, y0);
-                        path.line(x + side * cosine, y0 + side * sine, 6000.0,
-                                  machine.lineWidth, layerHeight);
-                        path.line(x, y0 + side * sine * 2.0, 6000.0, machine.lineWidth,
-                                  layerHeight);
+                        const QPointF start(x, y0);
+                        const QPointF middle(x + side * cosine, y0 + side * sine);
+                        const QPointF end(x, y0 + side * sine * 2.0);
+                        m_document->addInLayerPolyline(
+                            z, {start, middle}, machine.lineWidth, machine.layer, 100.0,
+                            first ? pressureAdvanceCommand(machine.family, advance(pattern))
+                                  : QString());
+                        m_document->addInLayerPolyline(z, {middle, end}, machine.lineWidth,
+                                                       machine.layer, 100.0);
+                        first = false;
                     }
                 }
-                path.finish();
-                m_document->addLayerGcode(z, QStringLiteral("gcode"), path.text());
             }
             if (!addAnchor(machine.firstLayer + (layers - 1) * machine.layer + 0.01))
                 return failure("could not build the PA pattern test");
 
-            for (int pattern = 0; pattern < count; pattern += 2) {
-                const int id = m_document->addText(number(advance(pattern), 3), 3.0, 0.6,
-                                                   QString());
-                if (id < 0)
-                    continue;
-                m_document->setPosition(id, QVector3D(float(x0 + pattern * patternAdvance
-                                                            + wallAdvance),
-                                                      float(y0 - 12.0), 0.0f));
+            if (params.flag("numbers", true)) {
+                const double cell = 0.6;
+                for (int pattern = 0; pattern < count; pattern += 2) {
+                    const QPointF origin(x0 + pattern * patternAdvance + wallAdvance,
+                                         y0 - 4.5);
+                    for (const QVector<QPointF>& stroke :
+                         labelStrokes(number(advance(pattern), 3), origin, cell))
+                        m_document->addInLayerPolyline(machine.firstLayer, stroke,
+                                                       machine.lineWidth, machine.firstLayer, 30.0);
+                }
             }
             return QStringLiteral("PA pattern: %1 patterns from %2 to %3, %4 layers")
                 .arg(count)

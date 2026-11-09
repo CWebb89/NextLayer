@@ -32,6 +32,8 @@ inline QColor featureColor(const QString& feature, const QVariantMap& roles)
         return QColor("#2fb6d6");
     if (feature.startsWith(QLatin1String("Bridge infill")))
         return QColor("#4f9ee8");
+    if (feature.startsWith(QLatin1String("Internal bridge infill")))
+        return QColor("#3fbfa0");
     if (feature == QLatin1String("Support material"))
         return QColor("#58b368");
     if (feature == QLatin1String("Support material interface"))

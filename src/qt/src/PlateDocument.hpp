@@ -321,7 +321,24 @@ public:
         QString text;
     };
 
+    struct InLayerMark
+    {
+        double z = 0.0;
+        QVector<QPointF> points;
+        double lineWidth = 0.45;
+        double layerHeight = 0.2;
+        double speed = 40.0;
+        QString prefix;
+    };
+
     Q_INVOKABLE QVariantList layerGcodes() const;
+    /// Records a polyline the plate prints inside a layer, in printer millimetres.
+    /// The engine extrudes it through its writer, so it costs no object on the
+    /// bed and cannot put the machine's E value out of step with its own moves.
+    void addInLayerPolyline(double z, const QVector<QPointF>& points, double lineWidth,
+                            double layerHeight, double speed, const QString& prefix = {});
+    void clearInLayerPolylines();
+    QVector<next_layer::PlateInLayerPolyline> inLayerList() const;
     Q_INVOKABLE bool addLayerGcode(double z, const QString& type, const QString& text);
     Q_INVOKABLE bool removeLayerGcode(double z);
     Q_INVOKABLE void clearLayerGcodes();
@@ -483,6 +500,7 @@ private:
     bool m_modified = false;
     QVector<QColor> m_toolColours;
     std::vector<LayerGcode> m_layerGcodes;
+    std::vector<InLayerMark> m_inLayerMarks;
     double m_baseLayerHeight = 0.2;
     std::vector<int> m_selectedIds;
     int m_version = 0;

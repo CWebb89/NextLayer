@@ -2728,6 +2728,43 @@ QVector<next_layer::PlateSliceObject> PlateDocument::sliceObjects() const
     return sliceObjectsFor(m_activePlate);
 }
 
+void PlateDocument::addInLayerPolyline(double z, const QVector<QPointF>& points, double lineWidth,
+                                       double layerHeight, double speed, const QString& prefix)
+{
+    if (z <= 0.0 || points.size() < 2)
+        return;
+    InLayerMark mark;
+    mark.z = z;
+    mark.points = points;
+    mark.lineWidth = lineWidth;
+    mark.layerHeight = layerHeight;
+    mark.speed = speed;
+    mark.prefix = prefix;
+    m_inLayerMarks.push_back(std::move(mark));
+}
+
+void PlateDocument::clearInLayerPolylines()
+{
+    m_inLayerMarks.clear();
+}
+
+QVector<next_layer::PlateInLayerPolyline> PlateDocument::inLayerList() const
+{
+    QVector<next_layer::PlateInLayerPolyline> list;
+    list.reserve(int(m_inLayerMarks.size()));
+    for (const InLayerMark& mark : m_inLayerMarks) {
+        next_layer::PlateInLayerPolyline out;
+        out.z = mark.z;
+        out.points = mark.points;
+        out.line_width = mark.lineWidth;
+        out.layer_height = mark.layerHeight;
+        out.speed = mark.speed;
+        out.prefix = mark.prefix;
+        list.push_back(std::move(out));
+    }
+    return list;
+}
+
 QVector<next_layer::PlateSliceObject> PlateDocument::sliceObjectsFor(int plate) const
 {
     QVector<next_layer::PlateSliceObject> objects;

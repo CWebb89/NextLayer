@@ -5,6 +5,7 @@
 
 #include "GcodeBrand.hpp"
 #include "PlateDocument.hpp"
+#include "PlateThumbnail.hpp"
 #include "SettingsModel.hpp"
 #include "SliceRuntime.hpp"
 
@@ -16,6 +17,8 @@
 #include "Scratch.hpp"
 #include <QList>
 #include <QMetaObject>
+#include <QQuickItem>
+#include <QQuickWindow>
 
 #include <chrono>
 
@@ -199,8 +202,11 @@ void SliceController::slice()
         const QVector<next_layer::PlateLayerGcode> layerGcodes =
             m_document != nullptr ? m_document->layerGcodeList()
                                   : QVector<next_layer::PlateLayerGcode>();
+        const QVector<next_layer::PlateInLayerPolyline> inLayer =
+            m_document != nullptr ? m_document->inLayerList()
+                                  : QVector<next_layer::PlateInLayerPolyline>();
         const bool sliced = !objects.empty()
-            ? m_runtime.slicePlate(objects, m_configPath, outputPath, engineError, layerGcodes)
+            ? m_runtime.slicePlate(objects, m_configPath, outputPath, engineError, layerGcodes, inLayer)
             : m_runtime.slice(modelPath, m_configPath, outputPath, engineError);
 
         const double elapsedMs =
@@ -274,6 +280,7 @@ void SliceController::sliceAll()
 
     const int plates = m_document->plateCount();
     const QVector<next_layer::PlateLayerGcode> layerGcodes = m_document->layerGcodeList();
+    const QVector<next_layer::PlateInLayerPolyline> inLayer = m_document->inLayerList();
     QVector<QVector<next_layer::PlateSliceObject>> perPlate;
     perPlate.reserve(plates);
     int empty = 0;
@@ -297,7 +304,7 @@ void SliceController::sliceAll()
     m_status = QStringLiteral("Slicing %1 plates").arg(plates - empty);
     emit statusChanged();
 
-    m_worker = std::thread([this, run, plates, perPlate, layerGcodes] {
+    m_worker = std::thread([this, run, plates, perPlate, layerGcodes, inLayer] {
         const auto started = std::chrono::steady_clock::now();
         QStringList failures;
         int sliced = 0;
@@ -314,7 +321,7 @@ void SliceController::sliceAll()
                 m_tempDir->filePath(QStringLiteral("slice-%1-plate-%2.gcode").arg(run).arg(plate + 1));
             QString engineError;
             const bool ok = m_runtime.slicePlate(perPlate[plate], m_configPath, outputPath,
-                                                 engineError, layerGcodes);
+                                                 engineError, layerGcodes, inLayer);
             const QFileInfo gcode(outputPath);
             GcodeCounts counts;
             if (gcode.exists() && gcode.size() > 0)
@@ -419,6 +426,32 @@ void SliceController::duplicatePlateGcode(int from, int at)
     emit plateGcodesChanged();
 }
 
+void SliceController::capturePlateThumbnail(QQuickItem* viewport, const QRectF& crop)
+{
+    m_pendingThumbnail = QImage();
+    if (viewport == nullptr)
+        return;
+    QQuickWindow* window = viewport->window();
+    if (window == nullptr || viewport->width() <= 0 || viewport->height() <= 0)
+        return;
+
+    const QImage frame = window->grabWindow();
+    if (frame.isNull())
+        return;
+
+    const QRectF area = crop.isValid() && !crop.isEmpty()
+                            ? crop
+                            : QRectF(0, 0, viewport->width(), viewport->height());
+    const qreal ratio = window->effectiveDevicePixelRatio();
+    const QPoint origin = viewport->mapToScene(area.topLeft()).toPoint() * ratio;
+    const QRect rect(origin, QSize(qRound(area.width() * ratio), qRound(area.height() * ratio)));
+    const QRect clipped = rect.intersected(frame.rect());
+    if (clipped.isEmpty())
+        return;
+
+    m_pendingThumbnail = frame.copy(clipped);
+}
+
 void SliceController::publishResult(bool ok,
                                     const QString& message,
                                     const QString& gcodePath,
@@ -436,6 +469,24 @@ void SliceController::publishResult(bool ok,
 
     m_gcodePath = ok ? gcodePath : QString();
     emit gcodePathChanged();
+
+    if (ok && !m_pendingThumbnail.isNull()) {
+        QList<QString> targets;
+        if (m_sliceAll) {
+            for (const QString& path : m_plateGcodes)
+                targets.append(path);
+        } else {
+            targets.append(gcodePath);
+        }
+        for (const QString& path : targets) {
+            const QString error = next_layer::embedPlateThumbnails(path, m_pendingThumbnail);
+            if (!error.isEmpty())
+                m_status = QStringLiteral("%1 (the preview could not be embedded: %2)")
+                               .arg(m_status, error);
+        }
+        emit statusChanged();
+    }
+    m_pendingThumbnail = QImage();
 
     m_elapsedMs = elapsedMs;
     emit elapsedMsChanged();

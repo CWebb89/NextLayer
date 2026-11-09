@@ -404,6 +404,7 @@ std::optional<SelectionId> SliceRuntime::preparePlate(Runtime& runtime,
                                                      const QString& configPath,
                                                      const QString& gcodePath,
                                                      const QVector<PlateLayerGcode>& layerGcodes,
+                                                     const QVector<PlateInLayerPolyline>& inLayer,
                                                      QString& error,
                                                      QHash<int, QHash<QString, QString>>* carried)
 {
@@ -593,12 +594,45 @@ std::optional<SelectionId> SliceRuntime::preparePlate(Runtime& runtime,
             instancePtr->custom_gcode = info;
     }
 
+    // Polylines the plate prints inside a layer: the engine extrudes them through
+    // its writer, so its idea of the position and of E stays correct across them.
+    if (!inLayer.isEmpty()) {
+        std::vector<Slic3r::Domain::InLayerExtrusions> layers;
+        for (const PlateInLayerPolyline& source : inLayer) {
+            if (source.points.size() < 2)
+                continue;
+            auto found = std::find_if(layers.begin(), layers.end(), [&source](const auto& layer) {
+                return std::abs(layer.print_z - source.z) < 0.0005
+                       && layer.extruder == source.extruder;
+            });
+            if (found == layers.end()) {
+                Slic3r::Domain::InLayerExtrusions layer;
+                layer.print_z = source.z;
+                layer.extruder = source.extruder;
+                layers.push_back(std::move(layer));
+                found = std::prev(layers.end());
+            }
+            Slic3r::Domain::InLayerPolyline polyline;
+            polyline.line_width = source.line_width;
+            polyline.layer_height = source.layer_height;
+            polyline.speed = source.speed;
+            polyline.gcode = source.prefix.toStdString();
+            polyline.points.reserve(size_t(source.points.size()));
+            for (const QPointF& point : source.points)
+                polyline.points.emplace_back(point.x(), point.y());
+            found->polylines.push_back(std::move(polyline));
+        }
+        for (const std::unique_ptr<Slic3r::Domain::BedInstance>& instancePtr : bedInstances)
+            instancePtr->inlayer_extrusions = layers;
+    }
+
     return projectId;
 }
 
 bool SliceRuntime::slicePlate(const QVector<PlateSliceObject>& objects, const QString& configPath,
                               const QString& gcodePath, QString& error,
-                              const QVector<PlateLayerGcode>& layerGcodes)
+                              const QVector<PlateLayerGcode>& layerGcodes,
+                              const QVector<PlateInLayerPolyline>& inLayer)
 {
     if (objects.isEmpty()) {
         error = QStringLiteral("there is nothing on the plate");
@@ -609,7 +643,7 @@ bool SliceRuntime::slicePlate(const QVector<PlateSliceObject>& objects, const QS
     Runtime& runtime = runtimeLocked();
 
     const std::optional<SelectionId> projectId =
-        preparePlate(runtime, objects, configPath, gcodePath, layerGcodes, error);
+        preparePlate(runtime, objects, configPath, gcodePath, layerGcodes, inLayer, error);
     if (!projectId.has_value())
         return false;
 
@@ -816,7 +850,8 @@ bool writePlateRecords(const QString& path, const QVector<PlateSliceObject>& obj
 bool SliceRuntime::exportPlate3mf(const QVector<PlateSliceObject>& objects,
                                   const QString& configPath, const QString& outPath,
                                   QString& error,
-                                  const QVector<PlateLayerGcode>& layerGcodes)
+                                  const QVector<PlateLayerGcode>& layerGcodes,
+                                  const QVector<PlateInLayerPolyline>& inLayer)
 {
     if (objects.isEmpty()) {
         error = QStringLiteral("there is nothing on the plate");
@@ -828,7 +863,7 @@ bool SliceRuntime::exportPlate3mf(const QVector<PlateSliceObject>& objects,
 
     QHash<int, QHash<QString, QString>> carried;
     const std::optional<SelectionId> projectId =
-        preparePlate(runtime, objects, configPath, outPath, layerGcodes, error, &carried);
+        preparePlate(runtime, objects, configPath, outPath, layerGcodes, inLayer, error, &carried);
     if (!projectId.has_value())
         return false;
 

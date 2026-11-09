@@ -78,6 +78,10 @@ Item {
     property real bottomInset: 0
     property real rightInset: 0
     readonly property int cameraBarHeight: Metrics.rowHeight - Metrics.sm
+    // How much of the viewport's bottom edge is covered by cards pinned there (the
+    // camera cluster, the bed label). A plate render for the G-code thumbnail
+    // crops this off instead of shipping the chrome inside the preview.
+    readonly property int bottomChrome: cameraBarHeight + Metrics.md * 2
     property vector3d panOffset: Qt.vector3d(0, 0, 0)
     property vector3d dragOffset: Qt.vector3d(0, 0, 0)
 

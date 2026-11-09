@@ -1,0 +1,214 @@
+diff --git a/src/libslic3r/src/libslic3r/GCode.cpp b/src/libslic3r/src/libslic3r/GCode.cpp
+index 208f624..48c6225 100644
+--- a/src/libslic3r/src/libslic3r/GCode.cpp
++++ b/src/libslic3r/src/libslic3r/GCode.cpp
+@@ -2979,6 +2979,10 @@ LayerResult GCodeGenerator::process_layer(
+         this->set_origin(0.0, 0.0);
+     }
+ 
++    for (const Domain::InLayerExtrusions& inlayer : print.inlayer_extrusions())
++        if (std::abs(inlayer.print_z - print_z) < 0.0005)
++            gcode += this->extrude_inlayer(inlayer, print_z, first_object_config);
++
+ 
+     SPDLOG_TRACE("Exported layer {} print_z {} {}", layer.id(), print_z, log_memory_info());
+ 
+@@ -3231,6 +3235,55 @@ std::string GCodeGenerator::extrude_skirt(
+     return gcode;
+ }
+ 
++std::string GCodeGenerator::extrude_inlayer(
++    const Domain::InLayerExtrusions& extrusions,
++    const double print_z,
++    const Domain::ConfigView& object_config
++) {
++    std::string gcode;
++    if (extrusions.polylines.empty())
++        return gcode;
++
++    const std::vector<double> diameters{m_print->config().get<std::vector<double>>("filament_diameter")};
++    if (diameters.empty())
++        return gcode;
++    const unsigned int extruder_id{std::min<unsigned int>(extrusions.extruder, static_cast<unsigned int>(diameters.size()) - 1)};
++    if (m_writer.extruder()->id() != extruder_id)
++        gcode += this->set_extruder(extruder_id, print_z, object_config);
++
++    gcode += ";" + std::string(Biz::libpgcode::reserved_tag(Biz::libpgcode::Tags::Custom_Code)) + "\n";
++
++    const double filament_area{M_PI * 0.25 * diameters[extruder_id] * diameters[extruder_id]};
++    if (filament_area <= 0.0)
++        return gcode;
++
++    for (const Domain::InLayerPolyline& polyline : extrusions.polylines) {
++        if (polyline.points.size() < 2)
++            continue;
++
++        if (!polyline.gcode.empty()) {
++            gcode += polyline.gcode;
++            if (polyline.gcode.back() != '\n')
++                gcode += '\n';
++        }
++        gcode += m_writer.travel_to_z(print_z);
++        gcode += m_writer.travel_to_xy(polyline.points.front(), "calibration");
++        gcode += this->unretract();
++        gcode += m_writer.set_speed(polyline.speed * 60.0);
++
++        const double e_per_mm{polyline.line_width * polyline.layer_height / filament_area};
++        for (std::size_t i{1}; i < polyline.points.size(); ++i) {
++            const double length{(polyline.points[i] - polyline.points[i - 1]).norm()};
++            if (length <= 0.0)
++                continue;
++            gcode += m_writer.extrude_to_xy(polyline.points[i], length * e_per_mm, "calibration");
++        }
++        gcode += m_writer.retract();
++    }
++
++    return gcode;
++}
++
+ std::string GCodeGenerator::extrude_infill_ranges(
+     const std::vector<InfillRange> &infill_ranges,
+     const std::string &comment
+diff --git a/src/libslic3r/src/libslic3r/GCode.hpp b/src/libslic3r/src/libslic3r/GCode.hpp
+index a506a22..11e7197 100644
+--- a/src/libslic3r/src/libslic3r/GCode.hpp
++++ b/src/libslic3r/src/libslic3r/GCode.hpp
+@@ -9,6 +9,7 @@
+ #include "libslic3r/ExPolygon.hpp"
+ #include "libslic3r/Layer.hpp"
+ #include "libslic3r/Point.hpp"
++#include "Slic3r/Domain/InLayerExtrusions.hpp"
+ #include "Slic3r/Biz/Parser/PlaceholderParser.hpp"
+ #include "Geometry/ArcWelder.hpp"
+ #include "libslic3r/GCode/AvoidCrossingPerimeters.hpp"
+@@ -284,6 +285,14 @@ private:
+         const Biz::Slicing::ExtrudeConfig& config
+     );
+ 
++    /// Writes the polylines a print asked for in this layer, through the writer,
++    /// so the extruder position and the E value stay the writer's to track.
++    std::string extrude_inlayer(
++        const Domain::InLayerExtrusions& extrusions,
++        double print_z,
++        const Domain::ConfigView& object_config
++    );
++
+     std::vector<InstanceToPrint> sort_print_object_instances(
+         // Object and Support layers for the current print_z, collected for a single object, or for possibly multiple objects with multiple instances.
+         const std::vector<ObjectLayerToPrint>           &layers,
+diff --git a/src/libslic3r/src/libslic3r/Print.cpp b/src/libslic3r/src/libslic3r/Print.cpp
+index 079c476..5b59c98 100644
+--- a/src/libslic3r/src/libslic3r/Print.cpp
++++ b/src/libslic3r/src/libslic3r/Print.cpp
+@@ -432,6 +432,7 @@ Biz::Slicing::ApplyStatus::Status Print::update(
+             bed.custom_gcode,
+             extruder_candidates
+         );
++        this->set_inlayer_extrusions(bed.inlayer_extrusions);
+         if (!is_any_printable(model.objects)) {
+             result = ApplyStatus::Empty{};
+             return;
+diff --git a/src/libslic3r/src/libslic3r/Print.hpp b/src/libslic3r/src/libslic3r/Print.hpp
+index a326ab7..994e52e 100644
+--- a/src/libslic3r/src/libslic3r/Print.hpp
++++ b/src/libslic3r/src/libslic3r/Print.hpp
+@@ -13,6 +13,7 @@
+ #include "Slic3r/Domain/BoundingBox.hpp"
+ #include "Slic3r/Domain/ConfigCommon.hpp"
+ #include "Slic3r/Domain/ConfigPack.hpp"
++#include "Slic3r/Domain/InLayerExtrusions.hpp"
+ #include "Slic3r/Domain/ModelObject.hpp"
+ #include "Slic3r/Domain/Point.hpp"
+ #include "Slic3r/Domain/Polygon.hpp"
+@@ -681,6 +682,9 @@ public:
+     const ToolOrdering&         get_tool_ordering() const { return m_tool_ordering; }
+     const std::vector<unsigned>& get_extruder_candidates() const { return m_extruder_candidates; }
+ 
++    void set_inlayer_extrusions(std::vector<Domain::InLayerExtrusions> extrusions) { m_inlayer_extrusions = std::move(extrusions); }
++    const std::vector<Domain::InLayerExtrusions>& inlayer_extrusions() const { return m_inlayer_extrusions; }
++
+     // Invalidates the step, and its depending steps in Print.
+     bool                invalidate_step(FDMPrintStep step);
+ 
+@@ -728,6 +732,7 @@ public:
+     // Following section will be consumed by the GCodeGenerator.
+     ToolOrdering 							m_tool_ordering;
+     std::optional<WipeTowerData>            m_wipe_tower_data;
++    std::vector<Domain::InLayerExtrusions>  m_inlayer_extrusions;
+ 
+     Thumbnails thumbnails;
+ 
+diff --git a/src/slic3r-domain/include/Slic3r/Domain/BedInstance.hpp b/src/slic3r-domain/include/Slic3r/Domain/BedInstance.hpp
+index c7daa87..f68e05b 100644
+--- a/src/slic3r-domain/include/Slic3r/Domain/BedInstance.hpp
++++ b/src/slic3r-domain/include/Slic3r/Domain/BedInstance.hpp
+@@ -3,6 +3,7 @@
+ #include "Slic3r/Domain/Bed.hpp"
+ #include "Slic3r/Domain/CustomGCode.hpp"
+ #include "Slic3r/Domain/Forward.hpp"
++#include "Slic3r/Domain/InLayerExtrusions.hpp"
+ #include "Slic3r/Domain/Model.hpp"
+ #include "Slic3r/Domain/ObjectID.hpp"
+ #include "Slic3r/Domain/Transformation.hpp"
+@@ -53,6 +54,7 @@ struct BedInstance : public ObjectBase
+     bool print_volume_enabled{false};
+     ModelWipeTower wipe_tower{};
+     std::optional<CustomGCode::Info> custom_gcode;
++    std::vector<InLayerExtrusions> inlayer_extrusions;
+     std::vector<unsigned> extruder_candidates;
+ 
+     /** Indicates whether the wipe tower is partially or fully outside the bed. */
+diff --git a/src/slic3r-domain/include/Slic3r/Domain/InLayerExtrusions.hpp b/src/slic3r-domain/include/Slic3r/Domain/InLayerExtrusions.hpp
+new file mode 100644
+index 0000000..12f482f
+--- /dev/null
++++ b/src/slic3r-domain/include/Slic3r/Domain/InLayerExtrusions.hpp
+@@ -0,0 +1,36 @@
++#pragma once
++
++#include <vector>
++
++#include "Slic3r/Domain/Point.hpp"
++
++namespace Slic3r::Domain {
++
++/// One polyline a print asked the generator to extrude inside a layer, on top of
++/// the layer's own geometry. Coordinates are printer millimetres in bed space.
++/// The generator owns the extruder position, the E value and the feedrate, so a
++/// caller supplies geometry and nothing that could desynchronise the machine
++/// state between two of the layer's own moves.
++struct InLayerPolyline
++{
++    std::vector<Vec2d> points;
++    double line_width{0.45};
++    double layer_height{0.2};
++    double speed{50.0};
++    /// Written before the travel to this polyline's first point. It is for state
++    /// the geometry cannot express — a pressure-advance value, a temperature — and
++    /// it may not extrude or move the extruder, because the generator's own idea of
++    /// where the nozzle is stands until it emits the next move.
++    std::string gcode;
++};
++
++/// The polylines to extrude in the layer whose print Z matches, written after
++/// that layer's object geometry and before the next layer starts.
++struct InLayerExtrusions
++{
++    double print_z{0.0};
++    unsigned int extruder{0};
++    std::vector<InLayerPolyline> polylines;
++};
++
++} // namespace Slic3r::Domain
+diff --git a/src/slic3r-domain/src/Slic3r/Domain/BedInstance.cpp b/src/slic3r-domain/src/Slic3r/Domain/BedInstance.cpp
+index b8f1ad5..6d02253 100644
+--- a/src/slic3r-domain/src/Slic3r/Domain/BedInstance.cpp
++++ b/src/slic3r-domain/src/Slic3r/Domain/BedInstance.cpp
+@@ -32,6 +32,7 @@ std::unique_ptr<BedInstance> BedInstance::copy(
+     bed_instance->print_volume_enabled  = print_volume_enabled;
+     bed_instance->wipe_tower            = wipe_tower;
+     bed_instance->custom_gcode          = custom_gcode;
++    bed_instance->inlayer_extrusions    = inlayer_extrusions;
+     bed_instance->extruder_candidates   = extruder_candidates;
+     bed_instance->wipe_tower_is_outside = wipe_tower_is_outside;
+ 

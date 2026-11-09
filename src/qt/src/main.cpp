@@ -1191,7 +1191,8 @@ int main(int argc, char* argv[])
 
     if (parser.isSet(calibration_test_option))
         return next_layer::runCalibrationSelftest(parser.value(calibration_test_option),
-                                                 QString::fromStdString(dataDir()));
+                                                 QString::fromStdString(dataDir()),
+                                                 parser.value(keep_gcode_option));
 
     if (parser.isSet(update_option)) {
         next_layer::Updater updater;

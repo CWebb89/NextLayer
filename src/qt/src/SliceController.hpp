@@ -7,7 +7,9 @@
 #include "Scratch.hpp"
 
 #include <QHash>
+#include <QImage>
 #include <QObject>
+#include <QRectF>
 #include <QString>
 #include <QTemporaryDir>
 
@@ -17,6 +19,7 @@
 
 class SettingsModel;
 class PlateDocument;
+class QQuickItem;
 
 class SliceController : public QObject
 {
@@ -70,6 +73,13 @@ public:
     /// wants: the numbers in the footer are the whole job, and each plate's
     /// toolpath is kept so switching to it shows what was sliced.
     Q_INVOKABLE void sliceAll();
+    /// Embeds a render of the plate into the G-code that was just written, so the
+    /// print host shows a preview of the job without slicing it. Slicing switches
+    /// the window to the toolpath view, so the render is taken from the viewport
+    /// when the slice is asked for, not when it finishes. `crop` is the part of
+    /// the viewport that holds the plate rather than the tool rail or the plate
+    /// bar drawn over it.
+    Q_INVOKABLE void capturePlateThumbnail(QQuickItem* viewport, const QRectF& crop);
     /// Writes the active plate as a project file another slicer can open:
     /// geometry, per-object settings, layer height profiles, paint and the
     /// resolved configuration in one 3MF. Returns an empty string on success, or
@@ -117,6 +127,7 @@ private:
     int m_gcodeVersion = 0;
     QString m_status;
     QString m_gcodePath;
+    QImage m_pendingThumbnail;
     double m_elapsedMs = 0.0;
     int m_layerCount = 0;
     int m_moveCount = 0;

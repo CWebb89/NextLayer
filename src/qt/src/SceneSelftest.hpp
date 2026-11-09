@@ -54,7 +54,8 @@ int runThreeMfExportSelftest(const QString& model, const QString& configPath,
 // negative volume that the engine ignored would leave the move count unchanged.
 int runMultiToolSelftest(const QString& configPath, const QString& dataDir);
 int runVolumeSettingsSelftest(const QString& configPath, const QString& dataDir);
-int runCalibrationSelftest(const QString& configPath, const QString& dataDir);
+int runCalibrationSelftest(const QString& configPath, const QString& dataDir,
+                           const QString& keepGcodePath = {});
 
 /// Measures a cube from its mesh, hollows it into a shell, merges two boxes into
 /// one object and splits that back into two -- each result is read back out of

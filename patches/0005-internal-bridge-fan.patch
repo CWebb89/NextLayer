@@ -1,0 +1,202 @@
+diff --git a/src/libslic3r/src/libslic3r/ExtrudeConfig.cpp b/src/libslic3r/src/libslic3r/ExtrudeConfig.cpp
+index c92f900..069bde7 100644
+--- a/src/libslic3r/src/libslic3r/ExtrudeConfig.cpp
++++ b/src/libslic3r/src/libslic3r/ExtrudeConfig.cpp
+@@ -56,6 +56,7 @@ ExtrudeConfig::ExtrudeConfig(const Domain::ConfigView& config) :
+         config.get<std::vector<int>>("support_material_interface_fan_speed")
+     },
+     ironing_fan_speed{config.get<std::vector<int>>("ironing_fan_speed")},
++    internal_bridge_fan_speed{config.get<std::vector<int>>("internal_bridge_fan_speed")},
+     gcode_flavor{config.get<Domain::GCodeFlavor>("gcode_flavor")},
+     machine_max_feedrate_x{config.get<std::vector<double>>("machine_max_feedrate_x")},
+     machine_max_feedrate_y{config.get<std::vector<double>>("machine_max_feedrate_y")},
+diff --git a/src/libslic3r/src/libslic3r/ExtrudeConfig.hpp b/src/libslic3r/src/libslic3r/ExtrudeConfig.hpp
+index ccbbb10..481b6e5 100644
+--- a/src/libslic3r/src/libslic3r/ExtrudeConfig.hpp
++++ b/src/libslic3r/src/libslic3r/ExtrudeConfig.hpp
+@@ -56,6 +56,7 @@ struct ExtrudeConfig
+     std::vector<bool> enable_overhang_bridge_fan{};
+     std::vector<int> support_material_interface_fan_speed{};
+     std::vector<int> ironing_fan_speed{};
++    std::vector<int> internal_bridge_fan_speed{};
+ 
+     Domain::GCodeFlavor gcode_flavor{};
+     std::vector<double> machine_max_feedrate_x{};
+diff --git a/src/libslic3r/src/libslic3r/GCode.cpp b/src/libslic3r/src/libslic3r/GCode.cpp
+index 722ee09..208f624 100644
+--- a/src/libslic3r/src/libslic3r/GCode.cpp
++++ b/src/libslic3r/src/libslic3r/GCode.cpp
+@@ -3673,8 +3673,11 @@ std::string GCodeGenerator::_extrude(
+     }
+ 
+     std::string cooling_marker_setspeed_comments;
++    const bool internal_bridge_fan_override =
++        config.internal_bridge_fan_speed.at(m_writer.extruder()->id()) >= 0
++        && path_attr.role == ExtrusionRole::InternalBridgeInfill;
+     if (m_enable_cooling_markers) {
+-        if (path_attr.role.is_bridge() && emit_modifiers.emit_bridge_fan_start) {
++        if (path_attr.role.is_bridge() && !internal_bridge_fan_override && emit_modifiers.emit_bridge_fan_start) {
+             gcode += ";_BRIDGE_FAN_START\n";
+         } else if (!path_attr.role.is_bridge()) {
+             cooling_marker_setspeed_comments = ";_EXTRUDE_SET_SPEED";
+@@ -3716,6 +3719,8 @@ std::string GCodeGenerator::_extrude(
+                              config.support_material_interface_fan_speed.at(extruder_id) >= 0 && path_attr.role.is_support_interface());
+         emit_role_fan_marker("_IRONING", m_ironing_fan_on, m_ironing_fan_layer,
+                              config.ironing_fan_speed.at(extruder_id) >= 0 && path_attr.role == ExtrusionRole::Ironing);
++        emit_role_fan_marker("_INTERNAL_BRIDGE", m_internal_bridge_fan_on, m_internal_bridge_fan_layer,
++                             internal_bridge_fan_override);
+     }
+ 
+     if (dynamic_print_and_fan_speeds.fan_speed >= 0) {
+diff --git a/src/libslic3r/src/libslic3r/GCode.hpp b/src/libslic3r/src/libslic3r/GCode.hpp
+index 216855f..a506a22 100644
+--- a/src/libslic3r/src/libslic3r/GCode.hpp
++++ b/src/libslic3r/src/libslic3r/GCode.hpp
+@@ -470,6 +470,8 @@ private:
+     int                                 m_support_interface_fan_layer{-1};
+     bool                                m_ironing_fan_on{false};
+     int                                 m_ironing_fan_layer{-1};
++    bool                                m_internal_bridge_fan_on{false};
++    int                                 m_internal_bridge_fan_layer{-1};
+ 
+     // Heights (print_z) at which the skirt has already been extruded.
+     std::vector<double>               m_skirt_done;
+diff --git a/src/libslic3r/src/libslic3r/GCode/CoolingBuffer.cpp b/src/libslic3r/src/libslic3r/GCode/CoolingBuffer.cpp
+index 66b85f7..16bf349 100644
+--- a/src/libslic3r/src/libslic3r/GCode/CoolingBuffer.cpp
++++ b/src/libslic3r/src/libslic3r/GCode/CoolingBuffer.cpp
+@@ -150,6 +150,8 @@ struct CoolingLine
+         TYPE_SUPPORT_INTERFACE_FAN_END   = 1 << 24,
+         TYPE_IRONING_FAN_START           = 1 << 25,
+         TYPE_IRONING_FAN_END             = 1 << 26,
++        TYPE_INTERNAL_BRIDGE_FAN_START   = 1 << 27,
++        TYPE_INTERNAL_BRIDGE_FAN_END     = 1 << 28,
+     };
+ 
+     CoolingLine(unsigned int type, size_t  line_start, size_t  line_end) :
+@@ -912,6 +914,10 @@ std::vector<PerExtruderAdjustments> CoolingBuffer::parse_layer_gcode(const std::
+             line.type = CoolingLine::TYPE_IRONING_FAN_START;
+         } else if (boost::starts_with(sline, ";_IRONING_FAN_END")) {
+             line.type = CoolingLine::TYPE_IRONING_FAN_END;
++        } else if (boost::starts_with(sline, ";_INTERNAL_BRIDGE_FAN_START")) {
++            line.type = CoolingLine::TYPE_INTERNAL_BRIDGE_FAN_START;
++        } else if (boost::starts_with(sline, ";_INTERNAL_BRIDGE_FAN_END")) {
++            line.type = CoolingLine::TYPE_INTERNAL_BRIDGE_FAN_END;
+         } else if (boost::starts_with(sline, TOOLCHANGE_END_TAG)) {
+             line.type = CoolingLine::TYPE_TOOLCHANGE_END;
+         }
+@@ -1176,9 +1182,12 @@ std::string CoolingBuffer::apply_layer_cooldown(
+     int  support_interface_fan_speed   = 0;
+     bool ironing_fan_control = false;
+     int  ironing_fan_speed   = 0;
++    bool internal_bridge_fan_control = false;
++    int  internal_bridge_fan_speed   = 0;
+     auto change_extruder_set_fan = [this, layer_id, layer_time, &new_gcode, &bridge_fan_control, &bridge_fan_speed,
+                                     &support_interface_fan_control, &support_interface_fan_speed,
+-                                    &ironing_fan_control, &ironing_fan_speed](const int requested_fan_speed = -1) {
++                                    &ironing_fan_control, &ironing_fan_speed,
++                                    &internal_bridge_fan_control, &internal_bridge_fan_speed](const int requested_fan_speed = -1) {
+         const int min_fan_speed            = m_config.min_fan_speed.at(m_current_extruder);
+         const int max_fan_speed            = m_config.max_fan_speed.at(m_current_extruder);
+         // Is the fan speed ramp enabled?
+@@ -1212,6 +1221,8 @@ std::string CoolingBuffer::apply_layer_cooldown(
+             support_interface_fan_speed          = 0;
+             ironing_fan_control                  = false;
+             ironing_fan_speed                    = 0;
++            internal_bridge_fan_control          = false;
++            internal_bridge_fan_speed            = 0;
+         } else if (int(layer_id) >= disable_fan_first_layers) {
+             float slowdown_below_layer_time = float(m_config.slowdown_below_layer_time.at(m_current_extruder));
+             float fan_below_layer_time      = float(m_config.fan_below_layer_time.at(m_current_extruder));
+@@ -1246,6 +1257,8 @@ std::string CoolingBuffer::apply_layer_cooldown(
+             support_interface_fan_control = support_interface_fan_speed >= 0;
+             ironing_fan_speed             = m_config.ironing_fan_speed.at(m_current_extruder);
+             ironing_fan_control           = ironing_fan_speed >= 0;
++            internal_bridge_fan_speed     = m_config.internal_bridge_fan_speed.at(m_current_extruder);
++            internal_bridge_fan_control   = internal_bridge_fan_speed >= 0;
+         } else { // fan disabled
+             bridge_fan_control                   = false;
+             bridge_fan_speed                     = 0;
+@@ -1253,6 +1266,8 @@ std::string CoolingBuffer::apply_layer_cooldown(
+             support_interface_fan_speed          = 0;
+             ironing_fan_control                  = false;
+             ironing_fan_speed                    = 0;
++            internal_bridge_fan_control          = false;
++            internal_bridge_fan_speed            = 0;
+             fan_speed_new                        = 0;
+             requested_fan_speed_limits.max_speed = 0;
+         }
+@@ -1368,6 +1383,12 @@ std::string CoolingBuffer::apply_layer_cooldown(
+         } else if (line->type & CoolingLine::TYPE_IRONING_FAN_END) {
+             if (ironing_fan_control)
+                 new_gcode += GCodeWriter::set_fan(m_config.gcode_flavor, m_config.gcode_comments, m_fan_speed);
++        } else if (line->type & CoolingLine::TYPE_INTERNAL_BRIDGE_FAN_START) {
++            if (internal_bridge_fan_control)
++                new_gcode += GCodeWriter::set_fan(m_config.gcode_flavor, m_config.gcode_comments, internal_bridge_fan_speed);
++        } else if (line->type & CoolingLine::TYPE_INTERNAL_BRIDGE_FAN_END) {
++            if (internal_bridge_fan_control)
++                new_gcode += GCodeWriter::set_fan(m_config.gcode_flavor, m_config.gcode_comments, m_fan_speed);
+         } else if (line->type & CoolingLine::TYPE_TOOLCHANGE_END) {
+             // Custom toolchange gcode may have changed fan speed via M106/M107 that CoolingBuffer
+             // doesn't track. Force re-emission to restore the correct fan speed.
+diff --git a/src/libslic3r/src/libslic3r/GCode/CoolingBufferConfig.cpp b/src/libslic3r/src/libslic3r/GCode/CoolingBufferConfig.cpp
+index a3160da..1ef00e3 100644
+--- a/src/libslic3r/src/libslic3r/GCode/CoolingBufferConfig.cpp
++++ b/src/libslic3r/src/libslic3r/GCode/CoolingBufferConfig.cpp
+@@ -18,6 +18,7 @@ CoolingBufferConfig::CoolingBufferConfig(const PrintConfigView& print_config) :
+     gcode_flavor{print_config.get<Domain::GCodeFlavor>("gcode_flavor")},
+     initial_layer_fan_speed{print_config.get<std::vector<int>>("initial_layer_fan_speed")},
+     ironing_fan_speed{print_config.get<std::vector<int>>("ironing_fan_speed")},
++    internal_bridge_fan_speed{print_config.get<std::vector<int>>("internal_bridge_fan_speed")},
+     max_fan_speed{print_config.get<std::vector<int>>("max_fan_speed")},
+     min_fan_speed{print_config.get<std::vector<int>>("min_fan_speed")},
+     min_print_speed{print_config.get<std::vector<double>>("min_print_speed")},
+diff --git a/src/libslic3r/src/libslic3r/GCode/CoolingBufferConfig.hpp b/src/libslic3r/src/libslic3r/GCode/CoolingBufferConfig.hpp
+index 3d718d1..ec19e22 100644
+--- a/src/libslic3r/src/libslic3r/GCode/CoolingBufferConfig.hpp
++++ b/src/libslic3r/src/libslic3r/GCode/CoolingBufferConfig.hpp
+@@ -21,6 +21,7 @@ struct CoolingBufferConfig
+     Domain::GCodeFlavor gcode_flavor{};
+     std::vector<int> initial_layer_fan_speed{};
+     std::vector<int> ironing_fan_speed{};
++    std::vector<int> internal_bridge_fan_speed{};
+     std::vector<int> max_fan_speed{};
+     std::vector<int> min_fan_speed{};
+     std::vector<double> min_print_speed{};
+diff --git a/src/libslic3r/src/libslic3r/StepsInvalidation.cpp b/src/libslic3r/src/libslic3r/StepsInvalidation.cpp
+index 622a658..ab679a3 100644
+--- a/src/libslic3r/src/libslic3r/StepsInvalidation.cpp
++++ b/src/libslic3r/src/libslic3r/StepsInvalidation.cpp
+@@ -320,6 +320,7 @@ const std::map<std::string, std::vector<Step>> invalidated_by{
+     {"infill_speed", steps({propagate(psWipeTower), propagate(psGCodeExport)})},
+     {"initial_layer_fan_speed", steps({propagate(psGCodeExport)})},
+     {"ironing_fan_speed", steps({propagate(psGCodeExport)})},
++    {"internal_bridge_fan_speed", steps({propagate(psGCodeExport)})},
+     {"inherits_cummulative", steps({})},
+     {"interface_shells", steps({propagate(posPrepareInfill)})},
+     {"interlocking_beam", all_steps()}, // TODO: Probably too harsh.
+diff --git a/src/slic3r-domain/src/Slic3r/Domain/ConfigDefsFDM.cpp b/src/slic3r-domain/src/Slic3r/Domain/ConfigDefsFDM.cpp
+index 6a3f0d6..f900fd2 100644
+--- a/src/slic3r-domain/src/Slic3r/Domain/ConfigDefsFDM.cpp
++++ b/src/slic3r-domain/src/Slic3r/Domain/ConfigDefsFDM.cpp
+@@ -586,6 +586,20 @@ void fdm_config_init_fn(ConfigDefinitions& defs)
+     def->max      = 100;
+     def->init_fn = init_with(-1);
+ 
++    def           = defs.add("internal_bridge_fan_speed", typeid(int));
++    def->location = Filament;
++    def->label    = L("Internal bridge fan speed");
++    def->option_group = ConfigItemDef::OptionGroup::Filament_Cooling_PerRoleFan;
++    def->category = ConfigItemDef::Category::Filament_Cooling;
++    def->order    = 2;
++    def->gui_type = ConfigItemDef::GUIType::spinbox;
++    def->tooltip = L("Fan speed while printing bridges that are not visible from outside the part, such as the "
++                     "solid layer over sparse infill. Set to -1 to use the bridge fan speed.");
++    def->units = {L("%")};
++    def->min      = -1;
++    def->max      = 100;
++    def->init_fn = init_with(-1);
++
+     def = defs.add("brim_width", typeid(double));
+     def->location = Print;
+     def->overrides_in = Locations{ Object };

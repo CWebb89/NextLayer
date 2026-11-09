@@ -5,6 +5,7 @@
 
 #include <QByteArray>
 #include <QHash>
+#include <QPointF>
 #include <QString>
 #include <QTemporaryDir>
 #include <QVector>
@@ -45,6 +46,21 @@ struct PlateLayerGcode
     double z = 0.0;
     QString type = QStringLiteral("gcode");
     QString text;
+};
+
+/// One polyline the plate wants printed inside a layer, on top of the layer's own
+/// geometry: a calibration label, a marker beside a band, or a test pattern that
+/// is not a mesh. Points are printer millimetres in bed coordinates, so the
+/// engine writes them where the caller measured them.
+struct PlateInLayerPolyline
+{
+    double z = 0.0;
+    QVector<QPointF> points;
+    double line_width = 0.45;
+    double layer_height = 0.2;
+    double speed = 40.0;
+    unsigned int extruder = 0;
+    QString prefix;
 };
 
 struct PlateSliceObject
@@ -103,7 +119,8 @@ public:
     /// reimplementation of the 3MF format on our side.
     bool slicePlate(const QVector<PlateSliceObject>& objects, const QString& configPath,
                     const QString& gcodePath, QString& error,
-                    const QVector<PlateLayerGcode>& layerGcodes = {});
+                    const QVector<PlateLayerGcode>& layerGcodes = {},
+                    const QVector<PlateInLayerPolyline>& inLayer = {});
 
     /// Writes the plate as a project file in the format PrusaSlicer and
     /// OrcaSlicer read: the objects and their volumes in one model, their own
@@ -112,7 +129,8 @@ public:
     /// cannot carry is reported by the caller rather than dropped here.
     bool exportPlate3mf(const QVector<PlateSliceObject>& objects, const QString& configPath,
                         const QString& outPath, QString& error,
-                        const QVector<PlateLayerGcode>& layerGcodes = {});
+                        const QVector<PlateLayerGcode>& layerGcodes = {},
+                        const QVector<PlateInLayerPolyline>& inLayer = {});
 
     /// The engine's printer-model list as JSON. Empty when the bundle has none.
     /// Re-reads every preset bundle from disk. A vendor that gained presets on
@@ -168,7 +186,8 @@ private:
     /// refusal is the answer.
     std::optional<Slic3r::Domain::SelectionId> preparePlate(
         Runtime& runtime, const QVector<PlateSliceObject>& objects, const QString& configPath,
-        const QString& gcodePath, const QVector<PlateLayerGcode>& layerGcodes, QString& error,
+        const QString& gcodePath, const QVector<PlateLayerGcode>& layerGcodes,
+        const QVector<PlateInLayerPolyline>& inLayer, QString& error,
         QHash<int, QHash<QString, QString>>* carried = nullptr);
 
     std::optional<QTemporaryDir> m_plateDir;

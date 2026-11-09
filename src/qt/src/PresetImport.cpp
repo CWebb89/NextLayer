@@ -174,6 +174,7 @@ const Mapping* mappingTable(size_t& count)
         {"enable_overhang_speed", "enable_dynamic_overhang_speeds", Transform::Boolean, nullptr},
         {"fan_min_speed", "min_fan_speed", Transform::Integer, nullptr},
         {"fan_max_speed", "max_fan_speed", Transform::Integer, nullptr},
+        {"reduce_fan_stop_start_freq", "fan_always_on", Transform::Boolean, nullptr},
         {"slow_down_layer_time", "slowdown_below_layer_time", Transform::Real, nullptr},
         {"slow_down_min_speed", "min_print_speed", Transform::Real, nullptr},
         {"filament_shrinkage_compensation_z", "filament_shrinkage_compensation_z", Transform::Real, nullptr},

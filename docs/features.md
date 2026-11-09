@@ -78,7 +78,7 @@ shape; a second material needs the multi-slot UI, which is not built.
 | --- | --- | --- |
 | Material & Temperatures | 13 | done |
 | Extrusion & Calibration | 6 | done |
-| Cooling | 17 | done |
+| Cooling | 23 | done — overhang fan speed (graded across four overlap steps) and its on/off gate, first-layer fan override, support-interface, ironing and internal-bridge fan speeds, minimum/maximum speed limits and layering thresholds |
 | Tool Changes | 18 | done — ramming, tip shaping and wipe-tower purging; the MMU flush/purge options are filtered out |
 | Overrides | 3 | done |
 | Custom G-code | 3 | done |
@@ -159,6 +159,7 @@ the CLI does not expose) is no longer drawn at all.
 | Drop to bed | done — the document lifts/lowers the selected object until its minimum Z sits on the bed |
 | Cut at Z | done — see the CAD row: the plate is cut, not replaced |
 | Export G-code | done — writes the sliced file to a chosen path, and the arrow beside it offers the other half of the same action: Send to printer, which uploads to the machine and can start the job. The arrow exists because which one a person wants depends on whether the machine is on the network |
+| Plate thumbnail in the G-code | done — the viewport is rendered at the moment the slice is asked for (slicing itself switches to the toolpath view, which hides the plate), cropped past the tool rail, the plate bar and the bottom cards, and embedded as `; thumbnail begin` blocks in two sizes: 512x512 for the host's preview and 32x32 for its list icon. Mainsail, Fluidd, PrusaLink and OctoPrint all read that format, so a job no longer uploads with a blank plate |
 | Object list (name, visibility, X/Y, centre/drop/duplicate/delete) | done — `Ctrl+L` or the list button; acts on the document, so a plate edit is undoable |
 | Undo / redo (`Ctrl+Z`, `Ctrl+Shift+Z`) | done — snapshot stack over the document's objects, transforms and visibility |
 | Arrange | done — the engine's own NFP packer (`Biz::Arrange`), applied in the document and undoable; `tools/check` packs two overlapping objects apart |
@@ -233,6 +234,7 @@ nothing is not a roadmap.
 | Panel placement and shape | done — top-right of the viewport, folding to its header row; columns are Line type / Time / % / Usage (length and mass), then the Options rows, then Total estimation (filament, cost, prepare time, model printing time, total time) |
 | Colouring mode picker (feature type, height, width, speed, actual speed, fan, temperature, flow, layer time, tool) | done — the engine's own `ViewType`s; the numeric modes list their colour bands with the band's value |
 | Bottom surface in the feature-type legend | done — the engine has one `Solid infill` role for every solid layer, so the preview re-tags `Solid infill` on the first `bottom_solid_layers` layers as `Bottom surface` (its own colour, 12.5 % of a 20 mm cube) instead of folding first-layer and bottom skin into solid infill |
+| Internal bridge in the feature-type legend | done — the engine had one `Bridge infill` role for bridges over air and for the solid skin printed over sparse infill, so a cube's top layer was labelled an external bridge; it now emits `Internal bridge infill` for the second kind (`patches/0004`), with its own legend colour and label |
 | G-code window at the current move | done — numbered monospace lines with the producing line boxed, as many lines as fit; the current vertex's `gcode_id` indexes the file, so the boxed line is the one that asked for the move |
 | Nothing overlaps in the viewport | done — the moves slider owns the bottom edge and publishes its height, the camera card and the right-hand column offset by it, and the layer slider publishes its width so the legend and g-code window stop left of it |
 | Slider drags one layer at a time | done — verified headlessly by `--slider-test`, which drags both sliders with synthetic pointer events and reports the layer after every step |
@@ -320,13 +322,25 @@ removes the test you just built rather than nothing.
 | Numbers printed on the plate | always on for PA and the towers | done — the value is extruded as geometry (the app's own text object) in a row in front of the tower, so a band is identifiable in the preview and on the bed |
 | Save the measured value | The reference four-step wizard ends by writing the value into a preset and re-slicing | partly — "Apply to `<setting>`" writes the measurement into the live settings (temperature, pressure advance, flow ratio, max volumetric flow, retract length), where it shows as modified in the panel and rides the next preset save. The wizard's own coarse-then-fine re-run is not automated |
 
-**How the generator works.** PA line and PA pattern are generated toolpaths, not
-parameterised plates: `Toolpath` writes extrusion moves with a `G92 E0` before
-every segment, so the same bytes are correct whether the profile counts E in
-absolute or relative millimetres, and the block is injected through the engine's
-`CustomGCode::Info` at the layer it belongs to. The tower is one solid box
-with the value raised at every layer boundary. There is no borrowed mesh
-anywhere in the suite.
+**How the generator works.** PA line and PA pattern are real toolpaths generated
+inside the layer they print on, not command blocks dropped at a layer boundary.
+The app hands the engine polylines per layer (`Print::set_inlayer_extrusions`,
+carried by the bed instance), and the generator extrudes them through its own
+writer: it travels to each polyline, retracts between them, and computes E from
+the line width, layer height and filament diameter. That is why the channel
+carries geometry rather than G-code text — the writer's idea of the nozzle
+position and of E stays correct across the injected moves, so the layer resumes
+cleanly and the plate prints the same whether the profile counts E in absolute
+or relative millimetres.
+
+Each polyline may carry a command of its own, written before the travel to its
+first point: that is how the PA value changes between lines without leaving the
+layer — `SET_PRESSURE_ADVANCE` on Klipper, `M900 K` on Marlin, `M572 D0 S` on
+RepRap. The value labels ride the same channel, drawn from a five-cell stroke
+font in the app, so a label costs no plate space and prints on the bed beside
+its band. The tower is still one box with the value raised at every layer
+boundary through ordinary layer G-code. There is no borrowed mesh anywhere in
+the suite.
 
 Calibration counts as coverage of the reference menu; what it does not cover is
 the *Calibration Guide* entry (a wiki link) and the AMS-specific flows.

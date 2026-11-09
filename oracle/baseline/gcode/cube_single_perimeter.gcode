@@ -3170,7 +3170,7 @@ G1 X124.279 Y119.616 Z19.383 F21000
 G1 Z19.2 F720
 G1 E.7 F1500
 M204 P1500
-;TYPE:Bridge infill
+;TYPE:Internal bridge infill
 ;WIDTH:0.409214
 ;HEIGHT:0.4
 M106 S255
@@ -4660,6 +4660,7 @@ M73 Q100 S0
 ;       "custom_parameters_filament": [""],
 ;       "disable_fan_first_layers": [1],
 ;       "enable_dynamic_fan_speeds": [true],
+;       "enable_overhang_bridge_fan": [true],
 ;       "end_filament_gcode": ["; Filament-specific end gcode"],
 ;       "extrusion_multiplier": [1.0],
 ;       "fan_always_on": [true],
@@ -4703,6 +4704,9 @@ M73 Q100 S0
 ;       "first_layer_temperature": [230],
 ;       "full_fan_speed_layer": [3],
 ;       "idle_temperature": [170],
+;       "initial_layer_fan_speed": [-1],
+;       "internal_bridge_fan_speed": [-1],
+;       "ironing_fan_speed": [-1],
 ;       "max_fan_speed": [100],
 ;       "min_fan_speed": [85],
 ;       "min_print_speed": [20.0],
@@ -4714,6 +4718,7 @@ M73 Q100 S0
 ;       "pressure_advance_value": [0.036],
 ;       "slowdown_below_layer_time": [8],
 ;       "start_filament_gcode": ["M142 S36 ; set heatbreak target temp"],
+;       "support_material_interface_fan_speed": [-1],
 ;       "temperature": [230],
 ;       "travel_max_lift": [0.6],
 ;       "travel_ramping_lift": [true],

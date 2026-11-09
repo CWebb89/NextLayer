@@ -1,0 +1,365 @@
+diff --git a/src/libslic3r/src/libslic3r/ExtrudeConfig.cpp b/src/libslic3r/src/libslic3r/ExtrudeConfig.cpp
+index 1913ca4..c92f900 100644
+--- a/src/libslic3r/src/libslic3r/ExtrudeConfig.cpp
++++ b/src/libslic3r/src/libslic3r/ExtrudeConfig.cpp
+@@ -51,6 +51,11 @@ ExtrudeConfig::ExtrudeConfig(const Domain::ConfigView& config) :
+     overhang_fan_speed_1{config.get<std::vector<int>>("overhang_fan_speed_1")},
+     overhang_fan_speed_2{config.get<std::vector<int>>("overhang_fan_speed_2")},
+     overhang_fan_speed_3{config.get<std::vector<int>>("overhang_fan_speed_3")},
++    enable_overhang_bridge_fan{config.get<std::vector<bool>>("enable_overhang_bridge_fan")},
++    support_material_interface_fan_speed{
++        config.get<std::vector<int>>("support_material_interface_fan_speed")
++    },
++    ironing_fan_speed{config.get<std::vector<int>>("ironing_fan_speed")},
+     gcode_flavor{config.get<Domain::GCodeFlavor>("gcode_flavor")},
+     machine_max_feedrate_x{config.get<std::vector<double>>("machine_max_feedrate_x")},
+     machine_max_feedrate_y{config.get<std::vector<double>>("machine_max_feedrate_y")},
+diff --git a/src/libslic3r/src/libslic3r/ExtrudeConfig.hpp b/src/libslic3r/src/libslic3r/ExtrudeConfig.hpp
+index 9bf3477..ccbbb10 100644
+--- a/src/libslic3r/src/libslic3r/ExtrudeConfig.hpp
++++ b/src/libslic3r/src/libslic3r/ExtrudeConfig.hpp
+@@ -53,6 +53,9 @@ struct ExtrudeConfig
+     std::vector<int> overhang_fan_speed_1{};
+     std::vector<int> overhang_fan_speed_2{};
+     std::vector<int> overhang_fan_speed_3{};
++    std::vector<bool> enable_overhang_bridge_fan{};
++    std::vector<int> support_material_interface_fan_speed{};
++    std::vector<int> ironing_fan_speed{};
+ 
+     Domain::GCodeFlavor gcode_flavor{};
+     std::vector<double> machine_max_feedrate_x{};
+diff --git a/src/libslic3r/src/libslic3r/GCode.cpp b/src/libslic3r/src/libslic3r/GCode.cpp
+index d5b0e99..722ee09 100644
+--- a/src/libslic3r/src/libslic3r/GCode.cpp
++++ b/src/libslic3r/src/libslic3r/GCode.cpp
+@@ -3693,6 +3693,31 @@ std::string GCodeGenerator::_extrude(
+     // F is mm per minute.
+     gcode += m_writer.set_speed(F, "", cooling_marker_setspeed_comments);
+ 
++    if (m_enable_cooling_markers) {
++        const unsigned int extruder_id = m_writer.extruder()->id();
++        auto emit_role_fan_marker = [this, &gcode](const std::string_view marker, bool &fan_on, int &fan_layer, const bool wanted) {
++            if (wanted) {
++                if (!fan_on || fan_layer != m_layer_index) {
++                    gcode += ";";
++                    gcode.append(marker);
++                    gcode += "_FAN_START\n";
++                    fan_on    = true;
++                    fan_layer = m_layer_index;
++                }
++            } else if (fan_on) {
++                gcode += ";";
++                gcode.append(marker);
++                gcode += "_FAN_END\n";
++                fan_on    = false;
++                fan_layer = -1;
++            }
++        };
++        emit_role_fan_marker("_SUPP_INTERFACE", m_support_interface_fan_on, m_support_interface_fan_layer,
++                             config.support_material_interface_fan_speed.at(extruder_id) >= 0 && path_attr.role.is_support_interface());
++        emit_role_fan_marker("_IRONING", m_ironing_fan_on, m_ironing_fan_layer,
++                             config.ironing_fan_speed.at(extruder_id) >= 0 && path_attr.role == ExtrusionRole::Ironing);
++    }
++
+     if (dynamic_print_and_fan_speeds.fan_speed >= 0) {
+         const int fan_speed = int(dynamic_print_and_fan_speeds.fan_speed);
+         if (!m_current_dynamic_fan_speed.has_value() || (m_current_dynamic_fan_speed.has_value() && m_current_dynamic_fan_speed != fan_speed)) {
+diff --git a/src/libslic3r/src/libslic3r/GCode.hpp b/src/libslic3r/src/libslic3r/GCode.hpp
+index b6deb93..216855f 100644
+--- a/src/libslic3r/src/libslic3r/GCode.hpp
++++ b/src/libslic3r/src/libslic3r/GCode.hpp
+@@ -464,6 +464,13 @@ private:
+     // Current fan speed set by dynamic fan speed control.
+     std::optional<float>                m_current_dynamic_fan_speed;
+ 
++    // Whether a role-based fan span is open, and the layer it was opened on, so that each layer
++    // restates the role fan speed for the CoolingBuffer.
++    bool                                m_support_interface_fan_on{false};
++    int                                 m_support_interface_fan_layer{-1};
++    bool                                m_ironing_fan_on{false};
++    int                                 m_ironing_fan_layer{-1};
++
+     // Heights (print_z) at which the skirt has already been extruded.
+     std::vector<double>               m_skirt_done;
+     // Has the brim been extruded already? Brim is being extruded only for the first object of a multi-object print.
+diff --git a/src/libslic3r/src/libslic3r/GCode/CoolingBuffer.cpp b/src/libslic3r/src/libslic3r/GCode/CoolingBuffer.cpp
+index c1d135f..66b85f7 100644
+--- a/src/libslic3r/src/libslic3r/GCode/CoolingBuffer.cpp
++++ b/src/libslic3r/src/libslic3r/GCode/CoolingBuffer.cpp
+@@ -146,6 +146,10 @@ struct CoolingLine
+         TYPE_FIRST_INTERNAL_PERIMETER = 1 << 20,
+         TYPE_TOOLCHANGE_TIME          = 1 << 21,
+         TYPE_TOOLCHANGE_END           = 1 << 22,
++        TYPE_SUPPORT_INTERFACE_FAN_START = 1 << 23,
++        TYPE_SUPPORT_INTERFACE_FAN_END   = 1 << 24,
++        TYPE_IRONING_FAN_START           = 1 << 25,
++        TYPE_IRONING_FAN_END             = 1 << 26,
+     };
+ 
+     CoolingLine(unsigned int type, size_t  line_start, size_t  line_end) :
+@@ -900,6 +904,14 @@ std::vector<PerExtruderAdjustments> CoolingBuffer::parse_layer_gcode(const std::
+             line.type |= CoolingLine::TYPE_SET_FAN_SPEED;
+         } else if (boost::contains(sline, ";_RESET_FAN_SPEED")) {
+             line.type |= CoolingLine::TYPE_RESET_FAN_SPEED;
++        } else if (boost::starts_with(sline, ";_SUPP_INTERFACE_FAN_START")) {
++            line.type = CoolingLine::TYPE_SUPPORT_INTERFACE_FAN_START;
++        } else if (boost::starts_with(sline, ";_SUPP_INTERFACE_FAN_END")) {
++            line.type = CoolingLine::TYPE_SUPPORT_INTERFACE_FAN_END;
++        } else if (boost::starts_with(sline, ";_IRONING_FAN_START")) {
++            line.type = CoolingLine::TYPE_IRONING_FAN_START;
++        } else if (boost::starts_with(sline, ";_IRONING_FAN_END")) {
++            line.type = CoolingLine::TYPE_IRONING_FAN_END;
+         } else if (boost::starts_with(sline, TOOLCHANGE_END_TAG)) {
+             line.type = CoolingLine::TYPE_TOOLCHANGE_END;
+         }
+@@ -1160,7 +1172,13 @@ std::string CoolingBuffer::apply_layer_cooldown(
+     new_gcode.reserve(gcode.size() * 2);
+     bool bridge_fan_control = false;
+     int  bridge_fan_speed   = 0;
+-    auto change_extruder_set_fan = [this, layer_id, layer_time, &new_gcode, &bridge_fan_control, &bridge_fan_speed](const int requested_fan_speed = -1) {
++    bool support_interface_fan_control = false;
++    int  support_interface_fan_speed   = 0;
++    bool ironing_fan_control = false;
++    int  ironing_fan_speed   = 0;
++    auto change_extruder_set_fan = [this, layer_id, layer_time, &new_gcode, &bridge_fan_control, &bridge_fan_speed,
++                                    &support_interface_fan_control, &support_interface_fan_speed,
++                                    &ironing_fan_control, &ironing_fan_speed](const int requested_fan_speed = -1) {
+         const int min_fan_speed            = m_config.min_fan_speed.at(m_current_extruder);
+         const int max_fan_speed            = m_config.max_fan_speed.at(m_current_extruder);
+         // Is the fan speed ramp enabled?
+@@ -1168,6 +1186,9 @@ std::string CoolingBuffer::apply_layer_cooldown(
+         int       disable_fan_first_layers = m_config.disable_fan_first_layers.at(m_current_extruder);
+         int       fan_speed_new            = m_config.fan_always_on.at(m_current_extruder) ? min_fan_speed : 0;
+ 
++        const int  initial_layer_fan_speed  = m_config.initial_layer_fan_speed.at(m_current_extruder);
++        const bool initial_layer_override   = initial_layer_fan_speed >= 0 && disable_fan_first_layers <= 0;
++
+         struct FanSpeedRange
+         {
+             int min_speed;
+@@ -1182,7 +1203,16 @@ std::string CoolingBuffer::apply_layer_cooldown(
+             disable_fan_first_layers = 1;
+         }
+ 
+-        if (int(layer_id) >= disable_fan_first_layers) {
++        if (initial_layer_override && layer_id == 0) {
++            fan_speed_new                        = initial_layer_fan_speed;
++            requested_fan_speed_limits           = {initial_layer_fan_speed, initial_layer_fan_speed};
++            bridge_fan_control                   = false;
++            bridge_fan_speed                     = 0;
++            support_interface_fan_control        = false;
++            support_interface_fan_speed          = 0;
++            ironing_fan_control                  = false;
++            ironing_fan_speed                    = 0;
++        } else if (int(layer_id) >= disable_fan_first_layers) {
+             float slowdown_below_layer_time = float(m_config.slowdown_below_layer_time.at(m_current_extruder));
+             float fan_below_layer_time      = float(m_config.fan_below_layer_time.at(m_current_extruder));
+             if (m_config.cooling.at(m_current_extruder)) {
+@@ -1212,9 +1242,17 @@ std::string CoolingBuffer::apply_layer_cooldown(
+ 
+ #undef EXTRUDER_CONFIG
+             bridge_fan_control = bridge_fan_speed > fan_speed_new;
++            support_interface_fan_speed   = m_config.support_material_interface_fan_speed.at(m_current_extruder);
++            support_interface_fan_control = support_interface_fan_speed >= 0;
++            ironing_fan_speed             = m_config.ironing_fan_speed.at(m_current_extruder);
++            ironing_fan_control           = ironing_fan_speed >= 0;
+         } else { // fan disabled
+             bridge_fan_control                   = false;
+             bridge_fan_speed                     = 0;
++            support_interface_fan_control        = false;
++            support_interface_fan_speed          = 0;
++            ironing_fan_control                  = false;
++            ironing_fan_speed                    = 0;
+             fan_speed_new                        = 0;
+             requested_fan_speed_limits.max_speed = 0;
+         }
+@@ -1318,6 +1356,18 @@ std::string CoolingBuffer::apply_layer_cooldown(
+         } else if (line->type & CoolingLine::TYPE_BRIDGE_FAN_END) {
+             if (bridge_fan_control)
+                 new_gcode += GCodeWriter::set_fan(m_config.gcode_flavor, m_config.gcode_comments, m_fan_speed);
++        } else if (line->type & CoolingLine::TYPE_SUPPORT_INTERFACE_FAN_START) {
++            if (support_interface_fan_control)
++                new_gcode += GCodeWriter::set_fan(m_config.gcode_flavor, m_config.gcode_comments, support_interface_fan_speed);
++        } else if (line->type & CoolingLine::TYPE_SUPPORT_INTERFACE_FAN_END) {
++            if (support_interface_fan_control)
++                new_gcode += GCodeWriter::set_fan(m_config.gcode_flavor, m_config.gcode_comments, m_fan_speed);
++        } else if (line->type & CoolingLine::TYPE_IRONING_FAN_START) {
++            if (ironing_fan_control)
++                new_gcode += GCodeWriter::set_fan(m_config.gcode_flavor, m_config.gcode_comments, ironing_fan_speed);
++        } else if (line->type & CoolingLine::TYPE_IRONING_FAN_END) {
++            if (ironing_fan_control)
++                new_gcode += GCodeWriter::set_fan(m_config.gcode_flavor, m_config.gcode_comments, m_fan_speed);
+         } else if (line->type & CoolingLine::TYPE_TOOLCHANGE_END) {
+             // Custom toolchange gcode may have changed fan speed via M106/M107 that CoolingBuffer
+             // doesn't track. Force re-emission to restore the correct fan speed.
+diff --git a/src/libslic3r/src/libslic3r/GCode/CoolingBufferConfig.cpp b/src/libslic3r/src/libslic3r/GCode/CoolingBufferConfig.cpp
+index f20e318..a3160da 100644
+--- a/src/libslic3r/src/libslic3r/GCode/CoolingBufferConfig.cpp
++++ b/src/libslic3r/src/libslic3r/GCode/CoolingBufferConfig.cpp
+@@ -16,10 +16,15 @@ CoolingBufferConfig::CoolingBufferConfig(const PrintConfigView& print_config) :
+     full_fan_speed_layer{print_config.get<std::vector<int>>("full_fan_speed_layer")},
+     gcode_comments{print_config.get<bool>("gcode_comments")},
+     gcode_flavor{print_config.get<Domain::GCodeFlavor>("gcode_flavor")},
++    initial_layer_fan_speed{print_config.get<std::vector<int>>("initial_layer_fan_speed")},
++    ironing_fan_speed{print_config.get<std::vector<int>>("ironing_fan_speed")},
+     max_fan_speed{print_config.get<std::vector<int>>("max_fan_speed")},
+     min_fan_speed{print_config.get<std::vector<int>>("min_fan_speed")},
+     min_print_speed{print_config.get<std::vector<double>>("min_print_speed")},
+     slowdown_below_layer_time{print_config.get<std::vector<int>>("slowdown_below_layer_time")},
++    support_material_interface_fan_speed{
++        print_config.get<std::vector<int>>("support_material_interface_fan_speed")
++    },
+     travel_speed{print_config.get<double>("travel_speed")},
+     use_relative_e_distances{print_config.get<bool>("use_relative_e_distances")}
+ {}
+diff --git a/src/libslic3r/src/libslic3r/GCode/CoolingBufferConfig.hpp b/src/libslic3r/src/libslic3r/GCode/CoolingBufferConfig.hpp
+index 9e7fe68..3d718d1 100644
+--- a/src/libslic3r/src/libslic3r/GCode/CoolingBufferConfig.hpp
++++ b/src/libslic3r/src/libslic3r/GCode/CoolingBufferConfig.hpp
+@@ -19,10 +19,13 @@ struct CoolingBufferConfig
+     std::vector<int> full_fan_speed_layer{};
+     bool gcode_comments{};
+     Domain::GCodeFlavor gcode_flavor{};
++    std::vector<int> initial_layer_fan_speed{};
++    std::vector<int> ironing_fan_speed{};
+     std::vector<int> max_fan_speed{};
+     std::vector<int> min_fan_speed{};
+     std::vector<double> min_print_speed{};
+     std::vector<int> slowdown_below_layer_time{};
++    std::vector<int> support_material_interface_fan_speed{};
+     double travel_speed{};
+     bool use_relative_e_distances{};
+ };
+diff --git a/src/libslic3r/src/libslic3r/GCode/ExtrusionProcessor.cpp b/src/libslic3r/src/libslic3r/GCode/ExtrusionProcessor.cpp
+index c5225d2..3b8c097 100644
+--- a/src/libslic3r/src/libslic3r/GCode/ExtrusionProcessor.cpp
++++ b/src/libslic3r/src/libslic3r/GCode/ExtrusionProcessor.cpp
+@@ -289,7 +289,7 @@ OverhangSpeeds calculate_overhang_speed(
+         overhang_speeds.print_speed = -1;
+     }
+ 
+-    if (!config.enable_dynamic_fan_speeds.at(extruder_id)) {
++    if (!config.enable_dynamic_fan_speeds.at(extruder_id) || !config.enable_overhang_bridge_fan.at(extruder_id)) {
+         overhang_speeds.fan_speed = -1;
+     } else if (current_fan_speed.has_value() && (fan_speed < *current_fan_speed) && (*current_fan_speed - fan_speed) <= MIN_FAN_SPEED_NEGATIVE_CHANGE_TO_EMIT) {
+         // Always allow the fan speed to be increased without any hysteresis, but the speed will be decreased only when it exceeds a limit for minimum change.
+diff --git a/src/libslic3r/src/libslic3r/StepsInvalidation.cpp b/src/libslic3r/src/libslic3r/StepsInvalidation.cpp
+index cd8abc0..622a658 100644
+--- a/src/libslic3r/src/libslic3r/StepsInvalidation.cpp
++++ b/src/libslic3r/src/libslic3r/StepsInvalidation.cpp
+@@ -193,6 +193,7 @@ const std::map<std::string, std::vector<Step>> invalidated_by{
+     {"duplicate_distance", steps({propagate(psGCodeExport)})},
+     {"elefant_foot_compensation", steps({propagate(posSlice)})},
+     {"enable_dynamic_fan_speeds", all_steps()}, // TODO: probably to harsh
++    {"enable_overhang_bridge_fan", steps({propagate(psGCodeExport)})},
+     {"enable_dynamic_overhang_speeds", all_steps()}, // TODO: probably to harsh
+     {"enable_pressure_advance_during_ramming", steps({propagate(psWipeTower), propagate(psSkirtBrim)})},
+     {"end_filament_gcode", steps({propagate(psGCodeExport)})},
+@@ -317,6 +318,8 @@ const std::map<std::string, std::vector<Step>> invalidated_by{
+     {"infill_first", steps({propagate(psWipeTower), propagate(psSkirtBrim)})},
+     {"infill_overlap", steps({propagate(posPerimeters)})},
+     {"infill_speed", steps({propagate(psWipeTower), propagate(psGCodeExport)})},
++    {"initial_layer_fan_speed", steps({propagate(psGCodeExport)})},
++    {"ironing_fan_speed", steps({propagate(psGCodeExport)})},
+     {"inherits_cummulative", steps({})},
+     {"interface_shells", steps({propagate(posPrepareInfill)})},
+     {"interlocking_beam", all_steps()}, // TODO: Probably too harsh.
+@@ -479,6 +482,7 @@ const std::map<std::string, std::vector<Step>> invalidated_by{
+     {"support_material_first_layer_expansion", steps({propagate(posSupportMaterial)})},
+     {"support_material_interface_contact_loops", steps({propagate(posSupportMaterial)})},
+     {"support_material_interface_extruder", steps({propagate(posSupportMaterial)})},
++    {"support_material_interface_fan_speed", steps({propagate(psGCodeExport)})},
+     {"support_material_interface_layers", steps({propagate(posSupportMaterial)})},
+     {"support_material_interface_pattern", steps({propagate(posSupportMaterial)})},
+     {"support_material_interface_spacing", steps({propagate(posSupportMaterial)})},
+diff --git a/src/slic3r-domain/include/Slic3r/Domain/ConfigDef.hpp b/src/slic3r-domain/include/Slic3r/Domain/ConfigDef.hpp
+index 27f2e56..35a8c0e 100644
+--- a/src/slic3r-domain/include/Slic3r/Domain/ConfigDef.hpp
++++ b/src/slic3r-domain/include/Slic3r/Domain/ConfigDef.hpp
+@@ -275,6 +275,7 @@ struct ConfigItemDef
+         Filament_Cooling_FirstLayers       = 5202,
+         Filament_Cooling_CoolingThresholds = 5203,
+         Filament_Cooling_DynamicFanSpeed   = 5204,
++        Filament_Cooling_PerRoleFan        = 5205,
+ 
+         Filament_MultiMaterial_MultitoolRamming  = 5300,
+         Filament_MultiMaterial_TipShapingCooling = 5301,
+diff --git a/src/slic3r-domain/src/Slic3r/Domain/ConfigDef.cpp b/src/slic3r-domain/src/Slic3r/Domain/ConfigDef.cpp
+index 176b319..12ef443 100644
+--- a/src/slic3r-domain/src/Slic3r/Domain/ConfigDef.cpp
++++ b/src/slic3r-domain/src/Slic3r/Domain/ConfigDef.cpp
+@@ -244,6 +244,8 @@ std::string ConfigItemDef::translate_option_group(OptionGroup option_group)
+         return L("Cooling Thresholds");
+     case ConfigItemDef::OptionGroup::Filament_Cooling_DynamicFanSpeed:
+         return L("Dynamic Fan Speed");
++    case ConfigItemDef::OptionGroup::Filament_Cooling_PerRoleFan:
++        return L("Per-role fan speeds");
+     case ConfigItemDef::OptionGroup::Filament_MultiMaterial_MultitoolRamming:
+         return L("Multitool Ramming");
+     case ConfigItemDef::OptionGroup::Filament_MultiMaterial_TipShapingCooling:
+diff --git a/src/slic3r-domain/src/Slic3r/Domain/ConfigDefsFDM.cpp b/src/slic3r-domain/src/Slic3r/Domain/ConfigDefsFDM.cpp
+index 40cb957..6a3f0d6 100644
+--- a/src/slic3r-domain/src/Slic3r/Domain/ConfigDefsFDM.cpp
++++ b/src/slic3r-domain/src/Slic3r/Domain/ConfigDefsFDM.cpp
+@@ -531,6 +531,61 @@ void fdm_config_init_fn(ConfigDefinitions& defs)
+     def->max      = 100;
+     def->init_fn = init_with(0);
+ 
++    def = defs.add("enable_overhang_bridge_fan", typeid(bool));
++    def->location = Filament;
++    def->label    = L("Force cooling for overhangs and bridges");
++    def->option_group = ConfigItemDef::OptionGroup::Filament_Cooling_DynamicFanSpeed;
++    def->category = ConfigItemDef::Category::Filament_Cooling;
++    def->order = 5;
++    def->gui_type = ConfigItemDef::GUIType::checkbox;
++    def->tooltip = L("Enable this option to adjust the part cooling fan speed specifically for overhangs, "
++                     "internal and external bridges.");
++    def->init_fn = init_with(true);
++
++    def = defs.add("initial_layer_fan_speed", typeid(int));
++    def->location = Filament;
++    def->label    = L("First layer fan speed");
++    def->option_group = ConfigItemDef::OptionGroup::Filament_Cooling_FirstLayers;
++    def->category = ConfigItemDef::Category::Filament_Cooling;
++    def->order = 2;
++    def->gui_type = ConfigItemDef::GUIType::spinbox;
++    def->tooltip = L("An exact fan speed for the first layer, overriding every other cooling setting. "
++                     "From the second layer onwards the normal cooling resumes. Ignored when \"Disable fan "
++                     "for the first\" is above zero. Set to -1 to disable it.");
++    def->units = {L("%")};
++    def->min      = -1;
++    def->max      = 100;
++    def->init_fn = init_with(-1);
++
++    def           = defs.add("support_material_interface_fan_speed", typeid(int));
++    def->location = Filament;
++    def->label    = L("Support interface fan speed");
++    def->option_group = ConfigItemDef::OptionGroup::Filament_Cooling_PerRoleFan;
++    def->category = ConfigItemDef::Category::Filament_Cooling;
++    def->order = 0;
++    def->gui_type = ConfigItemDef::GUIType::spinbox;
++    def->tooltip = L("Fan speed while printing support interfaces. A speed above the regular one reduces "
++                     "the layer bonding between the support and the supported part, making them easier to "
++                     "separate. Set to -1 to disable it.");
++    def->units = {L("%")};
++    def->min      = -1;
++    def->max      = 100;
++    def->init_fn = init_with(-1);
++
++    def           = defs.add("ironing_fan_speed", typeid(int));
++    def->location = Filament;
++    def->label    = L("Ironing fan speed");
++    def->option_group = ConfigItemDef::OptionGroup::Filament_Cooling_PerRoleFan;
++    def->category = ConfigItemDef::Category::Filament_Cooling;
++    def->order = 1;
++    def->gui_type = ConfigItemDef::GUIType::spinbox;
++    def->tooltip = L("Fan speed while ironing. Ironed surfaces are printed with little or no extrusion, so "
++                     "they can need more cooling than the rest of the layer. Set to -1 to disable it.");
++    def->units = {L("%")};
++    def->min      = -1;
++    def->max      = 100;
++    def->init_fn = init_with(-1);
++
+     def = defs.add("brim_width", typeid(double));
+     def->location = Print;
+     def->overrides_in = Locations{ Object };

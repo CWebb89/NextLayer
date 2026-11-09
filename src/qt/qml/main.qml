@@ -1501,6 +1501,15 @@ Window {
             anchors.bottom: parent.bottom
             height: Metrics.footerHeight
             onPreviewReady: root.mode = root.previewMode
+            // Slicing switches the window to the toolpath view, which hides the
+            // plate, so the thumbnail is captured from the viewport the user is
+            // looking at when they ask for the slice.
+            onSliceRequested: sliceController.capturePlateThumbnail(viewport,
+                Qt.rect(toolRail.x + toolRail.width - viewport.x,
+                        viewportToolbar.y + viewportToolbar.height - viewport.y,
+                        viewport.width - (toolRail.x + toolRail.width - viewport.x),
+                        viewport.height - (viewportToolbar.y + viewportToolbar.height - viewport.y)
+                            - viewport.bottomChrome))
         }
     }
 
