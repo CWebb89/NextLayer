@@ -44,6 +44,11 @@ Popup {
     readonly property var info: objectId > 0 ? plateDocument.objectInfo(objectId) : ({})
     readonly property var definitions: objectId > 0 ? settingsModel.objectSettingDefs("") : []
     readonly property var profile: objectId > 0 ? plateDocument.layerHeightProfile(objectId) : []
+    /// Settings the object's file carried that this engine cannot apply. They are
+    /// kept in the document and written back out on export, so what this list says
+    /// is "not used here" and never "lost": the object's file still holds them.
+    readonly property var keptForeign: objectId > 0 && !volumeMode
+                                      ? plateDocument.objectForeignSettings(objectId) : ({})
 
     function overrideValue(name, fallback) {
         const value = root.overrides[name]
@@ -204,6 +209,66 @@ Popup {
                 clip: true
                 spacing: Metrics.xs
                 model: root.definitions
+
+                // What the file carried and this engine cannot use. Read-only, and
+                // said plainly: these are neither applied nor lost -- they go back
+                // into the project when it is saved, so a file from another slicer
+                // keeps everything it arrived with. Part of the list rather than a
+                // panel under it, so the two cannot overlap and it scrolls with the
+                // settings it belongs to.
+                footer: Item {
+                    visible: Object.keys(root.keptForeign).length > 0
+                    width: ListView.view.width
+                    height: keptColumn.implicitHeight + Metrics.md
+                    implicitHeight: height
+
+                    ColumnLayout {
+                        id: keptColumn
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.topMargin: Metrics.sm
+                        spacing: Metrics.xxs
+
+                        Text {
+                            text: Object.keys(root.keptForeign).length
+                                  + " setting(s) from this object's file are not used here. "
+                                  + "They are kept and written back when the project is saved."
+                            wrapMode: Text.WordWrap
+                            font.family: Type.family
+                            font.pixelSize: Type.sizeCaption
+                            color: Colors.textMuted
+                            Layout.fillWidth: true
+                        }
+
+                        Repeater {
+                            model: Object.keys(root.keptForeign).sort()
+
+                            delegate: RowLayout {
+                                required property string modelData
+
+                                Layout.fillWidth: true
+                                spacing: Metrics.sm
+
+                                Text {
+                                    text: parent.modelData
+                                    font.family: Type.family
+                                    font.pixelSize: Type.sizeCaption
+                                    color: Colors.textSecondary
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                }
+
+                                Text {
+                                    text: String(root.keptForeign[parent.modelData])
+                                    font.family: Type.family
+                                    font.pixelSize: Type.sizeCaption
+                                    color: Colors.textMuted
+                                }
+                            }
+                        }
+                    }
+                }
 
                 delegate: Rectangle {
                     id: settingRow

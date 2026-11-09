@@ -16,7 +16,13 @@ person opening a downloaded project could do about them. ``support_object_xy_dis
 is the one that used to be dropped and now lands: this engine states the same gap as
 a distance in millimetres or a share of the perimeter width.
 
-    python3 oracle/fixtures/bambu_project.py OUT.3mf
+``--no-support-style` leaves the support family out. Organic supports and a variable
+layer height profile cannot be combined -- the engine refuses that pair outright, and
+so does the slicer this dialect comes from -- so the gate that exports a plate built
+from this file asks for the plain variant, where the profile its own writer adds does
+not collide with the support style this file carries.
+
+    python3 oracle/fixtures/bambu_project.py OUT.3mf [--no-support-style]
 """
 
 from __future__ import annotations
@@ -108,14 +114,22 @@ RELS = """<?xml version="1.0" encoding="UTF-8"?>
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 2:
+    args = [argument for argument in argv[1:] if not argument.startswith("--")]
+    flags = {argument for argument in argv[1:] if argument.startswith("--")}
+    if len(args) != 1 or flags - {"--no-support-style"}:
         sys.stderr.write(__doc__)
         return 2
-    with zipfile.ZipFile(argv[1], "w", zipfile.ZIP_DEFLATED) as archive:
+    settings = SETTINGS
+    if "--no-support-style" in flags:
+        for line in ("enable_support", "support_type", "support_threshold_angle",
+                     "support_object_xy_distance"):
+            settings = "".join(written for written in settings.splitlines(keepends=True)
+                               if f'"{line}"' not in written)
+    with zipfile.ZipFile(args[0], "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("[Content_Types].xml", CONTENT_TYPES)
         archive.writestr("_rels/.rels", RELS)
         archive.writestr("3D/3dmodel.model", CUBE)
-        archive.writestr("Metadata/model_settings.config", SETTINGS)
+        archive.writestr("Metadata/model_settings.config", settings)
     return 0
 
 

@@ -4,6 +4,7 @@
 #pragma once
 
 #include <QByteArray>
+#include <QHash>
 #include <QString>
 #include <QTemporaryDir>
 #include <QVector>
@@ -61,6 +62,10 @@ struct PlateSliceObject
     Slic3r::Domain::Transformation transform;
     QVector<PlateSliceVolume> volumes;
     QByteArray settingsJson;
+    /// Settings the object's file carried that this engine cannot act on, kept in
+    /// the dialect they were written in so a project from another slicer survives a
+    /// round trip through this one.
+    QHash<QString, QString> foreignSettings;
     Slic3r::Domain::ZHeightPairs layerHeights;
     Slic3r::Domain::TriangleSelector::TriangleSplittingData supportPaint;
     Slic3r::Domain::TriangleSelector::TriangleSplittingData seamPaint;
@@ -153,9 +158,15 @@ private:
     /// selected, or nothing after removing it on failure. Both the slice and the
     /// project export start here, so a file written for another slicer is the
     /// same project the slicer itself would have run.
+    /// \p carried, when given, receives the overrides the engine refused for an
+    /// object, keyed by the object's index in \p objects. A project export hands
+    /// one over so a setting this engine cannot apply is written to the file
+    /// instead of failing the export; a slice passes nothing, because there the
+    /// refusal is the answer.
     std::optional<Slic3r::Domain::SelectionId> preparePlate(
         Runtime& runtime, const QVector<PlateSliceObject>& objects, const QString& configPath,
-        const QString& gcodePath, const QVector<PlateLayerGcode>& layerGcodes, QString& error);
+        const QString& gcodePath, const QVector<PlateLayerGcode>& layerGcodes, QString& error,
+        QHash<int, QHash<QString, QString>>* carried = nullptr);
 
     std::optional<QTemporaryDir> m_plateDir;
 };

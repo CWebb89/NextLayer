@@ -610,16 +610,19 @@ end
 # A project from another slicer. Bambu and Orca keep an object's settings as plain
 # metadata under their own setting names, and write no model config at all. Names
 # that mean the same thing here under a different word have to become the setting
-# this engine has; names describing behaviour this engine does not have are dropped
-# without a word; a name nothing here knows is named and left out. Never guessed at,
-# and never a reason to refuse the file.
+# this engine has; a name describing behaviour this engine does not have, or one it
+# only knows at print or machine level, is kept and carried instead of dropped; a
+# name nothing here knows is kept the same way. Never guessed at, and never a reason
+# to refuse the file -- which is why the export is run below: a downloaded project
+# has to save again with everything it arrived with.
 set -l foreign_mf /tmp/nl-check-foreign.3mf
 python3 $root/oracle/fixtures/bambu_project.py $foreign_mf >/dev/null 2>&1
 set -l foreign_rc $status
 set -l foreign_out (env QT_QPA_PLATFORM=eglfs XDG_DATA_HOME=$tools_home $bin $foreign_mf --dump-applied 2>&1)
 set -l foreign_object (string match -r "obj 1 plate 1 'cube': ([0-9]+) setting" -- $foreign_out)
 set -l foreign_note (string match -r 'left out: (.*)$' -- $foreign_out)
-set -l foreign_expect 'support_material = everywhere' 'support_material_style = organic' 'fill_density = 15%' 'fill_pattern = gyroid' 'perimeters = 3' 'layer_height = 0.12' 'first_layer_height = 0.2' 'perimeter_speed = 150' 'external_perimeter_extrusion_width = 0.42' 'seam_position = rear' 'top_solid_layers = 4' 'bottom_solid_layers = 3' 'support_material_threshold = 40' 'brim_type = outer_only' 'support_material_xy_spacing = 0.4'
+set -l foreign_expect 'support_material = everywhere' 'support_material_style = organic' 'fill_density = 15%' 'fill_pattern = gyroid' 'perimeters = 3' 'layer_height = 0.12' 'perimeter_speed = 150' 'external_perimeter_extrusion_width = 0.42' 'seam_position = rear' 'top_solid_layers = 4' 'bottom_solid_layers = 3' 'support_material_threshold = 40' 'brim_type = outer_only' 'support_material_xy_spacing = 0.4'
+set -l foreign_kept 'initial_layer_print_height = 0.2' 'skeleton_infill_density = 25%' 'made_up_setting = 1'
 set -l foreign_missing
 for wanted in $foreign_expect
     if not string match -q -- "*$wanted*" $foreign_out
@@ -629,14 +632,38 @@ end
 set -l foreign_complaint (string match -r 'note: .*' -- $foreign_out)
 if test $foreign_rc -ne 0
     __bad 'foreign project: the fixture would not write'
-else if test (count $foreign_object) -lt 2 -o "$foreign_object[2]" != 16
-    __bad "foreign project: the object came back with $foreign_object[2] setting(s), not the sixteen its file implies"
+else if test (count $foreign_object) -lt 2 -o "$foreign_object[2]" != 15
+    __bad "foreign project: the object came back with $foreign_object[2] setting(s), not the fifteen its file implies"
 else if test (count $foreign_missing) -gt 0
     __bad "foreign project: $foreign_missing did not survive the translation"
 else if test (count $foreign_complaint) -gt 0
     __bad "foreign project: a downloaded project still reports settings at the user ($foreign_complaint)"
+else if not string match -q -- '*kept 3 setting(s)*' $foreign_out
+    __bad 'foreign project: the names this engine cannot apply were not held for the round trip'
+else if test (count (string match -a -- '*initial_layer_print_height = 0.2*' $foreign_out)) -eq 0
+    __bad 'foreign project: a per-object first layer height was dropped instead of kept'
 else
-    __ok "foreign project: a Bambu/Orca file opens with its label, its plate and $foreign_object[2] settings -- every name translated, values converted (support_material = everywhere, seam_position = rear), and the names this engine has no counterpart for dropped without a word, so a downloaded project never warns"
+    __ok "foreign project: a Bambu/Orca file opens with its label, its plate and $foreign_object[2] settings -- every name translated, values converted (support_material = everywhere, seam_position = rear) -- and the 3 names this engine cannot apply are kept, not dropped, so a downloaded project never warns and loses nothing"
+end
+
+# ... and it has to come back out. The export path refuses nothing: an override the
+# engine will not take on an object is written into the file under the name it
+# arrived with, which is what makes a downloaded project saveable again.
+set -l foreign_saved /tmp/nl-check-foreign-out.3mf
+set -l foreign_plain /tmp/nl-check-foreign-plain.3mf
+rm -f $foreign_saved
+python3 $root/oracle/fixtures/bambu_project.py $foreign_plain --no-support-style >/dev/null 2>&1
+env QT_QPA_PLATFORM=eglfs XDG_DATA_HOME=$tools_home $bin $foreign_plain --export-project $tools_cfg,$foreign_saved >/tmp/nl-check-foreign-export.out 2>&1
+set -l foreign_back (env QT_QPA_PLATFORM=eglfs XDG_DATA_HOME=$tools_home $bin $foreign_saved --dump-applied 2>&1)
+set -l foreign_metadata (unzip -p $foreign_saved Metadata/model_settings.config 2>/dev/null)
+if not test -s $foreign_saved
+    __bad "foreign project: a downloaded project would not save again: "(tail -n 1 /tmp/nl-check-foreign-export.out)
+else if not string match -q -- '*kept 3 setting(s)*' $foreign_back
+    __bad 'foreign project: the kept settings did not come back out of the file that was written'
+else if test (count (string match -a -- '*initial_layer_print_height*' $foreign_metadata)) -eq 0
+    __bad 'foreign project: the exported file does not carry the setting it kept'
+else
+    __ok "foreign project: it saves again -- the 3 settings this engine cannot apply ride out in Metadata/model_settings.config under their own names, so the file loses nothing on a round trip"
 end
 
 # User-preset gate: a preset a person saves has to survive a restart, resolve

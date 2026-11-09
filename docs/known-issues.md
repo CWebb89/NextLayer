@@ -28,11 +28,26 @@ complete inventory, this is the part you need before you start a print.
   settings as plain metadata in `Metadata/model_settings.config` under that
   slicer's own names, and `ForeignSettings` translates 109 of them -- and their
   values -- into the settings this engine has. Opening a downloaded project never
-  reports anything: names with no counterpart here (skeleton and skin infill
-  density, support spacing given in millimetres, per-perimeter fan speeds, filament
-  mapping) and names nothing here knows are dropped without a word, because there
-  is nothing the person opening the file could do about them. `docs/features.md`
-  has the measured state of both.
+  reports anything, and nothing is lost either: a setting this engine cannot apply
+  -- because the behaviour does not exist here (skeleton and skin infill density,
+  per-perimeter fan speeds, the per-height speed table, filament maps), because it
+  belongs to the print rather than the object (`initial_layer_print_height`), or
+  because nothing here knows the name -- is kept, listed read-only in the object
+  panel, and written back into the project's `Metadata/model_settings.config` when
+  the document is saved. `docs/features.md` has the measured state of both.
+- **Organic supports and a variable layer height profile cannot be combined.** The
+  engine refuses the pair outright (`VariableLayerHeightAndOrganicSupports`), and so
+  does the slicer this dialect comes from, so a Bambu/Orca project that carries both
+  will not slice until one of them is dropped. This is engine behaviour, not a
+  reading of the file.
+- **A project exported from a 3MF that was itself opened shifts its objects by half
+  their footprint.** Measured while adding the round-trip gate: export a Bambu
+  project, reopen the result, and the objects sit 10 mm off for a 20 mm cube --
+  positions match the authored document, so the shift is in how the mesh's local
+  origin and the instance transform are paired on the way back in. Slices of a
+  project this app authored from an STL are byte-identical, which is why the
+  fidelity gate does not catch it. Not fixed; a reproduction is the export of
+  `oracle/fixtures/bambu_project.py`'s output.
 - **Opening a single-object 3MF now honours the file.** A 3MF is treated as a
   scene with its own placement rather than as a mesh to drop on the bed, which is
   what the importer did before; an object exported from CAD at the origin opens at

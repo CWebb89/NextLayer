@@ -1273,17 +1273,43 @@ void PlateDocument::applyForeignSettings(int id, const QHash<QString, QString>& 
 
     QStringList refused;
     QHash<QString, QString> translated;
+    QHash<QString, QString> originalOf;
+    QHash<QString, QString> sourceOf;
     for (auto entry = settings.constBegin(); entry != settings.constEnd(); ++entry) {
         QString name;
         QString value;
-        if (next_layer::translateForeignSetting(entry.key(), entry.value(), name, value))
+        if (next_layer::translateForeignSetting(entry.key(), entry.value(), name, value)) {
             translated.insert(name, value);
+            originalOf.insert(name, entry.value());
+            sourceOf.insert(name, entry.key());
+        } else {
+            object->foreignSettings.insert(entry.key(), entry.value());
+        }
     }
 
     const QVariantMap accepted = next_layer::settingsFromText(translated, refused);
     for (auto entry = accepted.constBegin(); entry != accepted.constEnd(); ++entry) {
+        // A setting the engine only knows at print or machine level cannot be held
+        // by an object: the engine refuses it when the project is written, which
+        // would turn one unsupported line in a downloaded file into a document that
+        // cannot be saved. It is kept instead, under the name it arrived with.
+        if (!next_layer::overridesAtObject(entry.key())) {
+            const QString source = sourceOf.value(entry.key());
+            if (!source.isEmpty())
+                object->foreignSettings.insert(source, originalOf.value(entry.key()));
+            continue;
+        }
         if (!object->settings.contains(entry.key()))
             object->settings.insert(entry.key(), entry.value());
+    }
+    // A name that translated but whose value the engine refused is neither applied
+    // nor lost: it goes back out under the name and value it arrived with.
+    for (auto entry = translated.constBegin(); entry != translated.constEnd(); ++entry) {
+        if (accepted.contains(entry.key()))
+            continue;
+        const QString source = sourceOf.value(entry.key());
+        if (!source.isEmpty())
+            object->foreignSettings.insert(source, originalOf.value(entry.key()));
     }
 
     // Every tool this app can address is one it has; a file that names a fourth
@@ -2353,6 +2379,18 @@ QVariantMap PlateDocument::objectSettings(int id) const
     return object == nullptr ? QVariantMap() : object->settings;
 }
 
+QVariantMap PlateDocument::objectForeignSettings(int id) const
+{
+    const Object* object = find(id);
+    if (object == nullptr || object->foreignSettings.isEmpty())
+        return QVariantMap();
+    QVariantMap kept;
+    for (auto entry = object->foreignSettings.constBegin();
+         entry != object->foreignSettings.constEnd(); ++entry)
+        kept.insert(entry.key(), entry.value());
+    return kept;
+}
+
 bool PlateDocument::setObjectSetting(int id, const QString& name, const QVariant& value)
 {
     Object* object = find(id);
@@ -2722,6 +2760,7 @@ QVector<next_layer::PlateSliceObject> PlateDocument::projectObjects() const
         slice.mesh = *object.mesh;
         slice.transform = object.trafo;
         slice.settingsJson = settingsToJson(object.settings);
+        slice.foreignSettings = object.foreignSettings;
         slice.layerHeights = object.layerHeights;
         slice.supportPaint = object.supportPaint;
         slice.seamPaint = object.seamPaint;

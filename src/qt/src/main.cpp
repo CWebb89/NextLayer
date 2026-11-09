@@ -1820,6 +1820,16 @@ int main(int argc, char* argv[])
                     std::fprintf(stdout, "    %s = %s\n", name.toUtf8().constData(),
                                  printed.toUtf8().constData());
                 }
+                const QVariantMap foreign = document->objectForeignSettings(id);
+                if (!foreign.isEmpty()) {
+                    std::fprintf(stdout, "    kept %lld setting(s) this engine cannot apply\n",
+                                 static_cast<long long>(foreign.size()));
+                    QStringList kept = QStringList(foreign.keys());
+                    kept.sort();
+                    for (const QString& name : kept)
+                        std::fprintf(stdout, "      %s = %s\n", name.toUtf8().constData(),
+                                     foreign.value(name).toString().toUtf8().constData());
+                }
             }
         }
         if (!document->error().isEmpty())

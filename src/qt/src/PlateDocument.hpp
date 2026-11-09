@@ -119,6 +119,12 @@ public:
         std::vector<Volume> volumes;
 
         QVariantMap settings;
+        // Settings the object's file carried that this engine cannot act on, kept
+        // verbatim in the dialect they were written in. They ride along with the
+        // document and are written back out on export, so opening a project from
+        // another slicer and saving it again loses nothing -- the alternative, which
+        // is what that other slicer does, is to drop them.
+        QHash<QString, QString> foreignSettings;
         Slic3r::Domain::ZHeightPairs layerHeights;
         Slic3r::Domain::TriangleSelector::TriangleSplittingData supportPaint;
         Slic3r::Domain::TriangleSelector::TriangleSplittingData seamPaint;
@@ -275,6 +281,10 @@ public:
     Q_INVOKABLE bool autoOrientSelection();
     Q_INVOKABLE bool arrangePlate();
     Q_INVOKABLE QVariantMap objectSettings(int id) const;
+    /// Settings the object's file carried that this engine cannot act on. They are
+    /// kept, written back out on export and shown read-only: nothing is lost by
+    /// opening a project from another slicer here.
+    Q_INVOKABLE QVariantMap objectForeignSettings(int id) const;
     Q_INVOKABLE bool setObjectSetting(int id, const QString& name, const QVariant& value);
     Q_INVOKABLE bool clearObjectSetting(int id, const QString& name);
     Q_INVOKABLE void clearObjectSettings(int id);

@@ -398,7 +398,8 @@ std::optional<SelectionId> SliceRuntime::preparePlate(Runtime& runtime,
                                                      const QString& configPath,
                                                      const QString& gcodePath,
                                                      const QVector<PlateLayerGcode>& layerGcodes,
-                                                     QString& error)
+                                                     QString& error,
+                                                     QHash<int, QHash<QString, QString>>* carried)
 {
     if (!m_plateDir.has_value() || !m_plateDir->isValid()) {
         m_plateDir.emplace(next_layer::scratchTemplate());
@@ -432,7 +433,8 @@ std::optional<SelectionId> SliceRuntime::preparePlate(Runtime& runtime,
     Slic3r::Domain::Model& model = selected.model();
     model.clear_objects();
 
-    for (const PlateSliceObject& source : objects) {
+    for (int objectIndex = 0; objectIndex < objects.size(); ++objectIndex) {
+        const PlateSliceObject& source = objects.at(objectIndex);
         Slic3r::Domain::ModelObject* object = model.add_object();
         object->name = source.name.toStdString();
         Slic3r::Domain::TriangleMesh mesh = source.mesh;
@@ -486,6 +488,17 @@ std::optional<SelectionId> SliceRuntime::preparePlate(Runtime& runtime,
                 const auto issue = issues.find(it.key());
                 if (issue == issues.end())
                     continue;
+                if (carried != nullptr) {
+                    // The engine will not take this override here. Rather than fail
+                    // the export over it, it goes into the file under the name it
+                    // arrived with, where a reader that does understand it finds it.
+                    const QString key = QString::fromStdString(it.key());
+                    const nlohmann::ordered_json& value = *it;
+                    (*carried)[objectIndex].insert(key, value.is_string()
+                        ? QString::fromStdString(value.get<std::string>())
+                        : QString::fromStdString(value.dump()));
+                    continue;
+                }
                 error = QStringLiteral("%1 was rejected: %2")
                             .arg(QString::fromStdString(it.key()),
                                  QString::fromStdString(issue->second.message));
@@ -671,7 +684,8 @@ namespace {
 /// object on plate one, named. A reader that understands them puts the objects
 /// back where they were instead of packing the bed, and OrcaSlicer reads the same
 /// file.
-bool writePlateRecords(const QString& path, const QVector<PlateSliceObject>& objects)
+bool writePlateRecords(const QString& path, const QVector<PlateSliceObject>& objects,
+                       const QHash<int, QHash<QString, QString>>& carried)
 {
     QString xml = QStringLiteral("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<config>\n");
     int plateCount = 1;
@@ -679,13 +693,27 @@ bool writePlateRecords(const QString& path, const QVector<PlateSliceObject>& obj
         plateCount = std::max(plateCount, object.plate + 1);
 
     // The object ids are the ones the writer gave the model, one per object in the
-    // order they were handed over.
+    // order they were handed over. The settings an object carries that this engine
+    // cannot act on ride along here, in the dialect they were written in: this file
+    // is metadata, so a name nothing here knows costs nothing and a reader that
+    // does know it gets it back.
     for (int index = 0; index < objects.size(); ++index) {
         xml += QStringLiteral("  <object id=\"%1\">\n"
-                              "    <metadata key=\"plater_id\" value=\"%2\"/>\n"
-                              "  </object>\n")
+                              "    <metadata key=\"plater_id\" value=\"%2\"/>\n")
                    .arg(index + 1)
                    .arg(objects.at(index).plate + 1);
+        const QHash<QString, QString>& kept = carried[index];
+        for (int group = 0; group < 2; ++group) {
+            const QHash<QString, QString>& entries =
+                group == 0 ? objects.at(index).foreignSettings : kept;
+            for (auto entry = entries.constBegin(); entry != entries.constEnd(); ++entry) {
+                if (entry.key().isEmpty())
+                    continue;
+                xml += QStringLiteral("    <metadata key=\"%1\" value=\"%2\"/>\n")
+                           .arg(entry.key().toHtmlEscaped(), entry.value().toHtmlEscaped());
+            }
+        }
+        xml += QStringLiteral("  </object>\n");
     }
     for (int plate = 1; plate <= plateCount; ++plate) {
         xml += QStringLiteral("  <plate>\n    <metadata key=\"plater_id\" value=\"%1\"/>\n")
@@ -725,8 +753,9 @@ bool SliceRuntime::exportPlate3mf(const QVector<PlateSliceObject>& objects,
     const std::scoped_lock lock(engineMutex());
     Runtime& runtime = runtimeLocked();
 
+    QHash<int, QHash<QString, QString>> carried;
     const std::optional<SelectionId> projectId =
-        preparePlate(runtime, objects, configPath, outPath, layerGcodes, error);
+        preparePlate(runtime, objects, configPath, outPath, layerGcodes, error, &carried);
     if (!projectId.has_value())
         return false;
 
@@ -758,7 +787,7 @@ bool SliceRuntime::exportPlate3mf(const QVector<PlateSliceObject>& objects,
         outPath.toStdString().c_str(), &selected.model(), configContainer.build_print_config(),
         configContainer.selected_preset().hw_config, /*fullpath_sources=*/true, wipeTowers,
         customGcodes);
-    const bool appended = written && writePlateRecords(outPath, objects);
+    const bool appended = written && writePlateRecords(outPath, objects, carried);
 
     if (!written)
         error = QStringLiteral("the engine could not write %1").arg(outPath);

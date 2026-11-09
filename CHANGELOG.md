@@ -24,10 +24,15 @@ unverified.
   the machine and filament start/end G-code, and both `prime_tower_*` widths — with
   their values converted where the two write the same setting differently
   (`enable_support=1` to `support_material=everywhere`, `tree(auto)` to
-  `organic`, `seam_position=back` to `rear`). A name with no counterpart here and
-  a name nothing here knows are both dropped silently: the status bar stays empty,
-  because there is nothing the person opening a downloaded project could do about
-  it. Both ends of the table are gated — every target has to exist here, every
+  `organic`, `seam_position=back` to `rear`). A name with no counterpart here, a
+  name that belongs to the print rather than the object, and a name nothing here
+  knows are all kept rather than dropped: they are listed read-only in the object
+  panel and written back into the project's metadata when it is saved, so a
+  downloaded file saves again with everything it arrived with, and the status bar
+  stays empty because there is nothing the person opening it could do about them.
+  The export path refuses nothing either -- an override the engine will not take on
+  an object goes into that metadata instead of failing the write. Both ends of the
+  table are gated — every target has to exist here, every
   source has to be a name that slicer defines — so a typo fails the build instead of
   quietly losing a setting. An object also keeps the label its author gave it, and a
   project file no longer reports its own object names as a setting it failed to read.

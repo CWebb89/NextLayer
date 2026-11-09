@@ -1937,9 +1937,10 @@ int runThreeMfExportSelftest(const QString& model, const QString& configPath,
                      static_cast<long long>(restoredMarkers.size()));
         return 1;
     }
-    if (restoredBands < 2 || restoredPaint < 1) {
-        std::fprintf(stderr, "the project lost its profile or its paint: %d band(s), %d painted\n",
-                     restoredBands, restoredPaint);
+    if (restoredBands < 2 || (painted > 0 && restoredPaint < 1)) {
+        std::fprintf(stderr, "the project lost its profile or its paint: %d band(s), %d painted "
+                             "of %d painted facets\n",
+                     restoredBands, restoredPaint, painted);
         return 1;
     }
 

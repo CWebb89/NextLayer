@@ -230,6 +230,24 @@ QVariantMap settingsFromText(const QHash<QString, QString>& record, QStringList&
     return settings;
 }
 
+bool overridesAtObject(const QString& name)
+{
+    const std::string needle = name.toStdString();
+    for (const Slic3r::Domain::ConfigItemDef& def : Slic3r::Domain::get_defs_fdm().defs()) {
+        if (def.name != needle)
+            continue;
+        // An object's settings box holds the settings that live there and the ones
+        // it may override; anything else belongs to the print or the machine and the
+        // engine refuses it on an object.
+        if (std::get_if<Slic3r::Domain::FDMConfigLocation>(&def.location) != nullptr
+            && std::get<Slic3r::Domain::FDMConfigLocation>(def.location)
+                   == Slic3r::Domain::FDMConfigLocation::Object)
+            return true;
+        return def.overrides_in.count(Slic3r::Domain::FDMConfigLocation::Object) > 0;
+    }
+    return false;
+}
+
 QVariantMap overriddenSettings(const Slic3r::Domain::ConfigBox& box, QStringList& unreadable)
 {
     QVariantMap settings;

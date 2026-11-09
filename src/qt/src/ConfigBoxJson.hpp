@@ -31,4 +31,11 @@ QVariantMap overriddenSettings(const Slic3r::Domain::ConfigBox& box, QStringList
 /// type cannot accept, is named in \a refused; nothing is guessed.
 QVariantMap settingsFromText(const QHash<QString, QString>& record, QStringList& refused);
 
+/// Whether this engine lets a setting be overridden per object. A setting that
+/// belongs to the print or the machine alone is refused by the engine when an
+/// object claims it, so a foreign project's per-object copy of one has to be kept
+/// rather than applied -- that is the difference between a file this app can save
+/// and one it cannot.
+bool overridesAtObject(const QString& name);
+
 }
