@@ -1679,6 +1679,12 @@ Item {
                 // to operate on the plate under the cursor is the wrong distance.
                 // They carry a rounded plate behind the icon now, so they read as
                 // buttons at any camera angle rather than as floating symbols.
+                // They hang down the inside of the plate's right edge, where the
+                // plate number already sits: the same place the reference slicer puts
+                // them, and the reason is visible in one capture -- anchored outside
+                // the bed they float on the background and leave the window as soon
+                // as the camera is zoomed in, which makes the plate's own actions
+                // unreachable exactly when the plate fills the view.
                 Repeater {
                     model: plateItem.actions
 
@@ -1687,12 +1693,13 @@ Item {
 
                         required property var modelData
 
+                        readonly property real buttonRight: root.bedMax.x - plateChrome.gapLeft * 2
                         readonly property real buttonTop: root.bedMax.y - plateChrome.gapTop
                                                     - (actionDecal.modelData.slot + 1)
                                                     * (plateChrome.iconSize + plateChrome.gapY)
                         readonly property var matrix: plateItem.decal(
-                            root.bedMax.x + plateChrome.gapLeft, actionDecal.buttonTop,
-                            root.bedMax.x + plateChrome.gapLeft + plateChrome.iconSize,
+                            actionDecal.buttonRight - plateChrome.iconSize, actionDecal.buttonTop,
+                            actionDecal.buttonRight,
                             actionDecal.buttonTop + plateChrome.iconSize, 100, 100)
 
                         visible: actionDecal.matrix !== null

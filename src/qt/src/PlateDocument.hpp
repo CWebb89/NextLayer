@@ -474,8 +474,6 @@ private:
     int m_version = 0;
     QString m_error;
     QStringList m_pendingNotes;
-    int m_foreignObjects = 0;
-    QStringList m_foreignNames;
     std::unique_ptr<QTemporaryDir> m_scratch;
     QStringList m_stagedPlates;
     int m_stagedRevision = 0;

@@ -2,8 +2,6 @@
 // Copyright (C) 2026 Curtis Webb
 
 #include "GcodeBrand.hpp"
-
-#include <Slic3r/Version.hpp>
 #include "GcodeView.hpp"
 #include "Host.hpp"
 #include "MeshGeometry.hpp"
@@ -17,6 +15,7 @@
 #include "Updater.hpp"
 #include "PlateDocument.hpp"
 #include "PlateScene.hpp"
+#include "ForeignSettings.hpp"
 #include "ProjectFile.hpp"
 #include "Resources.hpp"
 #include "Scratch.hpp"
@@ -38,6 +37,7 @@
 #include <Slic3r/Domain/ConfigDefsFDM.hpp>
 #include <Slic3r/Domain/TriangleMesh.hpp>
 #include <Slic3r/Domain/Workbench.hpp>
+#include <Slic3r/Version.hpp>
 
 #include <QCommandLineOption>
 #include <QDir>
@@ -886,6 +886,9 @@ int main(int argc, char* argv[])
         "registered and whether a ligature name still measures as one glyph, then exit.");
     const QCommandLineOption dump_object_settings_option("dump-object-settings",
         "List the settings a single object can override, with their types, and exit.");
+    const QCommandLineOption dump_foreign_settings_option("dump-foreign-settings",
+        "List every setting renamed from another slicer's dialect, and whether this engine has "
+        "it, and exit.");
     const QCommandLineOption dump_presets_option("dump-presets",
         "List the engine's printer profiles and exit. With --printer, also list its print and filament profiles.");
     const QCommandLineOption dump_presets_json_option("dump-presets-json",
@@ -927,7 +930,7 @@ int main(int argc, char* argv[])
                        hover_test_option, panel_left_option, selftest_option, slice_all_option, plate_tools_option, slice_features_option,
                        project_version_test_option, project_test_option, export_project_option, mesh_tools_option, update_option,
                        update_install_option, multi_tool_option, print_host_test_option, print_host_start_option, apply_offsets_option, volume_settings_option, calibration_test_option, shape_test_option, keep_gcode_option, scene_selftest_option, preview_stats_option, vgcode_shot_option,
-                       dump_presets_option, dump_presets_json_option, dump_fonts_option, dump_icons_option, dump_object_settings_option, preset_printer_option, preset_process_option, preset_filament_option, preset_filaments_option,
+                       dump_presets_option, dump_presets_json_option, dump_fonts_option, dump_icons_option, dump_object_settings_option, dump_foreign_settings_option, preset_printer_option, preset_process_option, preset_filament_option, preset_filaments_option,
                        set_option, add_printer_option, save_preset_option, rename_preset_option,
                        delete_preset_option, export_preset_option, import_preset_option,
                        import_slicer_option, export_bundle_option});
@@ -1282,6 +1285,24 @@ int main(int argc, char* argv[])
         }
         std::printf("object settings: %d\n", count);
         return 0;
+    }
+
+    if (parser.isSet(dump_foreign_settings_option)) {
+        int missing = 0;
+        const auto defs = Slic3r::Domain::get_defs_fdm().defs();
+        for (const next_layer::ForeignSettingPair& pair : next_layer::foreignSettingTable()) {
+            const bool here = std::any_of(defs.begin(), defs.end(),
+                                          [&](const Slic3r::Domain::ConfigItemDef& definition) {
+                                              return definition.name == pair.target.toStdString();
+                                          });
+            std::printf("%s\t%s\t%s\n", pair.source.toUtf8().constData(),
+                        pair.target.toUtf8().constData(), here ? "ok" : "missing");
+            if (!here)
+                ++missing;
+        }
+        std::printf("foreign settings: %lld, missing here: %d\n",
+                    static_cast<long long>(next_layer::foreignSettingTable().size()), missing);
+        return missing == 0 ? 0 : 1;
     }
 
     if (parser.isSet(dump_icons_option)) {

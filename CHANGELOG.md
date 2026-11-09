@@ -16,16 +16,30 @@ unverified.
   as a bare mesh and dropped onto the bed, and every object's build transform was
   applied a second time on top of the instance the engine already had, which
   cancelled the author's rotation.
-- **A Bambu/Orca project opens with its object settings translated**, not merely
-  the names that happen to be spelled the same: `sparse_infill_density`,
-  `wall_loops`, `enable_support`, `support_type` and the wall and infill widths
-  and speeds become the settings this engine has, with their values converted
+- **A project from another slicer never reports a setting at you.** Fifty
+  Bambu/Orca names are translated into this engine's — the wall, surface, sparse and
+  internal-solid-infill width, speed and acceleration families, `wall_loops`,
+  `top_shell_layers`, `initial_layer_print_height`, the whole `support_*` family,
+  `bridge_flow`, `retraction_*` and both `prime_tower_*` widths — with their
+  values converted where the two write the same setting differently
   (`enable_support=1` to `support_material=everywhere`, `tree(auto)` to
-  `organic`). Settings describing behaviour this engine does not have are dropped
-  and listed in the source; a name nothing here knows is still reported. Every
-  downloaded project measured so far now opens with no note at all. An object also
-  keeps the label its author gave it, and a project file no longer reports its own
-  object names as a setting it failed to read.
+  `organic`, `seam_position=back` to `rear`). A name with no counterpart here and
+  a name nothing here knows are both dropped silently: the status bar stays empty,
+  because there is nothing the person opening a downloaded project could do about
+  it. Both ends of the table are gated — every target has to exist here, every
+  source has to be a name that slicer defines — so a typo fails the build instead of
+  quietly losing a setting. An object also keeps the label its author gave it, and a
+  project file no longer reports its own object names as a setting it failed to read.
+- **A per-tool setting written as one value applies to every tool.** A project from
+  another slicer writes `inner_wall_speed = 150` where this engine's setting is a
+  list; it now reads as the one-element list that means, and a
+  semicolon-separated list still reads as written.
+- **The plate's action buttons sit inside the plate**, down the right-hand edge
+  where the plate number is, instead of hanging off it into empty space. Anchored
+  outside the bed they drifted out of the window as soon as the camera zoomed in,
+  which made the plate's own actions unreachable exactly when the plate filled the
+  view. They are still drawn on the bed plane and skew with it, like the reference
+  slicer.
 - **The window's left rail is gone.** It duplicated the mode switch in the header
   and the object list in the tool strip, and cost every plate 44 px of width. Its
   two remaining actions moved where they belong: printer setup to

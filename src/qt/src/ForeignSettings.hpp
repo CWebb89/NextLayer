@@ -4,30 +4,29 @@
 #pragma once
 
 #include <QString>
+#include <QVector>
 
 namespace next_layer {
 
-/// What became of a setting another slicer wrote.
-enum class ForeignSetting
+/// One renamed setting, for the dump `--dump-foreign-settings` prints and the gate
+/// that checks both ends of it.
+struct ForeignSettingPair
 {
-    /// It has a counterpart here, named and valued the way this engine prints it.
-    Translated,
-    /// It has no counterpart here, and that is a known, deliberate gap: the value
-    /// means something this engine does not do. Nothing is reported, because a
-    /// person opening a downloaded project can do nothing about it.
-    NoCounterpart,
-    /// Nothing here recognises the name. Reported, because it may be a setting this
-    /// app should learn.
-    Unknown,
+    QString source;
+    QString target;
 };
 
 /// Translate one setting from the Bambu/Orca dialect into this engine's.
 ///
 /// The two slicers share a lineage, so some names and values are the same, some are
 /// the same meaning under a different name, and some describe behaviour this engine
-/// does not have. Guessing at the last group would change prints silently, so it is
-/// separated by name and left alone.
-ForeignSetting translateForeignSetting(const QString& key, const QString& value,
-                                       QString& translatedName, QString& translatedValue);
+/// does not have. Returns false only for the last group, which is listed here as a
+/// known gap; anything else is translated and then checked by the engine's own
+/// definition, which refuses a value it does not list.
+bool translateForeignSetting(const QString& key, const QString& value,
+                             QString& translatedName, QString& translatedValue);
+
+/// Every rename the table carries, in the order it is written.
+QVector<ForeignSettingPair> foreignSettingTable();
 
 }

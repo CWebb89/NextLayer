@@ -1160,18 +1160,6 @@ int PlateDocument::importObject(const QString& path, const QString& label, bool 
     else if (added.size() > 1)
         arrangePlate();
     m_selectedIds = std::vector<int>(added.begin(), added.end());
-    if (m_foreignObjects > 0) {
-        QStringList names = m_foreignNames;
-        names.sort();
-        m_pendingNotes.append(
-            QStringLiteral("%1 object(s) came with %2 setting(s) this engine has no definition "
-                           "for, left out: %3")
-                .arg(m_foreignObjects)
-                .arg(names.size())
-                .arg(names.join(QStringLiteral(", "))));
-    }
-    m_foreignObjects = 0;
-    m_foreignNames.clear();
     m_error = m_pendingNotes.join(QStringLiteral("; "));
     m_pendingNotes.clear();
     emit errorChanged();
@@ -1285,20 +1273,11 @@ void PlateDocument::applyForeignSettings(int id, const QHash<QString, QString>& 
 
     QStringList refused;
     QHash<QString, QString> translated;
-    QStringList unmapped;
     for (auto entry = settings.constBegin(); entry != settings.constEnd(); ++entry) {
         QString name;
         QString value;
-        switch (next_layer::translateForeignSetting(entry.key(), entry.value(), name, value)) {
-        case next_layer::ForeignSetting::Translated:
+        if (next_layer::translateForeignSetting(entry.key(), entry.value(), name, value))
             translated.insert(name, value);
-            break;
-        case next_layer::ForeignSetting::NoCounterpart:
-            break;
-        case next_layer::ForeignSetting::Unknown:
-            unmapped.append(entry.key());
-            break;
-        }
     }
 
     const QVariantMap accepted = next_layer::settingsFromText(translated, refused);
@@ -1318,18 +1297,6 @@ void PlateDocument::applyForeignSettings(int id, const QHash<QString, QString>& 
         else if (named < 1)
             object->settings.erase(tool);
     }
-
-    m_foreignObjects += 0;
-    for (const QString& name : refused) {
-        if (!m_foreignNames.contains(name))
-            m_foreignNames.append(name);
-    }
-    for (const QString& name : unmapped) {
-        if (!m_foreignNames.contains(name))
-            m_foreignNames.append(name);
-    }
-    if (!m_foreignNames.isEmpty())
-        ++m_foreignObjects;
 }
 
 void PlateDocument::layoutProject(const QList<int>& added, const next_layer::ThreeMfProject& project)

@@ -10,53 +10,89 @@ namespace next_layer {
 
 namespace {
 
-/// Names that mean the same thing under a different word. Both sides are proven by
-/// their definitions at the other end of this: the translated name still has to
-/// exist here and the translated value still has to be one this engine accepts.
-const QHash<QString, QString>& renamed()
+/// Names that mean the same thing under a different word. Both sides are proven:
+/// the target still has to exist here, and the source is one of the option names
+/// the other slicer defines. The two are checked against each other by
+/// `--dump-foreign-settings` and the gate that reads it, so a typo on either side
+/// fails rather than quietly dropping a setting.
+///
+/// The direction is that slicer's name first, because that is what a downloaded
+/// project carries.
+const QVector<ForeignSettingPair>& renamed()
 {
-    static const QHash<QString, QString> table{
-        {QStringLiteral("sparse_infill_density"), QStringLiteral("fill_density")},
-        {QStringLiteral("sparse_infill_pattern"), QStringLiteral("fill_pattern")},
+    static const QVector<ForeignSettingPair> table{
         {QStringLiteral("wall_loops"), QStringLiteral("perimeters")},
         {QStringLiteral("top_shell_layers"), QStringLiteral("top_solid_layers")},
-        {QStringLiteral("bottom_shell_layers"), QStringLiteral("bottom_solid_layers")},
         {QStringLiteral("top_shell_thickness"), QStringLiteral("top_solid_min_thickness")},
+        {QStringLiteral("top_surface_pattern"), QStringLiteral("top_fill_pattern")},
+        {QStringLiteral("top_surface_line_width"), QStringLiteral("top_infill_extrusion_width")},
+        {QStringLiteral("top_surface_speed"), QStringLiteral("top_solid_infill_speed")},
+        {QStringLiteral("bottom_shell_layers"), QStringLiteral("bottom_solid_layers")},
         {QStringLiteral("bottom_shell_thickness"), QStringLiteral("bottom_solid_min_thickness")},
+        {QStringLiteral("bottom_surface_pattern"), QStringLiteral("bottom_fill_pattern")},
+        {QStringLiteral("sparse_infill_density"), QStringLiteral("fill_density")},
+        {QStringLiteral("sparse_infill_pattern"), QStringLiteral("fill_pattern")},
+        {QStringLiteral("infill_direction"), QStringLiteral("fill_angle")},
+        {QStringLiteral("sparse_infill_line_width"), QStringLiteral("infill_extrusion_width")},
+        {QStringLiteral("sparse_infill_speed"), QStringLiteral("infill_speed")},
+        {QStringLiteral("sparse_infill_acceleration"), QStringLiteral("infill_acceleration")},
+        {QStringLiteral("infill_wall_overlap"), QStringLiteral("infill_overlap")},
+        {QStringLiteral("internal_solid_infill_line_width"), QStringLiteral("solid_infill_extrusion_width")},
+        {QStringLiteral("internal_solid_infill_speed"), QStringLiteral("solid_infill_speed")},
+        {QStringLiteral("internal_solid_infill_acceleration"), QStringLiteral("solid_infill_acceleration")},
+        {QStringLiteral("inner_wall_line_width"), QStringLiteral("perimeter_extrusion_width")},
+        {QStringLiteral("inner_wall_speed"), QStringLiteral("perimeter_speed")},
+        {QStringLiteral("inner_wall_acceleration"), QStringLiteral("perimeter_acceleration")},
+        {QStringLiteral("outer_wall_line_width"), QStringLiteral("external_perimeter_extrusion_width")},
+        {QStringLiteral("outer_wall_speed"), QStringLiteral("external_perimeter_speed")},
+        {QStringLiteral("outer_wall_acceleration"), QStringLiteral("external_perimeter_acceleration")},
+        {QStringLiteral("initial_layer_print_height"), QStringLiteral("first_layer_height")},
+        {QStringLiteral("initial_layer_line_width"), QStringLiteral("first_layer_extrusion_width")},
+        {QStringLiteral("initial_layer_speed"), QStringLiteral("first_layer_speed")},
+        {QStringLiteral("initial_layer_infill_speed"), QStringLiteral("first_layer_infill_speed")},
+        {QStringLiteral("initial_layer_acceleration"), QStringLiteral("first_layer_acceleration")},
         {QStringLiteral("enable_support"), QStringLiteral("support_material")},
         {QStringLiteral("support_type"), QStringLiteral("support_material_style")},
-        {QStringLiteral("tree_support_wall_count"), QStringLiteral("tree_support_wall_count")},
-        {QStringLiteral("initial_layer_print_height"), QStringLiteral("first_layer_height")},
-        {QStringLiteral("layer_height"), QStringLiteral("layer_height")},
-        {QStringLiteral("outer_wall_line_width"), QStringLiteral("external_perimeter_extrusion_width")},
-        {QStringLiteral("inner_wall_line_width"), QStringLiteral("perimeter_extrusion_width")},
-        {QStringLiteral("internal_solid_infill_line_width"), QStringLiteral("solid_infill_extrusion_width")},
-        {QStringLiteral("sparse_infill_line_width"), QStringLiteral("infill_extrusion_width")},
-        {QStringLiteral("initial_layer_line_width"), QStringLiteral("first_layer_extrusion_width")},
-        {QStringLiteral("travel_speed"), QStringLiteral("travel_speed")},
-        {QStringLiteral("outer_wall_speed"), QStringLiteral("external_perimeter_speed")},
-        {QStringLiteral("inner_wall_speed"), QStringLiteral("perimeter_speed")},
-        {QStringLiteral("sparse_infill_speed"), QStringLiteral("infill_speed")},
-        {QStringLiteral("internal_solid_infill_speed"), QStringLiteral("solid_infill_speed")},
-        {QStringLiteral("initial_layer_speed"), QStringLiteral("first_layer_speed")},
+        {QStringLiteral("support_angle"), QStringLiteral("support_material_angle")},
+        {QStringLiteral("support_on_build_plate_only"), QStringLiteral("support_material_buildplate_only")},
+        {QStringLiteral("support_top_z_distance"), QStringLiteral("support_material_contact_distance")},
+        {QStringLiteral("enforce_support_layers"), QStringLiteral("support_material_enforce_layers")},
+        {QStringLiteral("support_interface_top_layers"), QStringLiteral("support_material_interface_layers")},
+        {QStringLiteral("support_interface_pattern"), QStringLiteral("support_material_interface_pattern")},
+        {QStringLiteral("support_interface_spacing"), QStringLiteral("support_material_interface_spacing")},
+        {QStringLiteral("support_interface_speed"), QStringLiteral("support_material_interface_speed")},
+        {QStringLiteral("support_base_pattern"), QStringLiteral("support_material_pattern")},
+        {QStringLiteral("support_base_pattern_spacing"), QStringLiteral("support_material_spacing")},
+        {QStringLiteral("support_speed"), QStringLiteral("support_material_speed")},
+        {QStringLiteral("support_threshold_angle"), QStringLiteral("support_material_threshold")},
+        {QStringLiteral("bridge_flow"), QStringLiteral("bridge_flow_ratio")},
+        {QStringLiteral("retraction_length"), QStringLiteral("retract_length")},
+        {QStringLiteral("retraction_speed"), QStringLiteral("retract_speed")},
+        {QStringLiteral("retraction_minimum_travel"), QStringLiteral("retract_before_travel")},
+        {QStringLiteral("prime_tower_width"), QStringLiteral("wipe_tower_width")},
+        {QStringLiteral("prime_tower_brim_width"), QStringLiteral("wipe_tower_brim_width")},
     };
     return table;
 }
 
 /// Values for a name both slicers spell the same way but do not fill the same way.
+/// Keyed by the name this engine uses, because that is the definition that has to
+/// accept the result.
 const QHash<QString, QHash<QString, QString>>& revalued()
 {
     static const QHash<QString, QHash<QString, QString>> table{
         // This engine's support material is an enum of three, that one's is a flag
-        // plus a type. "On" is the automatic mode on both sides.
+        // plus a style. "On" is the automatic mode on both sides.
         {QStringLiteral("support_material"),
          {{QStringLiteral("1"), QStringLiteral("everywhere")},
           {QStringLiteral("true"), QStringLiteral("everywhere")},
+          {QStringLiteral("enable"), QStringLiteral("everywhere")},
           {QStringLiteral("0"), QStringLiteral("none")},
           {QStringLiteral("false"), QStringLiteral("none")}}},
         // normal supports behave like grid, tree supports are the organic ones here.
         // The "(manual)" variants describe painting, which is stored as facets
-        // separately, so they take the same style as their automatic form.
+        // separately, so they take the same style as their automatic form. The
+        // second block is the newer spelling of the same setting.
         {QStringLiteral("support_material_style"),
          {{QStringLiteral("normal(auto)"), QStringLiteral("grid")},
           {QStringLiteral("normal(manual)"), QStringLiteral("snug")},
@@ -64,7 +100,13 @@ const QHash<QString, QHash<QString, QString>>& revalued()
           {QStringLiteral("tree(manual)"), QStringLiteral("organic")},
           {QStringLiteral("tree(hybrid)"), QStringLiteral("organic")},
           {QStringLiteral("hybrid(auto)"), QStringLiteral("grid")},
-          {QStringLiteral("hybrid(manual)"), QStringLiteral("snug")}}},
+          {QStringLiteral("hybrid(manual)"), QStringLiteral("snug")},
+          {QStringLiteral("grid"), QStringLiteral("grid")},
+          {QStringLiteral("snug"), QStringLiteral("snug")},
+          {QStringLiteral("organic"), QStringLiteral("organic")},
+          {QStringLiteral("tree_slim"), QStringLiteral("organic")},
+          {QStringLiteral("tree_strong"), QStringLiteral("organic")},
+          {QStringLiteral("tree_hybrid"), QStringLiteral("organic")}}},
         // That slicer's auto brim is its own decision, and its ears are a different
         // shape altogether; the four shapes this engine has are named the same.
         {QStringLiteral("brim_type"),
@@ -78,13 +120,31 @@ const QHash<QString, QHash<QString, QString>>& revalued()
           {QStringLiteral("back"), QStringLiteral("rear")},
           {QStringLiteral("rear"), QStringLiteral("rear")},
           {QStringLiteral("random"), QStringLiteral("random")}}},
+        // The surface patterns differ by one letter in one name: that slicer spells
+        // the whole-toolpath variant in the singular.
+        {QStringLiteral("top_fill_pattern"),
+         {{QStringLiteral("monotonicline"), QStringLiteral("monotoniclines")}}},
+        {QStringLiteral("bottom_fill_pattern"),
+         {{QStringLiteral("monotonicline"), QStringLiteral("monotoniclines")}}},
+        {QStringLiteral("support_material_pattern"),
+         {{QStringLiteral("rectilinear"), QStringLiteral("rectilinear")},
+          {QStringLiteral("honeycomb"), QStringLiteral("honeycomb")}}},
+        {QStringLiteral("support_material_interface_pattern"),
+         {{QStringLiteral("auto"), QStringLiteral("auto")},
+          {QStringLiteral("rectilinear"), QStringLiteral("rectilinear")},
+          {QStringLiteral("concentric"), QStringLiteral("concentric")}}},
+        {QStringLiteral("ironing_type"),
+         {{QStringLiteral("top"), QStringLiteral("top")},
+          {QStringLiteral("topmost"), QStringLiteral("topmost")},
+          {QStringLiteral("solid"), QStringLiteral("solid")}}},
     };
     return table;
 }
 
 /// Names this app knows it cannot carry, because the behaviour they describe does
-/// not exist here. Listing them keeps them out of the "unknown setting" report a
-/// person can do nothing about.
+/// not exist here. Kept as documentation of the gap and to keep such a name out of
+/// the applied list; nothing is reported to the person opening the file, because
+/// there is nothing they could do about it.
 const QHash<QString, QString>& noCounterpart()
 {
     static const QHash<QString, QString> table{
@@ -96,37 +156,63 @@ const QHash<QString, QString>& noCounterpart()
          QStringLiteral("this engine states support spacing as a share of the extrusion width")},
         {QStringLiteral("support_object_first_layer_gap"),
          QStringLiteral("this engine states support spacing as a share of the extrusion width")},
-        {QStringLiteral("support_top_z_distance"),
-         QStringLiteral("this engine states the gap as support_material_contact_distance")},
+        {QStringLiteral("support_bottom_z_distance"),
+         QStringLiteral("this engine has one support gap, support_material_contact_distance")},
         {QStringLiteral("filament_map_mode"), QStringLiteral("no filament mapping here")},
         {QStringLiteral("filament_maps"), QStringLiteral("no filament mapping here")},
         {QStringLiteral("filament_volume_maps"), QStringLiteral("no filament mapping here")},
         {QStringLiteral("different_settings_to_system"), QStringLiteral("a preset bookkeeping key")},
         {QStringLiteral("auto_brim"), QStringLiteral("auto brim selection is not modelled here")},
+        {QStringLiteral("brim_ears"), QStringLiteral("brim ears are a different shape")},
+        {QStringLiteral("outer_wall_infill_direction"),
+         QStringLiteral("that slicer's wall direction ordering is not modelled here")},
+        {QStringLiteral("adaptive_infill_mode"),
+         QStringLiteral("that slicer's combined adaptive infill is not modelled here")},
+        {QStringLiteral("height_speed_limit"),
+         QStringLiteral("that slicer's per-height speed table is not modelled here")},
+        {QStringLiteral("inner_wall_fan_speed"),
+         QStringLiteral("this engine's fan is overhang-driven, not per perimeter")},
+        {QStringLiteral("outer_wall_fan_speed"),
+         QStringLiteral("this engine's fan is overhang-driven, not per perimeter")},
+        {QStringLiteral("internal_solid_infill_pattern"),
+         QStringLiteral("this engine names a pattern per surface, not one for all solid infill")},
     };
     return table;
 }
 
 } // namespace
 
-ForeignSetting translateForeignSetting(const QString& key, const QString& value,
-                                       QString& translatedName, QString& translatedValue)
+bool translateForeignSetting(const QString& key, const QString& value,
+                             QString& translatedName, QString& translatedValue)
 {
     if (noCounterpart().contains(key))
-        return ForeignSetting::NoCounterpart;
+        return false;
 
-    translatedName = renamed().value(key, key);
+    QString target = key;
+    for (const ForeignSettingPair& pair : renamed()) {
+        if (pair.source == key) {
+            target = pair.target;
+            break;
+        }
+    }
+
+    translatedName = target;
     translatedValue = value;
 
-    const auto values = revalued().constFind(translatedName);
+    const auto values = revalued().constFind(target);
     if (values != revalued().constEnd()) {
         const auto mapped = values->constFind(value);
         if (mapped == values->constEnd())
-            return ForeignSetting::NoCounterpart;
+            return false;
         translatedValue = *mapped;
     }
 
-    return ForeignSetting::Translated;
+    return true;
+}
+
+QVector<ForeignSettingPair> foreignSettingTable()
+{
+    return renamed();
 }
 
 }

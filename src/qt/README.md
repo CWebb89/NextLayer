@@ -52,6 +52,7 @@ mouse:
 | `--dump-plates` | the plate count and how many objects each plate holds after loading — what proves a project file's plates were rebuilt |
 | `--dump-objects` | every loaded object's name, facet count, plate and world position, in plate order |
 | `--dump-applied` | every loaded object's applied overrides and their values — what a project file's records, and another slicer's settings, became here |
+| `--dump-foreign-settings` | every setting renamed from another slicer's dialect, with whether this engine has the name it translates to — the table `oracle/foreign_settings_check.py` gates |
 | `--settings-tab TAB/SUBTAB` | opens the panel on that sub-tab, so a `--smoke` shot proves it renders |
 | `--panel-left` | docks the settings panel on the left for the same shot |
 | `--transform SPEC,OUT` | runs the engine transform path and writes a transformed STL: `rotate=x,y,z;scale=f;cut=z;duplicate=n;move=x,y;center;drop` |

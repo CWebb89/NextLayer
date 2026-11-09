@@ -619,23 +619,24 @@ set -l foreign_rc $status
 set -l foreign_out (env QT_QPA_PLATFORM=eglfs XDG_DATA_HOME=$tools_home $bin $foreign_mf --dump-applied 2>&1)
 set -l foreign_object (string match -r "obj 1 plate 1 'cube': ([0-9]+) setting" -- $foreign_out)
 set -l foreign_note (string match -r 'left out: (.*)$' -- $foreign_out)
-set -l foreign_expect 'support_material = everywhere' 'support_material_style = organic' 'fill_density = 15%' 'perimeters = 3' 'layer_height = 0.12'
+set -l foreign_expect 'support_material = everywhere' 'support_material_style = organic' 'fill_density = 15%' 'fill_pattern = gyroid' 'perimeters = 3' 'layer_height = 0.12' 'first_layer_height = 0.2' 'perimeter_speed = 150' 'external_perimeter_extrusion_width = 0.42' 'seam_position = rear' 'top_solid_layers = 4' 'bottom_solid_layers = 3' 'support_material_threshold = 40' 'brim_type = outer_only'
 set -l foreign_missing
 for wanted in $foreign_expect
     if not string match -q -- "*$wanted*" $foreign_out
         set -a foreign_missing $wanted
     end
 end
+set -l foreign_complaint (string match -r 'note: .*' -- $foreign_out)
 if test $foreign_rc -ne 0
     __bad 'foreign project: the fixture would not write'
-else if test (count $foreign_object) -lt 2 -o "$foreign_object[2]" != 6
-    __bad "foreign project: the object came back with $foreign_object[2] setting(s), not the six its file implies"
+else if test (count $foreign_object) -lt 2 -o "$foreign_object[2]" != 15
+    __bad "foreign project: the object came back with $foreign_object[2] setting(s), not the fifteen its file implies"
 else if test (count $foreign_missing) -gt 0
     __bad "foreign project: $foreign_missing did not survive the translation"
-else if test (count $foreign_note) -lt 2 -o "$foreign_note[2]" != made_up_setting
-    __bad "foreign project: the unknown setting was not the one reported ($foreign_note)"
+else if test (count $foreign_complaint) -gt 0
+    __bad "foreign project: a downloaded project still reports settings at the user ($foreign_complaint)"
 else
-    __ok "foreign project: a Bambu/Orca file opens with its label, its plate and $foreign_object[2] settings -- its own names translated ($foreign_expect), its unsupported ones dropped silently, and the one name nothing here knows ($foreign_note[2]) reported instead of guessed at"
+    __ok "foreign project: a Bambu/Orca file opens with its label, its plate and $foreign_object[2] settings -- every name translated, values converted (support_material = everywhere, seam_position = rear), and the names this engine has no counterpart for dropped without a word, so a downloaded project never warns"
 end
 
 # User-preset gate: a preset a person saves has to survive a restart, resolve
@@ -959,6 +960,17 @@ else if test "$project_gaps" != "plate1(2 parts, gaps 40.000) plate2(2 parts, ga
     __bad "project layout: expected two plates of two parts with 40 and 80 mm gaps, got: "(string join ' / ' -- $project_gaps)
 else
     __ok "project layout: 2 plates, parts kept their 40 mm and 80 mm spacing, each plate centred on the bed"
+end
+
+# Rename-table gate: a downloaded Bambu/Orca project names its settings that
+# slicer's way, and this app translates them. Both ends of that table are checked,
+# because a wrong name on either side fails silently: the setting would never
+# match a file, or never apply.
+set -l foreign_out (python3 $root/oracle/foreign_settings_check.py 2>&1)
+if test $status -ne 0
+    __bad "foreign settings: "(string join '; ' -- (printf '%s\n' $foreign_out | command grep . | head -n 3))
+else
+    __ok $foreign_out
 end
 
 # Robustness gate: a slicer is a parser, and every file it reads comes from# somewhere it does not control. A case counts as passing when the app says what is

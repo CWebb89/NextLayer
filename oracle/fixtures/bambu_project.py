@@ -4,12 +4,16 @@
 The point of the fixture is the dialect, not the geometry: those slicers keep an
 object's settings as plain metadata in ``Metadata/model_settings.config``, under
 their own setting names, and they do not write a ``Slic3r_PE_model.config`` at all.
-The settings here cover the three outcomes a gate has to tell apart: a name this
-engine accepts as written (``layer_height``), names that mean something here under
-a different word (``sparse_infill_density``, ``wall_loops``, ``enable_support``,
-``support_type``), a name whose behaviour this engine does not have
-(``support_object_xy_distance``, ``brim_type=auto_brim``), and a name nothing here
-knows (``made_up_setting``), which must be the only one reported.
+The settings here cover every outcome a gate has to tell apart: names this engine
+accepts as written (``layer_height``), names that mean something here under a
+different word (``wall_loops``, ``sparse_infill_density``, ``top_shell_layers``,
+``inner_wall_speed``, ``outer_wall_line_width``, ``initial_layer_print_height``,
+``enable_support``, ``support_type``), names whose values are spelled differently on
+the two sides (``seam_position=back``, ``enable_support=1``), names whose behaviour
+this engine does not have (``support_object_xy_distance``,
+``skeleton_infill_density``), and a name nothing here knows
+(``made_up_setting``). The last three are dropped without a word: nothing a person
+opening a downloaded project could do about them.
 
     python3 oracle/fixtures/bambu_project.py OUT.3mf
 """
@@ -54,12 +58,21 @@ SETTINGS = """<?xml version="1.0" encoding="UTF-8"?>
     <metadata key="name" value="cube"/>
     <metadata key="extruder" value="1"/>
     <metadata key="layer_height" value="0.12"/>
+    <metadata key="initial_layer_print_height" value="0.2"/>
+    <metadata key="wall_loops" value="3"/>
+    <metadata key="top_shell_layers" value="4"/>
+    <metadata key="bottom_shell_layers" value="3"/>
+    <metadata key="sparse_infill_density" value="15%"/>
+    <metadata key="sparse_infill_pattern" value="gyroid"/>
+    <metadata key="inner_wall_speed" value="150"/>
+    <metadata key="outer_wall_line_width" value="0.42"/>
     <metadata key="enable_support" value="1"/>
     <metadata key="support_type" value="tree(auto)"/>
+    <metadata key="support_threshold_angle" value="40"/>
+    <metadata key="brim_type" value="outer_only"/>
+    <metadata key="seam_position" value="back"/>
     <metadata key="support_object_xy_distance" value="0.4"/>
-    <metadata key="sparse_infill_density" value="15%"/>
-    <metadata key="wall_loops" value="3"/>
-    <metadata key="brim_type" value="auto_brim"/>
+    <metadata key="skeleton_infill_density" value="25%"/>
     <metadata key="made_up_setting" value="1"/>
     <part id="1" subtype="normal_part">
       <metadata key="name" value="cube"/>

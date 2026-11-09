@@ -156,6 +156,46 @@ bool fromText(const QString& text, const Slic3r::Domain::ConfigValue& definition
             either.insert(QStringLiteral("value"), number);
             either.insert(QStringLiteral("is_percent"), percent);
             out = either;
+        } else if constexpr (std::is_same_v<ValueType, std::vector<double>>
+                             || std::is_same_v<ValueType, std::vector<int>>
+                             || std::is_same_v<ValueType, std::vector<std::string>>
+                             || std::is_same_v<ValueType, std::vector<bool>>) {
+            // One value is written for all the tools it could apply to: a setting
+            // that is per-extruder here is a single number in a project from
+            // another slicer. A semicolon-separated list is honoured as written.
+            const QStringList parts = text.split(QLatin1Char(';'), Qt::SkipEmptyParts);
+            if (parts.isEmpty()) {
+                handled = false;
+                return;
+            }
+            QVariantList values;
+            for (const QString& part : parts) {
+                const QString token = part.trimmed();
+                if constexpr (std::is_same_v<ValueType, std::vector<double>>) {
+                    bool ok = false;
+                    const double number = token.toDouble(&ok);
+                    if (!ok) {
+                        handled = false;
+                        return;
+                    }
+                    values.append(number);
+                } else if constexpr (std::is_same_v<ValueType, std::vector<int>>) {
+                    bool ok = false;
+                    const int number = token.toInt(&ok);
+                    if (!ok) {
+                        handled = false;
+                        return;
+                    }
+                    values.append(number);
+                } else if constexpr (std::is_same_v<ValueType, std::vector<bool>>) {
+                    values.append(token == QLatin1String("1")
+                                  || token.compare(QLatin1String("true"),
+                                                   Qt::CaseInsensitive) == 0);
+                } else {
+                    values.append(token);
+                }
+            }
+            out = values;
         } else {
             handled = false;
         }
