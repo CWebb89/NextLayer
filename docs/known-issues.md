@@ -6,6 +6,12 @@ complete inventory, this is the part you need before you start a print.
 
 ## Unverified on hardware
 
+- **The in-app updater does not replace an AppImage.** An AppImage runs from a
+  read-only mount, so the update button names the new version and points at the
+  releases page instead of offering an install. Download the new AppImage, make it
+  executable and put it where the old one was. The tarball and AUR installs do
+  update in place.
+
 - **Multi-tool printing has never been printed.** Per-tool filaments, per-tool
   colours and the wipe tower are implemented and in the ledger, and `tools/check`
   slices a single-tool machine only. If you have a tool changer, you are the

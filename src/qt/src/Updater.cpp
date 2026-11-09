@@ -122,7 +122,16 @@ QString Updater::currentVersion()
 
 bool Updater::canInstall() const
 {
-    return m_downloaded && !m_stagedPath.isEmpty();
+    // An AppImage runs from a read-only squashfs mount: applicationDirPath() is
+    // inside the mount, so there is nothing here to write an update into. Handing
+    // the button a download that cannot be installed is worse than saying where
+    // the new file is.
+    return m_downloaded && !m_stagedPath.isEmpty() && !runningFromAppImage();
+}
+
+bool Updater::runningFromAppImage()
+{
+    return !qEnvironmentVariable("APPIMAGE").isEmpty();
 }
 
 void Updater::setStatus(const QString& status)
@@ -328,8 +337,13 @@ void Updater::check()
 
     m_release = release;
     setBusy(false);
-    setStatus(QStringLiteral("%1 is available (this build is %2)")
-                  .arg(release.version, currentVersion()));
+    setStatus(runningFromAppImage()
+                  ? QStringLiteral("%1 is available (this build is %2) -- this is an "
+                                   "AppImage, so download the new one from the releases page "
+                                   "and replace this file")
+                        .arg(release.version, currentVersion())
+                  : QStringLiteral("%1 is available (this build is %2)")
+                        .arg(release.version, currentVersion()));
     emit statusChanged();
 }
 

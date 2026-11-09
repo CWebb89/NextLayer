@@ -55,6 +55,10 @@ public:
     bool downloaded() const { return m_downloaded; }
     bool canInstall() const;
 
+    /// True when this build is an AppImage, which runs from a read-only mount and
+    /// so cannot be replaced in place.
+    static bool runningFromAppImage();
+
     /// Where this build looks for releases: NEXT_LAYER_UPDATE_URL when it is set
     /// (the gate points it at a local server), else the published channel.
     static QString channel();
