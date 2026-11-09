@@ -276,9 +276,10 @@ Item {
     // Framed on the bed alone, both land outside the viewport and the plate's own
     // actions become unreachable. The name is measured the same way the decal
     // measures it, from its length, because the fit is computed above the per-plate
-    // delegate; a long name is centred on the plate and so overhangs it on both sides.
+    // delegate; a long name starts at the plate's left corner and overhangs the right.
     readonly property real plateApronRight: Math.max(plateChrome.iconSize + plateChrome.gapLeft * 2,
-                                                     (root.longestPlateName - root.bedSize.x / 2) / 2)
+                                                     root.longestPlateName + plateChrome.gapLeft
+                                                         - root.bedSize.x / 2)
     readonly property real plateApronTop: plateChrome.gapTop + plateChrome.nameHeight
                                             + plateChrome.gapLeft
     readonly property real longestPlateName: {
@@ -1584,11 +1585,10 @@ Item {
                 readonly property real nameWidth: plateChrome.nameHeight * plateItem.nameAspect * 1.3
                 readonly property real nameLocalHeight: 100 / plateItem.nameAspect
                 readonly property real nameTop: root.bedMax.y + plateChrome.gapTop
-                // The name and its pencil sit above the plate's back edge, centred on
-                // it: a caption on the plate rather than a label stuck to a corner.
-                readonly property real nameLeft: root.bedCentre.x
-                                                 - (plateItem.nameWidth + plateChrome.gapLeft
-                                                    + plateChrome.pencilSize) / 2
+                // The name and its pencil sit above the plate's back edge, starting at
+                // its left corner and running rightwards: a caption on the plate, with
+                // the space to its right left free for the action column.
+                readonly property real nameLeft: root.bedMin.x + plateChrome.gapLeft
                 readonly property var nameMatrix: plateItem.decal(
                     plateItem.nameLeft, plateItem.nameTop,
                     plateItem.nameLeft + plateItem.nameWidth,

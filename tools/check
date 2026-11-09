@@ -674,14 +674,24 @@ python3 $root/oracle/fixtures/bambu_project.py $foreign_plain --no-support-style
 env QT_QPA_PLATFORM=eglfs XDG_DATA_HOME=$tools_home $bin $foreign_plain --export-project $tools_cfg,$foreign_saved >/tmp/nl-check-foreign-export.out 2>&1
 set -l foreign_back (env QT_QPA_PLATFORM=eglfs XDG_DATA_HOME=$tools_home $bin $foreign_saved --dump-applied 2>&1)
 set -l foreign_metadata (unzip -p $foreign_saved Metadata/model_settings.config 2>/dev/null)
+# The export also reopens what it wrote and compares where every object sits, because
+# a file that holds the geometry but records a different placement is a different
+# print. This is the only gate that measures placement through the save path.
+set -l foreign_placed (string match -r 'foreign round trip: ([0-9]+) object\(s\), placement off by ([0-9.]+) mm' -- (cat /tmp/nl-check-foreign-export.out))
 if not test -s $foreign_saved
     __bad "foreign project: a downloaded project would not save again: "(tail -n 1 /tmp/nl-check-foreign-export.out)
+else if test (count $foreign_placed) -lt 3
+    __bad "foreign project: the save printed no placement measurement: "(tail -n 1 /tmp/nl-check-foreign-export.out)
+else if test $foreign_placed[2] -lt 1
+    __bad "foreign project: came back with $foreign_placed[2] object(s) after a save"
+else if test (math "$foreign_placed[3] > 0.01") -eq 1
+    __bad "foreign project: saving it moved its objects by $foreign_placed[3] mm"
 else if not string match -q -- '*kept 3 setting(s)*' $foreign_back
     __bad 'foreign project: the kept settings did not come back out of the file that was written'
 else if test (count (string match -a -- '*initial_layer_print_height*' $foreign_metadata)) -eq 0
     __bad 'foreign project: the exported file does not carry the setting it kept'
 else
-    __ok "foreign project: it saves again -- the 3 settings this engine cannot apply ride out in Metadata/model_settings.config under their own names, so the file loses nothing on a round trip"
+    __ok "foreign project: it saves again -- the 3 settings this engine cannot apply ride out in Metadata/model_settings.config under their own names, and the $foreign_placed[2] object(s) come back within $foreign_placed[3] mm of where they were put"
 end
 
 # User-preset gate: a preset a person saves has to survive a restart, resolve

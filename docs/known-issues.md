@@ -52,14 +52,23 @@ complete inventory, this is the part you need before you start a print.
   avoid it while keeping the marker. Measured with `prusa-slicer 2.9.6+arch5`.
   This entry used to say the crash was on our side by way of a colour field holding
   text; that was fixed separately and did not change the crash.
-- **A project exported from a 3MF that was itself opened shifts its objects by half
-  their footprint.** Measured while adding the round-trip gate: export a Bambu
-  project, reopen the result, and the objects sit 10 mm off for a 20 mm cube --
-  positions match the authored document, so the shift is in how the mesh's local
-  origin and the instance transform are paired on the way back in. Slices of a
-  project this app authored from an STL are byte-identical, which is why the
-  fidelity gate does not catch it. Not fixed; a reproduction is the export of
-  `oracle/fixtures/bambu_project.py`'s output.
+- **CORRECTION 2026-11-09: the "half footprint shift" was a measurement error, not a
+  bug.** Saving an opened Bambu project is now measured directly -- the export
+  selftest opens the file with `addObject`, saves it through the same
+  `SliceController::exportProject3mf` the Save dialog calls, reopens the result and
+  compares each object's placed centre -- and reports **0.000 mm** for the fixture,
+  so the gate `tools/check` runs now asserts it. The earlier "10 mm on a 20 mm cube"
+  came from comparing a foreign project's authored positions against `--export-project`'s
+  output while that flag was building its *own* two-object plate; the two files were
+  never the same plate. No export wrote a wrong transform.
+- **Saving a project that came from a 3MF still changes its toolpath**, and this is
+  real and reproducible: `next-layer-qt FOREIGN.3mf --export-project CONFIG,OUT.3mf`
+  prints `the project slices differently from the plate it came from` with identical
+  layer, move and filament totals but a different digest, so the G-code differs
+  without changing how much material it uses. It also reports one *more* per-object
+  override on the reopened plate than the file carried, which is the first thing to
+  look at. It does not reproduce when the plate was authored from an STL, which is
+  why no gate saw it; feeding a `.3mf` to the export selftest now exercises it.
 - **Opening a single-object 3MF now honours the file.** A 3MF is treated as a
   scene with its own placement rather than as a mesh to drop on the bed, which is
   what the importer did before; an object exported from CAD at the origin opens at

@@ -1780,6 +1780,28 @@ int runProjectSelftest(const QString& model, const QString& configPath, const QS
     return 0;
 }
 
+namespace {
+
+// Where an object actually ends up on the plate: the centre of its own geometry put
+// through the transform the file carries. Comparing this before and after a save is
+// what separates "the file records where it sits" from "the file looks the same".
+Vec3d placedCentre(const next_layer::PlateSliceObject& object)
+{
+    const auto& vertices = object.mesh.its.vertices;
+    if (vertices.empty())
+        return Vec3d(0.0, 0.0, 0.0);
+    Vec3d low = vertices.front().cast<double>();
+    Vec3d high = low;
+    for (const auto& vertex : vertices) {
+        const Vec3d point = vertex.cast<double>();
+        low = low.cwiseMin(point);
+        high = high.cwiseMax(point);
+    }
+    return object.transform.get_matrix() * ((low + high) * 0.5);
+}
+
+}
+
 int runThreeMfExportSelftest(const QString& model, const QString& configPath,
                              const QString& outPath, const QString& dataDir)
 {
@@ -1867,6 +1889,63 @@ int runThreeMfExportSelftest(const QString& model, const QString& configPath,
             painted += document.paintObject(first, QStringLiteral("supports"),
                                             QVector3D(centre.x(), centre.y(), centre.z()), 1.5,
                                             false, 2, int(facet));
+    }
+
+
+    // A project that arrived from another slicer is the case that matters most and
+    // the one the rest of this selftest cannot reach: the plate above is built here,
+    // so its geometry is already in the frame the exporter expects. A file written by
+    // OrcaSlicer or PrusaSlicer arrives with its own instance transforms, and saving
+    // it again has to put every object back where the author put it. Opened through
+    // the same call the Open dialog uses, exported through the same call Save uses.
+    if (model.endsWith(QLatin1String(".3mf"), Qt::CaseInsensitive)) {
+        const QVector2D bedCentre((minX + maxX) * 0.5, (minY + maxY) * 0.5);
+        const QVector2D bedSize(maxX - minX, maxY - minY);
+        PlateDocument imported(bedCentre, bedSize);
+        if (imported.addObject(model) < 0) {
+            std::fprintf(stderr, "the foreign project does not open: %s\n",
+                         qPrintable(imported.error()));
+            return 1;
+        }
+        const QVector<next_layer::PlateSliceObject> before = imported.projectObjects();
+
+        SliceController importedController(std::string(), &settings);
+        importedController.setDocument(&imported);
+        const QString foreignPath = directory.filePath(QStringLiteral("resaved.3mf"));
+        const QString foreignError = importedController.exportProject3mf(foreignPath);
+        if (!foreignError.isEmpty()) {
+            std::fprintf(stderr, "a foreign project would not save again: %s\n",
+                         qPrintable(foreignError));
+            return 1;
+        }
+
+        PlateDocument saved(bedCentre, bedSize);
+        if (saved.addObject(foreignPath) < 0) {
+            std::fprintf(stderr, "the project written from a foreign file does not open: %s\n",
+                         qPrintable(saved.error()));
+            return 1;
+        }
+        const QVector<next_layer::PlateSliceObject> after = saved.projectObjects();
+        if (before.size() != after.size()) {
+            std::fprintf(stderr,
+                         "a foreign project of %d object(s) came back as %d after a save\n",
+                         int(before.size()), int(after.size()));
+            return 1;
+        }
+
+        double worst = 0.0;
+        for (int i = 0; i < before.size(); ++i) {
+            const Vec3d here = placedCentre(before.at(i));
+            const Vec3d there = placedCentre(after.at(i));
+            worst = std::max(worst, (here - there).norm());
+        }
+        std::printf("foreign round trip: %d object(s), placement off by %.3f mm\n",
+                    int(after.size()), worst);
+        if (worst > 0.01) {
+            std::fprintf(stderr,
+                         "saving a foreign project moved its objects by up to %.3f mm\n", worst);
+            return 1;
+        }
     }
 
     SliceController controller(std::string(), &settings);
