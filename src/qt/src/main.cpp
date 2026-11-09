@@ -15,6 +15,7 @@
 #include "Updater.hpp"
 #include "PlateDocument.hpp"
 #include "PlateScene.hpp"
+#include "PlateThumbnail.hpp"
 #include "ForeignSettings.hpp"
 #include "ProjectFile.hpp"
 #include "Resources.hpp"
@@ -759,7 +760,7 @@ int main(int argc, char* argv[])
             || argument == "--update-install" || argument == "--dump-config"
             || argument == "--scene-selftest" || argument == "--dump-presets"
             || argument == "--dump-presets-json" || argument == "--dump-icons"
-            || argument == "--project-version-test")
+            || argument == "--project-version-test" || argument == "--thumbnail-test")
             headless = true;
     }
     if (!headless)
@@ -873,6 +874,9 @@ int main(int argc, char* argv[])
     const QCommandLineOption keep_gcode_option("keep-gcode",
         "With --selftest-slice, copy the G-code there so two slice paths can be compared byte for byte.",
         "GCODE");
+    const QCommandLineOption thumbnail_test_option("thumbnail-test",
+        "Embed a synthetic plate thumbnail in GCODE twice and report what the file now "
+        "carries.", "gcode");
     const QCommandLineOption preview_stats_option("preview-stats",
         "Read GCODE with the engine's G-code processor, write per-line-type statistics to OUT (JSON), exit.",
         "GCODE,OUT");
@@ -935,7 +939,7 @@ int main(int argc, char* argv[])
                        dump_presets_option, dump_presets_json_option, dump_fonts_option, dump_icons_option, dump_object_settings_option, dump_foreign_settings_option, preset_printer_option, preset_process_option, preset_filament_option, preset_filaments_option,
                        set_option, add_printer_option, save_preset_option, rename_preset_option,
                        delete_preset_option, export_preset_option, import_preset_option,
-                       import_slicer_option, export_bundle_option});
+                       import_slicer_option, export_bundle_option, thumbnail_test_option});
     parser.process(app);
 
     const QStringList files = parser.positionalArguments();
@@ -1189,6 +1193,48 @@ int main(int argc, char* argv[])
         const QString result = link.runHeadless(parts.at(3), startPrint);
         std::printf("print host: %s\n", result.toUtf8().constData());
         return result.contains(QLatin1String("sent ")) ? 0 : 1;
+    }
+
+    if (parser.isSet(thumbnail_test_option)) {
+        const QString path = parser.value(thumbnail_test_option);
+        QImage plate(640, 400, QImage::Format_RGB888);
+        plate.fill(QColor(40, 40, 40));
+        for (int x = 0; x < plate.width(); ++x)
+            for (int y = 0; y < plate.height() / 3; ++y)
+                plate.setPixelColor(x, y, QColor(120 + x % 100, 90, 60));
+        // Twice on purpose: the block is replaced, not appended, so a second
+        // slice of the same file must leave exactly two thumbnails in it.
+        for (int pass = 0; pass < 2; ++pass) {
+            const QString error = next_layer::embedPlateThumbnails(path, plate);
+            if (!error.isEmpty()) {
+                std::fprintf(stderr, "thumbnail: %s\n", error.toUtf8().constData());
+                return 1;
+            }
+        }
+
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly)) {
+            std::fprintf(stderr, "thumbnail: cannot read %s\n", path.toUtf8().constData());
+            return 1;
+        }
+        int begins = 0;
+        int ends = 0;
+        int moves = 0;
+        bool atTop = false;
+        while (!file.atEnd()) {
+            const QString line = QString::fromUtf8(file.readLine());
+            if (line.startsWith(QLatin1String("; thumbnail begin"))) {
+                ++begins;
+                if (moves == 0)
+                    atTop = true;
+            } else if (line.startsWith(QLatin1String("; thumbnail end")))
+                ++ends;
+            if (line.startsWith(QLatin1String("G1 ")))
+                ++moves;
+        }
+        std::printf("thumbnail: %d begin, %d end, before the first move: %s\n",
+                    begins, ends, atTop ? "yes" : "no");
+        return begins == 2 && ends == 2 && atTop ? 0 : 1;
     }
 
     if (parser.isSet(calibration_test_option))
@@ -1764,17 +1810,10 @@ int main(int argc, char* argv[])
 
     if (!files.isEmpty()) {
         next_layer::SliceRuntime::ensurePlatformServices();
-        // A file that is already a print opens as toolpaths: it holds no model to
-        // slice, so the only honest thing to do with it is show what is inside.
+        // A file that is already a print is not something to slice: the window
+        // extracts its G-code and opens the toolpath view on it.
         if (next_layer::isPreSlicedFile(files.first())) {
-            const QString extracted = QDir(QDir::tempPath()).filePath(
-                QStringLiteral("next-layer-pre-sliced.gcode"));
-            if (!next_layer::extractPreSlicedGcode(files.first(), extracted)) {
-                std::fprintf(stderr, "load failed: %s holds no G-code this app can read\n",
-                             files.first().toUtf8().constData());
-                return 1;
-            }
-            openedAsToolpath = extracted;
+            openedAsToolpath = files.first();
         } else if (files.size() == 1 ? !session->open(files.first())
                                     : session->addModels(files) != files.size()) {
             std::fprintf(stderr, "load failed: %s\n", session->error().toUtf8().constData());
@@ -1933,7 +1972,7 @@ int main(int argc, char* argv[])
                      painted, document->count());
     }
 
-    QString startupGcodePath = openedAsToolpath;
+    QString startupGcodePath;
     int startupLayer = -1;
     int startupLayerFrom = 0;
     int startupMovesMoveFrom = 0;
@@ -2063,6 +2102,7 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty("presetDirString",
                                              QString::fromStdString(dataDir() + "/presets"));
     engine.rootContext()->setContextProperty("startupGcodePath", startupGcodePath);
+    engine.rootContext()->setContextProperty("startupPreSlicedPath", openedAsToolpath);
     engine.rootContext()->setContextProperty("startupLayer", startupLayer);
     engine.rootContext()->setContextProperty("startupLayerFrom", startupLayerFrom);
     engine.rootContext()->setContextProperty("startupMovesFrom", startupMovesMoveFrom);

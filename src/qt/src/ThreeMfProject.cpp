@@ -513,8 +513,12 @@ bool extractPreSlicedGcode(const QString& path, const QString& outPath)
     mz_zip_archive archive{};
     if (!mz_zip_reader_init_file(&archive, path.toUtf8().constData(), 0))
         return false;
-    const QByteArray gcode = readZipEntry(path, locateGcodeEntry(archive).toUtf8().constData());
+    const QString entry = locateGcodeEntry(archive);
     mz_zip_reader_end(&archive);
+    if (entry.isEmpty())
+        return false;
+
+    const QByteArray gcode = readZipEntry(path, entry.toUtf8().constData());
     if (gcode.isEmpty())
         return false;
 

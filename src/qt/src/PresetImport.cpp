@@ -846,9 +846,9 @@ struct Sink
 QString kindOfType(const QString& type)
 {
     if (type == QLatin1String("printer") || type == QLatin1String("machine"))
-return QStringLiteral("machine");
+        return QStringLiteral("machine");
     if (type == QLatin1String("filament"))
-return QStringLiteral("filament");
+        return QStringLiteral("filament");
     return QStringLiteral("process");
 }
 
@@ -875,7 +875,7 @@ bool importOne(const QString& kind, const QJsonObject& own, const KindIndex& ind
 
     const QString sourceName = own.value(QStringLiteral("name")).toString();
     if (sourceName.isEmpty())
-return true;
+        return true;
     const QJsonObject resolved = resolvePreset(kind, sourceName, index);
 
     QMap<QString, QVariant> values;

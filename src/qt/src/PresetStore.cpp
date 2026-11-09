@@ -1270,12 +1270,35 @@ QString PresetStore::createPrinter(const QString& name, double bedWidth, double 
 
 QVariantMap PresetStore::importSlicerPresets(const QString& directory)
 {
-    return finishImport(next_layer::presetimport::importPresets(directory, *m_settings, true));
+    if (m_settings == nullptr)
+        return noSettings();
+    return finishImport(
+        next_layer::presetimport::importPresets(localPath(directory), *m_settings, true));
 }
 
 QVariantMap PresetStore::importSlicerPresetFile(const QString& path)
 {
-    return finishImport(next_layer::presetimport::importPresetFile(path, *m_settings, true));
+    if (m_settings == nullptr)
+        return noSettings();
+    return finishImport(
+        next_layer::presetimport::importPresetFile(localPath(path), *m_settings, true));
+}
+
+QVariantMap PresetStore::noSettings()
+{
+    QVariantMap result;
+    result.insert(QStringLiteral("ok"), false);
+    result.insert(QStringLiteral("error"), QStringLiteral("No settings to import into"));
+    return result;
+}
+
+QString PresetStore::localPath(const QString& pathOrUrl)
+{
+    // A file picker hands over a URL, and the names these files carry have spaces
+    // in them -- "2.4 PLA 0.6.json" -- so stripping "file://" leaves `%20` and a
+    // path that does not exist.
+    const QUrl url(pathOrUrl);
+    return url.isLocalFile() ? url.toLocalFile() : pathOrUrl;
 }
 
 QVariantMap PresetStore::finishImport(const next_layer::presetimport::Report& report)

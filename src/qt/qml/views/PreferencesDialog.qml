@@ -379,6 +379,8 @@ Popup {
                                    + (result.refused.length > 0
                                       ? "; left out " + result.refused.slice(0, 3).join("; ")
                                       : "")
+                                   + (result.notes.length > 0
+                                      ? "; " + result.notes.join("; ") : "")
                                    + (result.restartNeeded
                                       ? "; the machine appears after a restart" : "")
                         }
@@ -388,8 +390,7 @@ Popup {
                         id: importFolderDialog
                         title: "The other slicer's configuration folder"
                         onAccepted: importStatus.report(
-                                        presetStore.importSlicerPresets(
-                                            selectedFolder.toString().replace("file://", "")))
+                                        presetStore.importSlicerPresets(selectedFolder))
                     }
 
                     FileDialog {
@@ -397,8 +398,7 @@ Popup {
                         title: "A preset file from another slicer"
                         nameFilters: ["Preset (*.json *.ini)", "All files (*)"]
                         onAccepted: importStatus.report(
-                                        presetStore.importSlicerPresetFile(
-                                            selectedFile.toString().replace("file://", "")))
+                                        presetStore.importSlicerPresetFile(selectedFile))
                     }
 
                     Divider { Layout.fillWidth: true }

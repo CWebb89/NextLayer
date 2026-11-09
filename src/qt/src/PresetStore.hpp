@@ -186,6 +186,14 @@ private:
     /// the report for QML.
     QVariantMap finishImport(const next_layer::presetimport::Report& report);
 
+    /// The answer an import gives before the settings model exists: there is
+    /// nothing to import into yet.
+    static QVariantMap noSettings();
+
+    /// A file picker's URL as a path. Names in this domain carry spaces, so the
+    /// percent-encoding has to be decoded rather than stripped.
+    static QString localPath(const QString& pathOrUrl);
+
     struct BundleLocation
     {
         QString repo;

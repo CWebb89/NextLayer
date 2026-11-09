@@ -8,6 +8,7 @@
 #include <QFile>
 #include <QImage>
 #include <QList>
+#include <QPainter>
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QStringList>
@@ -21,15 +22,24 @@ constexpr int kLineChars = 78;
 
 QByteArray encodePng(const QImage& image, const int edge)
 {
-    const QImage scaled =
-        image.scaled(edge, edge, Qt::KeepAspectRatio, Qt::SmoothTransformation)
-            .convertToFormat(QImage::Format_RGB888);
+    // A host trusts the size in the `; thumbnail begin WxH` line, so the image is
+    // padded onto a square canvas rather than left at whatever aspect the crop
+    // happened to have: a 512x340 PNG declared as 512x512 renders stretched.
+    const QImage scaled = image.scaled(edge, edge, Qt::KeepAspectRatio,
+                                       Qt::SmoothTransformation)
+                              .convertToFormat(QImage::Format_RGB888);
+    QImage canvas(edge, edge, QImage::Format_RGB888);
+    canvas.fill(Qt::black);
+    {
+        QPainter painter(&canvas);
+        painter.drawImage((edge - scaled.width()) / 2, (edge - scaled.height()) / 2, scaled);
+    }
 
     QByteArray png;
     QBuffer buffer(&png);
     if (!buffer.open(QIODevice::WriteOnly))
         return {};
-    if (!scaled.save(&buffer, "PNG"))
+    if (!canvas.save(&buffer, "PNG"))
         return {};
     return png;
 }
@@ -47,13 +57,6 @@ QStringList thumbnailBlock(const QByteArray& png, const int edge)
     return block;
 }
 
-bool isConfigBlockBegin(const QString& line)
-{
-    static const QRegularExpression pattern(
-        QStringLiteral("^;\\s*\\w+_config = begin\\s*$"));
-    return pattern.match(line).hasMatch();
-}
-
 }
 
 QString embedPlateThumbnails(const QString& gcodePath, const QImage& plate)
@@ -61,53 +64,56 @@ QString embedPlateThumbnails(const QString& gcodePath, const QImage& plate)
     if (plate.isNull())
         return QStringLiteral("the plate render is empty");
 
-    QStringList blocks;
+    QByteArray blocks;
     for (const int edge : kSizes) {
         const QByteArray png = encodePng(plate, edge);
         if (png.isEmpty())
             return QStringLiteral("the plate render could not be encoded as PNG");
-        blocks.append(thumbnailBlock(png, edge));
+        for (const QString& line : thumbnailBlock(png, edge)) {
+            blocks += line.toUtf8();
+            blocks += '\n';
+        }
     }
 
-    QFile file(gcodePath);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+    // Streamed rather than read whole: a day-long print is a few hundred
+    // megabytes, and holding it in memory twice to insert twenty kilobytes at the
+    // top is how a thumbnail addition runs a machine out of RAM.
+    //
+    // The block goes at the very top, which is where the reference slicers put it
+    // and what a host that stops reading after the first kilobyte needs.
+    QFile in(gcodePath);
+    if (!in.open(QIODevice::ReadOnly))
         return QStringLiteral("cannot read %1").arg(gcodePath);
 
-    const QStringList lines = QString::fromUtf8(file.readAll()).split(QLatin1Char('\n'));
-    file.close();
+    QSaveFile out(gcodePath);
+    if (!out.open(QIODevice::WriteOnly))
+        return QStringLiteral("cannot write %1").arg(gcodePath);
 
-    QStringList rewritten;
-    rewritten.reserve(lines.size() + blocks.size() * 2);
+    if (out.write(blocks) != blocks.size()) {
+        out.cancelWriting();
+        return QStringLiteral("cannot write %1").arg(gcodePath);
+    }
 
     bool insideThumbnail = false;
-    bool inserted = false;
-
-    for (const QString& line : lines) {
-        if (line.startsWith(QStringLiteral("; thumbnail begin"))) {
+    while (!in.atEnd()) {
+        const QByteArray line = in.readLine();
+        if (line.startsWith("; thumbnail begin")) {
             insideThumbnail = true;
             continue;
         }
         if (insideThumbnail) {
-            if (line.startsWith(QStringLiteral("; thumbnail end")))
+            if (line.startsWith("; thumbnail end"))
                 insideThumbnail = false;
             continue;
         }
-        if (!inserted && isConfigBlockBegin(line)) {
-            rewritten.append(blocks);
-            inserted = true;
+        if (out.write(line) != line.size()) {
+            out.cancelWriting();
+            return QStringLiteral("cannot write %1").arg(gcodePath);
         }
-        rewritten.append(line);
     }
+    in.close();
 
-    if (!inserted)
-        rewritten.append(blocks);
-
-    QSaveFile out(gcodePath);
-    if (!out.open(QIODevice::WriteOnly | QIODevice::Text))
-        return QStringLiteral("cannot write %1").arg(gcodePath);
-
-    const QByteArray body = rewritten.join(QLatin1Char('\n')).toUtf8();
-    if (out.write(body) != body.size() || !out.commit())
+    if (!out.commit())
         return QStringLiteral("cannot write %1").arg(gcodePath);
 
     return {};

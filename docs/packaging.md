@@ -1,22 +1,24 @@
 # Packaging
 
 How a release is built, what it ships, and why the choices are these ones. The
-numbers are measured on this machine, 2026-11-08, `0.1.0`.
+numbers are measured on this machine, 2026-11-09, `0.1.1`.
 
 ## What a release consists of
 
 | Artifact | Size | Who it is for |
 |---|---|---|
-| `NextLayer-<version>-x86_64.AppImage` | 273.1 MB | anyone who wants to run it without installing anything |
-| `next-layer-<version>.tar.gz` | 68.8 MB | the AUR package, and anyone unpacking it beside their own files |
+| `NextLayer-<version>-x86_64.AppImage` | 273.3 MB | anyone who wants to run it without installing anything |
+| `next-layer-<version>.tar.gz` | 69.0 MB | the AUR package, and anyone unpacking it beside their own files |
 | `update.json` | < 1 KB | the in-app update check |
-| `SHA256SUMS.txt` | < 1 KB | checksums for both artefacts, so a download can be verified |
+| `SHA256SUMS.txt` | < 1 KB | checksums for the release's artefacts, so a download can be verified |
 | `PKGBUILD`, `.SRCINFO`, desktop file, icon | — | pushed to the AUR |
 
 All three are built by `tools/package` and `tools/release`, on this machine, from
-the build tree. Both artefacts were run from a clean prefix before publishing:
-the AppImage sliced `bridge_30` to the same toolpath hash as the build tree, and
-the tarball sliced a cube from a bare `/tmp` extraction.
+the build tree. `tools/release` writes `SHA256SUMS.txt` for the artefacts of the
+tag it just built, so the file cannot describe last release's downloads. Both
+artefacts were run from a clean prefix before publishing: the 0.1.1 AppImage
+verifies **12/12** against the oracle baselines with `--runner qt`, and the
+tarball slices a cube from a bare `/tmp` extraction.
 
 ## AppImage or Flatpak
 

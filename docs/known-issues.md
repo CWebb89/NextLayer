@@ -32,6 +32,19 @@ complete inventory, this is the part you need before you start a print.
 
 ## Slicing and files
 
+- **An imported preset is the slicer's numbers, not this engine's behaviour.** The
+  import translates what it can and names what it cannot, but a process preset
+  written by another slicer describes another engine's options: expect the
+  perimeters, infill and speeds to match and expect exotic features (scarf seams,
+  interlocking, per-height speed tables) not to. Slice a test print before
+  trusting an imported profile with a real part.
+- **A file that is already sliced cannot be sliced again.** A `.gcode` or a
+  `.gcode.3mf` opens in the toolpath preview; nothing here can recover a mesh
+  from toolpaths, so there is no way to edit and re-slice one.
+- **The plate thumbnail is the on-screen view.** It is captured from the viewport
+  at the moment you press slice, so it shows your camera angle, not a canonical
+  isometric render.
+
 - **A project saved as `.nextproj` is ours alone.** PrusaSlicer and OrcaSlicer
   cannot read it. `File > Save project for another slicer` writes a `.3mf`
   project instead -- every plate, with the configuration, the per-object settings,

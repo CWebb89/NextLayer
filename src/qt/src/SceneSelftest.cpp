@@ -1695,8 +1695,6 @@ int runProjectSelftest(const QString& model, const QString& configPath, const QS
     }
     // Tool paint on the object's own top face: a point in the air would paint
     // nothing, and this test has to carry real paint through the file.
-    const QVector3D top = document.objectBoundsMax(first);
-    const QVector3D middle = document.objectBoundsMin(first);
     for (size_t facet = 0; facet < mesh->its.indices.size(); ++facet) {
         const auto& face = mesh->its.indices[facet];
         const Vec3d a = mesh->its.vertices[face[0]].cast<double>();

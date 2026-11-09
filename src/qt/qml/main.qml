@@ -2381,6 +2381,8 @@ Window {
             if (typeof startupPlates !== "undefined")
             for (let i = 1; i < startupPlates; ++i)
                 root.addPlate()
+        if (typeof startupPreSlicedPath !== "undefined" && startupPreSlicedPath.length > 0)
+            root.openPreSliced(startupPreSlicedPath)
         if (startupGcodePath.length > 0 && toolpath.load(startupGcodePath)) {
             const last = Math.max(0, toolpath.layerCount - 1)
             const layer = startupLayer >= 0 ? Math.min(startupLayer, last) : last
