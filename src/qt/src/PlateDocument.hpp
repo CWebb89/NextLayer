@@ -125,6 +125,10 @@ public:
         // another slicer and saving it again loses nothing -- the alternative, which
         // is what that other slicer does, is to drop them.
         QHash<QString, QString> foreignSettings;
+        /// True when this object came out of a Bambu Studio or OrcaSlicer project, so
+        /// its settings go back out under that slicer's names rather than this
+        /// engine's.
+        bool orcaDialect = false;
         Slic3r::Domain::ZHeightPairs layerHeights;
         Slic3r::Domain::TriangleSelector::TriangleSplittingData supportPaint;
         Slic3r::Domain::TriangleSelector::TriangleSplittingData seamPaint;

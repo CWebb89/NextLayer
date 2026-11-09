@@ -102,7 +102,9 @@ void readPlateRecords(const QByteArray& settings, ThreeMfProject& project)
 }
 
 /// The build list: one `<item>` per placed object, in the order the model file
-/// lists them. That order is how an object is matched to the records below.
+/// lists them. That order is how an object is matched to the records below. The
+/// same pass records who wrote the file, because a project written for one slicer
+/// is written back in that slicer's dialect rather than in this engine's names.
 void readBuildList(const QByteArray& scene, ThreeMfProject& project)
 {
     QXmlStreamReader xml(scene);
@@ -112,7 +114,18 @@ void readBuildList(const QByteArray& scene, ThreeMfProject& project)
         const QXmlStreamReader::TokenType token = xml.readNext();
         if (token == QXmlStreamReader::StartElement) {
             const QStringView tag = xml.name();
-            if (tag == QLatin1String("build")) {
+            if (tag == QLatin1String("metadata")) {
+                const QXmlStreamAttributes attributes = xml.attributes();
+                if (attributes.value(QLatin1String("name")) == QLatin1String("Application")
+                    && project.application.isEmpty()) {
+                    // 3MF puts this one's value in the element body, not in an
+                    // attribute, and the body is what the authoring slicer writes.
+                    const QString body = xml.readElementText(QXmlStreamReader::IncludeChildElements);
+                    project.application = body.isEmpty()
+                                              ? attributes.value(QLatin1String("value")).toString()
+                                              : body;
+                }
+            } else if (tag == QLatin1String("build")) {
                 inBuild = true;
             } else if (tag == QLatin1String("item") && inBuild) {
                 const QXmlStreamAttributes attributes = xml.attributes();

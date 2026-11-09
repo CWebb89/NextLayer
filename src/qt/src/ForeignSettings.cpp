@@ -277,4 +277,67 @@ QVector<ForeignSettingPair> foreignSettingTable()
     return renamed();
 }
 
+bool foreignNameFor(const QString& engineKey, const QString& engineValue, QString& name,
+                    QString& value)
+{
+    // The table is written that slicer's name first, so the reverse has to undo the
+    // value mapping as well as the name: writing `perimeters` under its Orca name is
+    // only half of it if the value means something else over there. The identity
+    // entries come first in the table, so a value that has a mapping is looked for
+    // before any entry that would just pass it through.
+    for (const ForeignSettingPair& pair : renamed()) {
+        if (pair.target != engineKey)
+            continue;
+        const auto values = revalued().constFind(pair.target);
+        if (values == revalued().constEnd())
+            continue;
+        QString spelling;
+        for (auto mapped = values->constBegin(); mapped != values->constEnd(); ++mapped) {
+            if (mapped.value() != engineValue)
+                continue;
+            // A value both slicers spell the same way is the weakest match: when the
+            // other side has a word of its own for it, that word is what goes out.
+            if (spelling.isEmpty() || spelling == engineValue)
+                spelling = mapped.key();
+            if (spelling != engineValue)
+                break;
+        }
+        if (spelling.isEmpty())
+            continue;
+        name = pair.source;
+        value = spelling;
+        return true;
+    }
+    for (const ForeignSettingPair& pair : renamed()) {
+        if (pair.target != engineKey || pair.source == pair.target)
+            continue;
+        if (revalued().contains(pair.target))
+            continue;
+        name = pair.source;
+        value = engineValue;
+        return true;
+    }
+
+    // A name both slicers spell the same way has no rename to look up, and its value
+    // can still be worded differently: `seam_position` is that word in both files and
+    // its value is not.
+    const auto values = revalued().constFind(engineKey);
+    if (values == revalued().constEnd())
+        return false;
+    QString spelling;
+    for (auto mapped = values->constBegin(); mapped != values->constEnd(); ++mapped) {
+        if (mapped.value() != engineValue)
+            continue;
+        if (spelling.isEmpty() || spelling == engineValue)
+            spelling = mapped.key();
+        if (spelling != engineValue)
+            break;
+    }
+    if (spelling.isEmpty())
+        return false;
+    name = engineKey;
+    value = spelling;
+    return true;
+}
+
 }

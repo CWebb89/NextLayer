@@ -4,6 +4,7 @@
 #include "SliceRuntime.hpp"
 
 #include "QtPlatform.hpp"
+#include "ForeignSettings.hpp"
 
 #include <Slic3r/App/AppConfig.hpp>
 #include <Slic3r/App/AppServices.hpp>
@@ -49,6 +50,10 @@
 #include <Slic3r/Domain/Preset/SelectedPreset.hpp>
 
 #include <libslic3r/SlicingStatus.hpp>
+
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 #include <nlohmann/json.hpp>
 
@@ -688,6 +693,51 @@ bool SliceRuntime::slicePlate(const QVector<PlateSliceObject>& objects, const QS
 
 namespace {
 
+/// One override as the 3MF metadata writes it: the same spelling the other slicers
+/// use for a number, a flag or a percentage, because that is what their reader does
+/// with the string it finds.
+QString settingText(const QJsonValue& value)
+{
+    if (value.isBool())
+        return value.toBool() ? QStringLiteral("1") : QStringLiteral("0");
+    if (value.isDouble())
+        return QString::number(value.toDouble(), 'g', 10);
+    if (value.isString())
+        return value.toString();
+    if (value.isObject()) {
+        // A percentage or a setting the engine holds as a number plus its unit: the
+        // files write it back the way it was read, `15%`, not as a JSON object.
+        const QJsonObject object = value.toObject();
+        if (object.contains(QLatin1String("value"))) {
+            const QString number = settingText(object.value(QLatin1String("value")));
+            return object.value(QLatin1String("is_percent")).toBool()
+                       ? number + QLatin1Char('%') : number;
+        }
+        return {};
+    }
+    if (value.isArray()) {
+        QStringList parts;
+        for (const QJsonValue& item : value.toArray())
+            parts.append(settingText(item));
+        return parts.join(QLatin1Char(','));
+    }
+    return {};
+}
+
+QHash<QString, QString> settingTexts(const QByteArray& json)
+{
+    QHash<QString, QString> entries;
+    if (json.isEmpty())
+        return entries;
+    const QJsonObject object = QJsonDocument::fromJson(json).object();
+    for (auto it = object.constBegin(); it != object.constEnd(); ++it) {
+        const QString text = settingText(it.value());
+        if (!text.isEmpty())
+            entries.insert(it.key(), text);
+    }
+    return entries;
+}
+
 /// Adds the plate records the classic 3MF writer does not know about: every
 /// object on plate one, named. A reader that understands them puts the objects
 /// back where they were instead of packing the bed, and OrcaSlicer reads the same
@@ -706,10 +756,25 @@ bool writePlateRecords(const QString& path, const QVector<PlateSliceObject>& obj
     // is metadata, so a name nothing here knows costs nothing and a reader that
     // does know it gets it back.
     for (int index = 0; index < objects.size(); ++index) {
+        const PlateSliceObject& object = objects.at(index);
         xml += QStringLiteral("  <object id=\"%1\">\n"
                               "    <metadata key=\"plater_id\" value=\"%2\"/>\n")
                    .arg(index + 1)
-                   .arg(objects.at(index).plate + 1);
+                   .arg(object.plate + 1);
+
+        // Every override the object carries, under the name its reader knows. This is
+        // the block OrcaSlicer and Bambu Studio actually look at, and this engine's
+        // own names in it are names they do not have: A plate written here and opened
+        // there would come up with none of its per-object settings.
+        const QHash<QString, QString> overrides = settingTexts(object.settingsJson);
+        for (auto entry = overrides.constBegin(); entry != overrides.constEnd(); ++entry) {
+            QString name = entry.key();
+            QString value = entry.value();
+            if (object.orcaDialect)
+                next_layer::foreignNameFor(entry.key(), entry.value(), name, value);
+            xml += QStringLiteral("    <metadata key=\"%1\" value=\"%2\"/>\n")
+                       .arg(name.toHtmlEscaped(), value.toHtmlEscaped());
+        }
         const QHash<QString, QString>& kept = carried[index];
         for (int group = 0; group < 2; ++group) {
             const QHash<QString, QString>& entries =

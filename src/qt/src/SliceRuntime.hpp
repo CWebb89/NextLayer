@@ -67,6 +67,9 @@ struct PlateSliceObject
     /// round trip through this one.
     QHash<QString, QString> foreignSettings;
     Slic3r::Domain::ZHeightPairs layerHeights;
+    /// Which dialect the object's own settings are written in when the plate is saved
+    /// for another slicer: true for the Bambu/Orca names, false for this engine's.
+    bool orcaDialect = false;
     Slic3r::Domain::TriangleSelector::TriangleSplittingData supportPaint;
     Slic3r::Domain::TriangleSelector::TriangleSplittingData seamPaint;
     Slic3r::Domain::TriangleSelector::TriangleSplittingData toolPaint;

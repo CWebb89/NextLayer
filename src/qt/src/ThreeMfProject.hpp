@@ -66,6 +66,11 @@ struct ThreeMfProject
     using Placement = std::array<double, 12>;
 
     bool valid = false;
+    /// The `Application` the file names, as written: `BambuStudio-02.00.00.00`,
+    /// `OrcaSlicer-2.1.1`, `PrusaSlicer-2.9.6` and so on. Empty when the file does
+    /// not say, which is the case for a file this app wrote before it started
+    /// naming itself.
+    QString application;
     int plateCount = 0;
     QVector<int> buildOrder;
     QVector<Placement> buildTransforms;

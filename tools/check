@@ -690,8 +690,26 @@ else if not string match -q -- '*kept 3 setting(s)*' $foreign_back
     __bad 'foreign project: the kept settings did not come back out of the file that was written'
 else if test (count (string match -a -- '*initial_layer_print_height*' $foreign_metadata)) -eq 0
     __bad 'foreign project: the exported file does not carry the setting it kept'
+else if test (count (string match -a -- '*key="wall_loops"*' $foreign_metadata)) -eq 0
+    __bad 'foreign project: the per-object settings went back out under this engine names, so the slicer the file came from would open it with none of them'
+else if test (count (string match -a -- '*key="perimeters"*' $foreign_metadata)) -gt 0
+    __bad 'foreign project: the file written for Bambu/Orca still carries the name perimeters instead of wall_loops'
 else
-    __ok "foreign project: it saves again -- the 3 settings this engine cannot apply ride out in Metadata/model_settings.config under their own names, and the $foreign_placed[2] object(s) come back within $foreign_placed[3] mm of where they were put"
+    __ok "foreign project: it saves again -- the per-object settings go back out in the names the slicer that wrote the file reads (wall_loops, sparse_infill_density), the 3 settings this engine cannot apply ride out under their own names, and the $foreign_placed[2] object(s) come back within $foreign_placed[3] mm of where they were put"
+end
+
+# ... and a plate this app authored is written in this engine's own names, because
+# the reader that will open it is this app rather than a Bambu-family slicer.
+set -l own_saved /tmp/nl-check-own-out.3mf
+rm -f $own_saved
+env QT_QPA_PLATFORM=eglfs XDG_DATA_HOME=$tools_home $bin $root/oracle/models/cube_20.stl --export-project $tools_cfg,$own_saved >/tmp/nl-check-own-export.out 2>&1
+set -l own_metadata (unzip -p $own_saved Metadata/model_settings.config 2>/dev/null)
+if not test -s $own_saved
+    __bad "own project: an authored plate would not export: "(tail -n 1 /tmp/nl-check-own-export.out)
+else if test (count (string match -a -- '*key="wall_loops"*' $own_metadata)) -gt 0
+    __bad 'own project: a plate authored here went out in the Bambu/Orca dialect'
+else
+    __ok 'own project: a plate authored here writes no Bambu/Orca setting names, so a file that never came from that family is not handed back in its dialect'
 end
 
 # User-preset gate: a preset a person saves has to survive a restart, resolve

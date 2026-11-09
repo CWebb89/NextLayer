@@ -33,6 +33,7 @@ import zipfile
 CUBE = """<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xml:lang="en-US"
        xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
+  <metadata name="Application">BambuStudio-02.00.00.00</metadata>
   <resources>
     <object id="2" type="model">
       <mesh>

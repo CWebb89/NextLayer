@@ -1104,6 +1104,15 @@ int PlateDocument::importObject(const QString& path, const QString& label, bool 
     // only for what the engine does not model -- which plate an object was on.
     const next_layer::ThreeMfProject project = next_layer::readThreeMfProject(local);
 
+    // Which dialect an object's own settings go back out in follows from who wrote the
+    // file it came from: a project from Bambu Studio or OrcaSlicer is handed back to
+    // that slicer, so it is written under the names that slicer reads.
+    const QString application = project.application;
+    const bool orcaDialect = application.contains(QLatin1String("Bambu"), Qt::CaseInsensitive)
+                             || application.contains(QLatin1String("Orca"), Qt::CaseInsensitive)
+                             || application.contains(QLatin1String("Elegoo"), Qt::CaseInsensitive)
+                             || application.contains(QLatin1String("Anycubic"), Qt::CaseInsensitive);
+
     pushUndo(QStringLiteral("Import %1").arg(QFileInfo(local).fileName()));
     QList<int> added;
     for (const auto& objectPtr : scene->objects) {
@@ -1125,6 +1134,8 @@ int PlateDocument::importObject(const QString& path, const QString& label, bool 
             if (project.foreignSettings.contains(objectId))
                 applyForeignSettings(id, project.foreignSettings.value(objectId),
                                      project.foreignNames.value(objectId));
+            if (Object* imported = find(id))
+                imported->orcaDialect = orcaDialect;
         }
     }
     if (added.isEmpty()) {
@@ -2757,6 +2768,7 @@ QVector<next_layer::PlateSliceObject> PlateDocument::projectObjects() const
         next_layer::PlateSliceObject slice;
         slice.name = object.displayName();
         slice.plate = object.plate;
+        slice.orcaDialect = object.orcaDialect;
         slice.mesh = *object.mesh;
         slice.transform = object.trafo;
         slice.settingsJson = settingsToJson(object.settings);
