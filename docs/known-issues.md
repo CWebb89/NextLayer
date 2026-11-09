@@ -40,19 +40,18 @@ complete inventory, this is the part you need before you start a print.
   does the slicer this dialect comes from, so a Bambu/Orca project that carries both
   will not slice until one of them is dropped. This is engine behaviour, not a
   reading of the file.
-- **A project this app exports makes PrusaSlicer 2.9.6 crash on re-export.**
-  PrusaSlicer 2.9.6 opens the file, then segfaults while writing a 3MF back out, if
-  the file carries a timeline marker of type `ColorChange`, `PausePrint` or
-  `Custom`. A `ToolChange` marker exports fine, and the same file without the
-  marker exports fine, so the crash is in PrusaSlicer's own exporter -- but this app
-  is what puts the marker there, with a colour string that is not a colour. Its
-  reader rejects the marker *name* form (`type="ColorChange"`: "conversion of data
-  to type int failed"), so the integer form this engine writes is the right dialect
-  and the crash is theirs. Until the marker is either given a real `#RRGGBB` colour
-  and the multi-material data PrusaSlicer's exporter expects, or turned into a
-  plain custom G-code marker, treat a project containing a colour change as one
-  PrusaSlicer cannot round-trip. Measured with `prusa-slicer 2.9.6+arch5`, repro in
-  the session notes.
+- **A project this app exports makes PrusaSlicer's command line crash on
+  re-export.** `prusa-slicer FILE.3mf --export-3mf` segfaults (exit 139) when the
+  file carries a timeline marker that is not a tool change: a pause, a colour
+  change or custom G-code. Bisected to one element -- the marker, and this is not
+  this app's fault: in PrusaSlicer 2.9.6's own `src/libslic3r/Format/3mf.cpp`,
+  `_add_custom_gcode_per_print_z_file_to_archive` calls `config->opt_string(...)`
+  on a `DynamicPrintConfig*` the CLI export path never sets, and only the
+  tool-change branch reaches its data without touching `config`. The same file
+  opens fine in their GUI, where the config is passed. Nothing this app writes can
+  avoid it while keeping the marker. Measured with `prusa-slicer 2.9.6+arch5`.
+  This entry used to say the crash was on our side by way of a colour field holding
+  text; that was fixed separately and did not change the crash.
 - **A project exported from a 3MF that was itself opened shifts its objects by half
   their footprint.** Measured while adding the round-trip gate: export a Bambu
   project, reopen the result, and the objects sit 10 mm off for a 20 mm cube --
