@@ -14,6 +14,10 @@
 
 class SettingsModel;
 
+namespace next_layer::presetimport {
+struct Report;
+}
+
 // Preset catalogue and resolver over the engine's own bundle. The engine
 // 3.0 engine already evaluates the vendor YAML (inherits, variant conditions,
 // nozzle/feeder logic), so this store asks the app's one engine runtime for the
@@ -130,6 +134,10 @@ public:
     /// was refused or dropped, so the caller can report rather than guess.
     Q_INVOKABLE QVariantMap importSlicerPresets(const QString& directory);
 
+    /// The same, from one file: another slicer's single-preset `.json` export or
+    /// a PrusaSlicer `.ini`, holding one preset or a whole bundle.
+    Q_INVOKABLE QVariantMap importSlicerPresetFile(const QString& path);
+
     /// The configuration directories of other slicers that exist on this machine,
     /// as {name, path}. Setup offers these instead of a file picker: the folder
     /// has a well-known name, and a portal dialog is neither testable nor
@@ -173,6 +181,11 @@ signals:
     void resolved();
 
 private:
+    /// The tail every import runs once the report comes back: list the new
+    /// presets, work out whether the machine appears without a restart, and shape
+    /// the report for QML.
+    QVariantMap finishImport(const next_layer::presetimport::Report& report);
+
     struct BundleLocation
     {
         QString repo;

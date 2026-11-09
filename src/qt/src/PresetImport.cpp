@@ -16,6 +16,8 @@
 #include <QJsonValue>
 #include <QRegularExpression>
 #include <QSet>
+#include <QStandardPaths>
+#include <QUrl>
 #include <QVector>
 
 #include <algorithm>
@@ -133,6 +135,11 @@ const Mapping* mappingTable(size_t& count)
         {"initial_layer_acceleration", "first_layer_acceleration", Transform::Real, nullptr},
         {"bridge_infill_acceleration", "bridge_acceleration", Transform::Real, nullptr},
         {"enable_support", "support_material", Transform::Enum, "support_material_on"},
+        // PrusaSlicer's own `support_material` is a bool in 2.9 and an enum in 2.6,
+        // and this engine's loader reads "1" as the legacy pair — which downgrades
+        // the result to "enforcers only". Reading it through the same enum table
+        // Orca's name uses keeps the meaning: 1 is everywhere.
+        {"support_material", "support_material", Transform::Enum, "support_material_on"},
         {"support_style", "support_material_style", Transform::Enum, "support_material_style"},
         {"support_on_build_plate_only", "support_material_buildplate_only", Transform::Boolean, nullptr},
         {"support_top_z_distance", "support_material_contact_distance", Transform::Real, nullptr},
@@ -191,6 +198,7 @@ const Mapping* mappingTable(size_t& count)
         {"filament_wipe", "wipe", Transform::Boolean, nullptr},
         {"initial_layer_print_height", "first_layer_height", Transform::Real, nullptr},
         {"printable_area", "bed_shape", Transform::BedShape, nullptr},
+        {"bed_shape", "bed_shape", Transform::BedShape, nullptr},
         {"printable_height", "max_print_height", Transform::Real, nullptr},
         {"machine_max_speed_x", "machine_max_feedrate_x", Transform::RealList, nullptr},
         {"machine_max_speed_y", "machine_max_feedrate_y", Transform::RealList, nullptr},
@@ -569,6 +577,24 @@ QString printerNameFrom(const QString& sourceName)
 
 namespace next_layer::presetimport {
 
+QVector<QPair<QString, QString>> slicerCandidates()
+{
+    // Qt 6 hands back a URL for the config location, not a path.
+    const QUrl configUrl(QStandardPaths::writableLocation(QStandardPaths::ConfigLocation));
+    const QString config = configUrl.isLocalFile() ? configUrl.toLocalFile() : configUrl.toString();
+    return {{QStringLiteral("OrcaSlicer"), config + QStringLiteral("/OrcaSlicer")},
+            {QStringLiteral("PrusaSlicer"), config + QStringLiteral("/PrusaSlicer")},
+            {QStringLiteral("SuperSlicer"), config + QStringLiteral("/SuperSlicer")},
+            {QStringLiteral("BambuStudio"), config + QStringLiteral("/BambuStudio")},
+            {QStringLiteral("Slic3r"), config + QStringLiteral("/Slic3r")}};
+}
+
+QString configHome()
+{
+    const QUrl configUrl(QStandardPaths::writableLocation(QStandardPaths::ConfigLocation));
+    return configUrl.isLocalFile() ? configUrl.toLocalFile() : configUrl.toString();
+}
+
 KindIndex presetIndex(const QString& sourceDirectory)
 {
     KindIndex index;
@@ -805,7 +831,328 @@ QString settleTemplate(const QString& key, QString body, const SettingsModel& se
     return body;
 }
 
-Report importPresets(const QString& sourceDirectory, SettingsModel& settings, bool write){
+namespace {
+
+struct Sink
+{
+    SettingsModel& settings;
+    bool write;
+    Report& report;
+    QSet<QString>& dropped;
+    QStringList& elsewhere;
+    QString vendorDirectory;
+};
+
+QString kindOfType(const QString& type)
+{
+    if (type == QLatin1String("printer") || type == QLatin1String("machine"))
+return QStringLiteral("machine");
+    if (type == QLatin1String("filament"))
+return QStringLiteral("filament");
+    return QStringLiteral("process");
+}
+
+void finishReport(Report& report, QSet<QString>& dropped, QStringList& elsewhere)
+{
+    elsewhere.sort();
+    elsewhere.erase(std::unique(elsewhere.begin(), elsewhere.end()), elsewhere.end());
+    report.elsewhere = elsewhere;
+    report.droppedKeys = QStringList(dropped.constBegin(), dropped.constEnd());
+    std::sort(report.droppedKeys.begin(), report.droppedKeys.end());
+}
+
+/// Translates one preset and writes it unless the sink says otherwise. False
+/// means a write failed, which ends the whole import; a preset that cannot be
+/// translated is reported and skipped instead.
+bool importOne(const QString& kind, const QJsonObject& own, const KindIndex& index, Sink& sink)
+{
+    Report& report = sink.report;
+    SettingsModel& settings = sink.settings;
+    const bool write = sink.write;
+    QSet<QString>& dropped = sink.dropped;
+    QStringList& elsewhere = sink.elsewhere;
+    const QString& vendorDirectory = sink.vendorDirectory;
+
+    const QString sourceName = own.value(QStringLiteral("name")).toString();
+    if (sourceName.isEmpty())
+return true;
+    const QJsonObject resolved = resolvePreset(kind, sourceName, index);
+
+    QMap<QString, QVariant> values;
+    int translated = 0;
+    for (auto it = resolved.constBegin(); it != resolved.constEnd(); ++it) {
+        const QString key = it.key();
+        if (metaKeys().contains(key) || key.startsWith(QLatin1String("compatible_")))
+            continue;
+        const Mapping* mapping = findMapping(key);
+        if (unmappedKeys().contains(key)) {
+            dropped.insert(key);
+            continue;
+        }
+
+        // A key with no table entry is not automatically lost: most of the
+        // other slicer's names are this engine's names too, and the engine
+        // already knows what type each one holds. Only a key it does not
+        // have at all is dropped, and that is reported.
+        const QString target = mapping != nullptr
+            ? QString::fromLatin1(mapping->target) : key;
+        const QString block = settings.blockOf(target);
+        const QString wanted = kind == QLatin1String("machine")
+                                   ? QStringLiteral("printer")
+                                   : kind == QLatin1String("filament")
+                                         ? QStringLiteral("filament")
+                                         : QStringLiteral("process");
+        if (block.isEmpty()) {
+            dropped.insert(key);
+            continue;
+        }
+        if (!settings.canHoldIn(target, wanted)) {
+            elsewhere.append(key);
+            continue;
+        }
+        const QVariant transformed = mapping != nullptr
+            ? transformValue(it.value(), *mapping)
+            : transformAuto(it.value());
+        if (transformed.typeId() == QMetaType::QString && transformed.toString().isEmpty())
+            continue;
+        values.insert(target, transformed);
+        ++translated;
+    }
+
+    // The engine's own loader reads a bare "1" for `support_material` as the legacy
+    // bool pair and downgrades the result to "enforcers only", which is why the
+    // table above routes the value through the enum; nothing is appended here.
+
+    // Klipper cannot take machine limits in the G-code, and this engine refuses
+    // the combination outright instead of writing a file: an imported Klipper
+    // machine with the default `emit` slices nothing at all. That slicer resolves
+    // the same conflict by leaving the limits out of the G-code, so a Klipper
+    // machine imported without an answer of its own gets the same one.
+    if (values.value(QStringLiteral("gcode_flavor")).toString().startsWith(QLatin1String("klipper"))
+        && values.value(QStringLiteral("machine_limits_usage")).toString().isEmpty()
+        && settings.blockOf(QStringLiteral("machine_limits_usage")) == QLatin1String("printer"))
+        values.insert(QStringLiteral("machine_limits_usage"),
+                      QStringLiteral("time_estimate_only"));
+
+    if (translated == 0) {
+        report.refused.append(QStringLiteral("%1: nothing this engine has").arg(sourceName));
+        return true;
+    }
+
+    // A machine needs a bed and a height before it is a machine at all.
+    if (kind == QLatin1String("machine")) {
+        const QVariantList bed = values.value(QStringLiteral("bed_shape")).toList();
+        const double height = values.value(QStringLiteral("max_print_height")).toDouble();
+        if (bed.size() < 3 || height <= 0.0) {
+            report.refused.append(
+                QStringLiteral("%1: %2 translated key(s), %3 bed point(s), height %4")
+                    .arg(sourceName).arg(translated).arg(bed.size()).arg(height));
+            return true;
+        }
+    }
+
+    const QString presetName = kind == QLatin1String("machine")
+                               ? printerNameFrom(sourceName) : sourceName;
+    const QString slug = presets::slugOf(presetName);
+
+    // A printer preset binds to its model by name: the vendor bundle gives
+    // the model id `NL_<slug>_MODEL`, and a preset without that value is
+    // never attached to a machine, so the engine finds no tool for it.
+    if (kind == QLatin1String("machine")) {
+        values.insert(QStringLiteral("printer_model"), QStringLiteral("NL_") + slug
+                                                      + QStringLiteral("_MODEL"));
+        values.insert(QStringLiteral("printer_technology"), QStringLiteral("FFF"));
+        values.insert(QStringLiteral("printer_vendor"), QStringLiteral("Custom"));
+    }
+
+    const QString block = kind == QLatin1String("machine")
+                              ? QStringLiteral("printer")
+                              : kind == QLatin1String("filament")
+                                    ? QStringLiteral("filament")
+                                    : QStringLiteral("process");
+
+    settings.resetTab(block);
+    int applied = 0;
+    for (auto it = values.constBegin(); it != values.constEnd(); ++it) {
+        if (settings.applyImported(it.key(), it.value()))
+            ++applied;
+        else
+            report.unfitted.append(QStringLiteral("%1: %2").arg(sourceName, it.key()));
+    }
+
+    // The engine's own writer produces the block: per-tool vectors as
+    // sequences, percentages with their sign, points as '0x0'. Only the
+    // keys the reference stated are kept; the rest would be this engine's
+    // defaults wearing the reference's name.
+    // Templates are settled against the machine's own E mode before the
+    // preset is written: one the engine refuses blanks the whole slice. The
+    // settled text goes back through applyImported, because the YAML below
+    // is read out of the settings model, not out of this map.
+    const bool absoluteE = !values.value(QStringLiteral("use_relative_e_distances")).toBool();
+    for (const QString& key : gcodeTemplateKeys()) {
+        const auto found = values.find(key);
+        if (found == values.end())
+            continue;
+        const QString settled = settleTemplate(key, found.value().toString(), settings,
+                                               absoluteE, sourceName, report.droppedTemplates);
+        if (settled.isEmpty())
+            values.erase(found);
+        else if (settled != found.value().toString())
+            found.value() = settled;
+        else
+            continue;
+        if (settings.blockOf(key).isEmpty())
+            continue;
+        settings.applyImported(key, settled);
+    }
+
+    QSet<QString> stated;
+    for (auto it = values.constBegin(); it != values.constEnd(); ++it)
+        stated.insert(it.key());
+
+    QStringList unwanted;
+    for (const QString& key : dangerousDefaults()) {
+        if (!stated.contains(key))
+            unwanted.append(key);
+    }
+    QString yaml = withoutKeys(withoutItems(settings.valuesYaml(block, false), block),
+                               unwanted);
+    if (applied == 0 || yaml.isEmpty()) {
+        report.refused.append(QStringLiteral("%1: nothing this engine can hold")
+                                  .arg(sourceName));
+        return true;
+    }
+
+    if (kind == QLatin1String("machine")) {
+        if (write) {
+            const QString error = presets::addCustomPrinter(presetName);
+            if (!error.isEmpty()) {
+                report.error = error;
+                return false;
+            }
+            if (!presets::ensureToolPrintPreset().isEmpty()) {
+                report.error = QStringLiteral("Could not write the tool preset");
+                return false;
+            }
+            const QString target = presets::customPrinterPath(presetName);
+            const QString condition = QStringLiteral("printer.model == \"NL_")
+                + slug + QStringLiteral("_MODEL\"");
+            if (target.isEmpty()
+                || !presets::writeFile(target,
+                       presets::document(QStringLiteral("printer"), presetName, QString(),
+                                         condition, yaml,
+                                         QStringLiteral("nl-") + slug))) {
+                report.error = QStringLiteral("Could not write the printer preset");
+                return false;
+            }
+        }
+        report.printers.append(presetName);
+        return true;
+    }
+
+    const QString presetKind = kind == QLatin1String("filament")
+                               ? QStringLiteral("filament") : QStringLiteral("print");
+    if (write) {
+        const QString target = vendorDirectory + QStringLiteral("/preset-") + presetKind
+                             + QLatin1Char('-') + slug + QStringLiteral(".yaml");
+        if (!presets::writeFile(target,
+                presets::document(presetKind, presetName, QString(), QString(), yaml))) {
+            report.error = QStringLiteral("Could not write %1").arg(presetName);
+            return false;
+        }
+    }
+    (kind == QLatin1String("filament") ? report.filaments : report.prints)
+        .append(presetName);
+    return true;
+}
+
+/// The presets in a single-file JSON export: Orca and Bambu write one preset per
+/// file on "Export preset", with the settings it overrides and the name it
+/// inherits from.
+QVector<QPair<QString, QJsonObject>> jsonPresets(const QString& path, Report& report)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        report.error = QStringLiteral("cannot read %1").arg(path);
+        return {};
+    }
+    const QJsonDocument document = QJsonDocument::fromJson(file.readAll());
+    if (document.isNull()) {
+        report.error = QStringLiteral("%1 is not JSON").arg(path);
+        return {};
+    }
+
+    QVector<QPair<QString, QJsonObject>> presets;
+    const auto add = [&presets](const QJsonObject& entry) {
+        if (entry.isEmpty())
+            return;
+        presets.append({kindOfType(entry.value(QStringLiteral("type")).toString()), entry});
+    };
+    if (document.isArray()) {
+        for (const QJsonValue& value : document.array())
+            add(value.toObject());
+    } else {
+        add(document.object());
+    }
+    return presets;
+}
+
+/// The presets in a PrusaSlicer INI: `[print:Name]`, `[filament:Name]` and
+/// `[printer:Name]` sections of `key = value`. A bundle file holds several, a
+/// single-preset export holds one, and both are read the same way. A value stays
+/// the string the other slicer wrote, because the translator already reads
+/// numbers, booleans and comma-joined lists out of text.
+QVector<QPair<QString, QJsonObject>> iniPresets(const QString& path, Report& report)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        report.error = QStringLiteral("cannot read %1").arg(path);
+        return {};
+    }
+
+    QVector<QPair<QString, QJsonObject>> presets;
+    QJsonObject current;
+    QString kind;
+    const auto flush = [&presets, &current, &kind]() {
+        if (!kind.isEmpty() && !current.isEmpty()) {
+            current.insert(QStringLiteral("type"),
+                           kind == QLatin1String("machine") ? QStringLiteral("printer") : kind);
+            presets.append({kind, current});
+        }
+        current = QJsonObject{};
+    };
+
+    const QRegularExpression section(
+        QStringLiteral("^\\[(?:(print|filament|printer|presets):)?([^\\]]*)\\]"));
+    while (!file.atEnd()) {
+        const QString line = QString::fromUtf8(file.readLine()).trimmed();
+        if (line.isEmpty() || line.startsWith(QLatin1Char(';')) || line.startsWith(QLatin1Char('#')))
+            continue;
+        const auto header = section.match(line);
+        if (header.hasMatch()) {
+            flush();
+            const QString presetKind = header.captured(1);
+            const QString name = header.captured(2).trimmed();
+            kind = presetKind.isEmpty() ? QString() : kindOfType(presetKind);
+            if (!kind.isEmpty())
+                current.insert(QStringLiteral("name"), name);
+            continue;
+        }
+        if (kind.isEmpty())
+            continue;
+        const int separator = line.indexOf(QLatin1Char('='));
+        if (separator <= 0)
+            continue;
+        current.insert(line.left(separator).trimmed(), line.mid(separator + 1).trimmed());
+    }
+    flush();
+    return presets;
+}
+
+} // namespace
+
+Report importPresets(const QString& sourceDirectory, SettingsModel& settings, bool write)
+{
     Report report;
     if (!QDir(sourceDirectory).exists()) {
         report.error = QStringLiteral("%1 is not a directory").arg(sourceDirectory);
@@ -818,9 +1165,9 @@ Report importPresets(const QString& sourceDirectory, SettingsModel& settings, bo
         return report;
     }
 
-    const QString vendorDirectory = presets::customVendorDirectory();
     QSet<QString> dropped;
     QStringList elsewhere;
+    Sink sink{settings, write, report, dropped, elsewhere, presets::customVendorDirectory()};
 
     for (const QString& kind : presetKinds()) {
         const QStringList paths = userPresetPaths(sourceDirectory, kind);
@@ -829,189 +1176,78 @@ Report importPresets(const QString& sourceDirectory, SettingsModel& settings, bo
             const QJsonObject own = readJson(path, &ok);
             if (!ok)
                 continue;
-            const QString sourceName = own.value(QStringLiteral("name")).toString();
-            if (sourceName.isEmpty())
-                continue;
-            const QJsonObject resolved = resolvePreset(kind, sourceName, index);
-
-            QMap<QString, QVariant> values;
-            int translated = 0;
-            for (auto it = resolved.constBegin(); it != resolved.constEnd(); ++it) {
-                const QString key = it.key();
-                if (metaKeys().contains(key) || key.startsWith(QLatin1String("compatible_")))
-                    continue;
-                const Mapping* mapping = findMapping(key);
-                if (unmappedKeys().contains(key)) {
-                    dropped.insert(key);
-                    continue;
-                }
-
-                // A key with no table entry is not automatically lost: most of the
-                // other slicer's names are this engine's names too, and the engine
-                // already knows what type each one holds. Only a key it does not
-                // have at all is dropped, and that is reported.
-                const QString target = mapping != nullptr
-                    ? QString::fromLatin1(mapping->target) : key;
-                const QString block = settings.blockOf(target);
-                const QString wanted = kind == QLatin1String("machine")
-                                           ? QStringLiteral("printer")
-                                           : kind == QLatin1String("filament")
-                                                 ? QStringLiteral("filament")
-                                                 : QStringLiteral("process");
-                if (block.isEmpty()) {
-                    dropped.insert(key);
-                    continue;
-                }
-                if (!settings.canHoldIn(target, wanted)) {
-                    elsewhere.append(key);
-                    continue;
-                }
-                const QVariant transformed = mapping != nullptr
-                    ? transformValue(it.value(), *mapping)
-                    : transformAuto(it.value());
-                if (transformed.typeId() == QMetaType::QString && transformed.toString().isEmpty())
-                    continue;
-                values.insert(target, transformed);
-                ++translated;
-            }
-
-            if (translated == 0) {
-                report.refused.append(QStringLiteral("%1: nothing this engine has").arg(sourceName));
-                continue;
-            }
-
-            // A machine needs a bed and a height before it is a machine at all.
-            if (kind == QLatin1String("machine")) {
-                const QVariantList bed = values.value(QStringLiteral("bed_shape")).toList();
-                const double height = values.value(QStringLiteral("max_print_height")).toDouble();
-                if (bed.size() < 3 || height <= 0.0) {
-                    report.refused.append(
-                        QStringLiteral("%1: %2 translated key(s), %3 bed point(s), height %4")
-                            .arg(sourceName).arg(translated).arg(bed.size()).arg(height));
-                    continue;
-                }
-            }
-
-            const QString presetName = kind == QLatin1String("machine")
-                                       ? printerNameFrom(sourceName) : sourceName;
-            const QString slug = presets::slugOf(presetName);
-
-            // A printer preset binds to its model by name: the vendor bundle gives
-            // the model id `NL_<slug>_MODEL`, and a preset without that value is
-            // never attached to a machine, so the engine finds no tool for it.
-            if (kind == QLatin1String("machine")) {
-                values.insert(QStringLiteral("printer_model"), QStringLiteral("NL_") + slug
-                                                              + QStringLiteral("_MODEL"));
-                values.insert(QStringLiteral("printer_technology"), QStringLiteral("FFF"));
-                values.insert(QStringLiteral("printer_vendor"), QStringLiteral("Custom"));
-            }
-
-            const QString block = kind == QLatin1String("machine")
-                                      ? QStringLiteral("printer")
-                                      : kind == QLatin1String("filament")
-                                            ? QStringLiteral("filament")
-                                            : QStringLiteral("process");
-
-            settings.resetTab(block);
-            int applied = 0;
-            for (auto it = values.constBegin(); it != values.constEnd(); ++it) {
-                if (settings.applyImported(it.key(), it.value()))
-                    ++applied;
-                else
-                    report.unfitted.append(QStringLiteral("%1: %2").arg(sourceName, it.key()));
-            }
-
-            // The engine's own writer produces the block: per-tool vectors as
-            // sequences, percentages with their sign, points as '0x0'. Only the
-            // keys the reference stated are kept; the rest would be this engine's
-            // defaults wearing the reference's name.
-            // Templates are settled against the machine's own E mode before the
-            // preset is written: one the engine refuses blanks the whole slice. The
-            // settled text goes back through applyImported, because the YAML below
-            // is read out of the settings model, not out of this map.
-            const bool absoluteE = !values.value(QStringLiteral("use_relative_e_distances")).toBool();
-            for (const QString& key : gcodeTemplateKeys()) {
-                const auto found = values.find(key);
-                if (found == values.end())
-                    continue;
-                const QString settled = settleTemplate(key, found.value().toString(), settings,
-                                                       absoluteE, sourceName, report.droppedTemplates);
-                if (settled.isEmpty())
-                    values.erase(found);
-                else if (settled != found.value().toString())
-                    found.value() = settled;
-                else
-                    continue;
-                if (settings.blockOf(key).isEmpty())
-                    continue;
-                settings.applyImported(key, settled);
-            }
-
-            QSet<QString> stated;
-            for (auto it = values.constBegin(); it != values.constEnd(); ++it)
-                stated.insert(it.key());
-
-            QStringList unwanted;
-            for (const QString& key : dangerousDefaults()) {
-                if (!stated.contains(key))
-                    unwanted.append(key);
-            }
-            QString yaml = withoutKeys(withoutItems(settings.valuesYaml(block, false), block),
-                                       unwanted);
-            if (applied == 0 || yaml.isEmpty()) {
-                report.refused.append(QStringLiteral("%1: nothing this engine can hold")
-                                          .arg(sourceName));
-                continue;
-            }
-
-            if (kind == QLatin1String("machine")) {
-                if (write) {
-                    const QString error = presets::addCustomPrinter(presetName);
-                    if (!error.isEmpty()) {
-                        report.error = error;
-                        return report;
-                    }
-                    if (!presets::ensureToolPrintPreset().isEmpty()) {
-                        report.error = QStringLiteral("Could not write the tool preset");
-                        return report;
-                    }
-                    const QString target = presets::customPrinterPath(presetName);
-                    const QString condition = QStringLiteral("printer.model == \"NL_")
-                        + slug + QStringLiteral("_MODEL\"");
-                    if (target.isEmpty()
-                        || !presets::writeFile(target,
-                               presets::document(QStringLiteral("printer"), presetName, QString(),
-                                                 condition, yaml,
-                                                 QStringLiteral("nl-") + slug))) {
-                        report.error = QStringLiteral("Could not write the printer preset");
-                        return report;
-                    }
-                }
-                report.printers.append(presetName);
-                continue;
-            }
-
-            const QString presetKind = kind == QLatin1String("filament")
-                                       ? QStringLiteral("filament") : QStringLiteral("print");
-            if (write) {
-                const QString target = vendorDirectory + QStringLiteral("/preset-") + presetKind
-                                     + QLatin1Char('-') + slug + QStringLiteral(".yaml");
-                if (!presets::writeFile(target,
-                        presets::document(presetKind, presetName, QString(), QString(), yaml))) {
-                    report.error = QStringLiteral("Could not write %1").arg(presetName);
-                    return report;
-                }
-            }
-            (kind == QLatin1String("filament") ? report.filaments : report.prints)
-                .append(presetName);
+            if (!importOne(kind, own, index, sink))
+                return report;
         }
     }
 
-    elsewhere.sort();
-    elsewhere.erase(std::unique(elsewhere.begin(), elsewhere.end()), elsewhere.end());
-    report.elsewhere = elsewhere;
-    report.droppedKeys = QStringList(dropped.constBegin(), dropped.constEnd());
-    std::sort(report.droppedKeys.begin(), report.droppedKeys.end());
+    finishReport(report, dropped, elsewhere);
+    return report;
+}
+
+Report importPresetFile(const QString& path, SettingsModel& settings, bool write)
+{
+    Report report;
+    const QFileInfo info(path);
+    if (!info.isFile()) {
+        report.error = QStringLiteral("%1 is not a file").arg(path);
+        return report;
+    }
+
+    QVector<QPair<QString, QJsonObject>> presets;
+    if (info.suffix().compare(QLatin1String("ini"), Qt::CaseInsensitive) == 0)
+        presets = iniPresets(path, report);
+    else
+        presets = jsonPresets(path, report);
+    if (!report.error.isEmpty())
+        return report;
+    if (presets.isEmpty()) {
+        report.error = QStringLiteral("%1 holds no preset this app can read").arg(path);
+        return report;
+    }
+
+    // A single exported preset names the presets it inherits from but does not
+    // carry them, so the installs on this machine are what it is resolved
+    // against. Without one, its own values are all there is, and the report says
+    // so rather than writing a half-resolved preset as if it were complete.
+    KindIndex index;
+    for (const QString& kind : presetKinds())
+        index.insert(kind, {});
+    QStringList searched;
+    for (const auto& candidate : slicerCandidates()) {
+        if (!QDir(candidate.second).exists())
+            continue;
+        const KindIndex source = presetIndex(candidate.second);
+        for (const QString& kind : presetKinds())
+            for (auto it = source.value(kind).constBegin(); it != source.value(kind).constEnd(); ++it)
+                index[kind].insert(it.key(), it.value());
+        searched.append(candidate.second);
+    }
+    if (searched.isEmpty())
+        report.notes.append(QStringLiteral("no slicer install found, so nothing inherited could "
+                                           "be resolved"));
+
+    QSet<QString> dropped;
+    QStringList elsewhere;
+    // The file's own presets join the index: that is what lets a preset inherit
+    // from another preset in the same file, and what makes the file's own values
+    // the ones that win over an install's preset of the same name.
+    for (const auto& preset : presets)
+        index[preset.first].insert(preset.second.value(QStringLiteral("name")).toString(),
+                                   preset.second);
+
+    Sink sink{settings, write, report, dropped, elsewhere, presets::customVendorDirectory()};
+    for (const auto& preset : presets) {
+        const QString inherits = preset.second.value(QStringLiteral("inherits")).toString();
+        if (!inherits.isEmpty() && !index.value(preset.first).contains(inherits))
+            report.notes.append(QStringLiteral("%1 inherits %2, which is not on this machine")
+                                    .arg(preset.second.value(QStringLiteral("name")).toString(),
+                                         inherits));
+        if (!importOne(preset.first, preset.second, index, sink))
+            return report;
+    }
+
+    finishReport(report, dropped, elsewhere);
     return report;
 }
 

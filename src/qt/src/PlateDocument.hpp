@@ -239,6 +239,15 @@ public:
     /// derived from the engine's own list so a format cannot be offered that the
     /// reader would refuse, or silently missing from the dialog once it can.
     Q_INVOKABLE QString importWildcards() const;
+
+    /// Whether a path is a print that has already been sliced — a `.gcode` or a
+    /// sliced `.3mf` — which cannot be re-sliced and is shown as toolpaths
+    /// instead. See `next_layer::isPreSlicedFile`.
+    Q_INVOKABLE bool isPreSlicedFile(const QString& path) const;
+
+    /// Copies the G-code inside a pre-sliced file to \p outPath so the toolpath
+    /// view can read it. Empty on failure.
+    Q_INVOKABLE bool extractPreSlicedGcode(const QString& path, const QString& outPath) const;
     Q_INVOKABLE void selectObject(int id, bool additive = false);
     Q_INVOKABLE void selectRange(int id);
     Q_INVOKABLE void selectAll();

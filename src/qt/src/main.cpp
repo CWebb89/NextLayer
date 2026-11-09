@@ -25,6 +25,7 @@
 #include "Session.hpp"
 #include "SettingsModel.hpp"
 #include "SliceController.hpp"
+#include "ThreeMfProject.hpp"
 #include "Toolpath.hpp"
 #include "TransformController.hpp"
 
@@ -915,8 +916,9 @@ int main(int argc, char* argv[])
         "Read a shared preset file into the user presets: KIND,PATH. Prints the name it "
         "landed under.", "kind,path");
     const QCommandLineOption import_slicer_option("import-slicer",
-        "Read another slicer's presets out of its configuration directory and write the "
-        "ones this engine can express into the user's own bundle. ", "dir");
+        "Read another slicer's presets out of its configuration directory, or out of one of its "
+        "preset files (.json or .ini), and write the ones this engine can express into the "
+        "user's own bundle.", "dir-or-file");
     const QCommandLineOption export_bundle_option("export-bundle",
         "Write the current printer's whole preset bundle into a directory: every preset "
         "file plus the manifest that names its machines. Prints what it wrote.", "dir");
@@ -1522,8 +1524,11 @@ int main(int argc, char* argv[])
             if (error.isEmpty())
                 std::printf("exported %s to %s\n", parts.at(1).toUtf8().constData(),
                             parts.at(2).toUtf8().constData());
-        } else if (parser.isSet(import_slicer_option)) {            const QString directory = parser.value(import_slicer_option);
-            const QVariantMap report = presets->importSlicerPresets(directory);
+        } else if (parser.isSet(import_slicer_option)) {
+            const QString source = parser.value(import_slicer_option);
+            const QVariantMap report = QFileInfo(source).isFile()
+                ? presets->importSlicerPresetFile(source)
+                : presets->importSlicerPresets(source);
             if (!report.value(QStringLiteral("error")).toString().isEmpty()) {
                 std::fprintf(stderr, "import: %s\n",
                              report.value(QStringLiteral("error")).toString().toUtf8().constData());
@@ -1532,7 +1537,7 @@ int main(int argc, char* argv[])
             const auto names = [&report](const char* key) {
                 return report.value(QLatin1String(key)).toStringList().join(QStringLiteral(", "));
             };
-            std::printf("imported from %s\n", directory.toUtf8().constData());
+            std::printf("imported from %s\n", source.toUtf8().constData());
             std::printf("  printers:  %s\n",
                         names("printers").isEmpty() ? "-" : names("printers").toUtf8().constData());
             std::printf("  prints:    %s\n",
@@ -1553,6 +1558,8 @@ int main(int argc, char* argv[])
                         static_cast<long long>(dropped.size()));
             for (const QString& template_ : report.value(QStringLiteral("templates")).toStringList())
                 std::printf("  %s\n", template_.toUtf8().constData());
+            for (const QString& note : report.value(QStringLiteral("notes")).toStringList())
+                std::printf("  note %s\n", note.toUtf8().constData());
             if (qEnvironmentVariableIsSet("NEXT_LAYER_DEBUG_PRESETS")) {
                 for (const QString& key : dropped)
                     std::printf("    dropped %s\n", key.toUtf8().constData());
@@ -1691,6 +1698,8 @@ int main(int argc, char* argv[])
 
     auto* slicer = new SliceController(std::string(), settings);
     auto* toolpath = new Toolpath(palette.roles());
+    // Set when the file on the command line is a print rather than a model.
+    QString openedAsToolpath;
     // The plate the scene edits is the bed the settings model describes. It stays
     // the nominal one from the config template until the user's own printer
     // resolves, and the viewport draws an empty state in the meantime, so a bed
@@ -1755,7 +1764,19 @@ int main(int argc, char* argv[])
 
     if (!files.isEmpty()) {
         next_layer::SliceRuntime::ensurePlatformServices();
-        if (files.size() == 1 ? !session->open(files.first()) : session->addModels(files) != files.size()) {
+        // A file that is already a print opens as toolpaths: it holds no model to
+        // slice, so the only honest thing to do with it is show what is inside.
+        if (next_layer::isPreSlicedFile(files.first())) {
+            const QString extracted = QDir(QDir::tempPath()).filePath(
+                QStringLiteral("next-layer-pre-sliced.gcode"));
+            if (!next_layer::extractPreSlicedGcode(files.first(), extracted)) {
+                std::fprintf(stderr, "load failed: %s holds no G-code this app can read\n",
+                             files.first().toUtf8().constData());
+                return 1;
+            }
+            openedAsToolpath = extracted;
+        } else if (files.size() == 1 ? !session->open(files.first())
+                                    : session->addModels(files) != files.size()) {
             std::fprintf(stderr, "load failed: %s\n", session->error().toUtf8().constData());
             return 1;
         }
@@ -1912,7 +1933,7 @@ int main(int argc, char* argv[])
                      painted, document->count());
     }
 
-    QString startupGcodePath;
+    QString startupGcodePath = openedAsToolpath;
     int startupLayer = -1;
     int startupLayerFrom = 0;
     int startupMovesMoveFrom = 0;

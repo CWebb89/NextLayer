@@ -85,6 +85,9 @@ public:
     /// resolved configuration in one 3MF. Returns an empty string on success, or
     /// the reason it failed.
     Q_INVOKABLE QString exportProject3mf(const QString& path);
+    /// A path inside this session's scratch directory, for a file that only has
+    /// to exist long enough to be read back — the G-code inside a pre-sliced 3MF.
+    Q_INVOKABLE QString scratchPath(const QString& name) const;
     void setModelPath(std::string modelPath);
     void setDocument(PlateDocument* document) { m_document = document; }
 

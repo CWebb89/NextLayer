@@ -8,6 +8,8 @@
 #include <QStringList>
 
 #include <QHash>
+#include <QPair>
+#include <QVector>
 
 class SettingsModel;
 
@@ -32,6 +34,10 @@ struct Report
     /// One refused template makes the slice write no file at all, so the machine
     /// keeps the engine's own template in its place instead.
     QStringList droppedTemplates;
+    /// Things the import did that are worth saying out loud but are not losses:
+    /// an inherited preset that is not on this machine, or no install found to
+    /// resolve against at all.
+    QStringList notes;
     QString error;
 
     bool ok() const { return error.isEmpty(); }
@@ -56,5 +62,17 @@ QJsonObject resolvePreset(const QString& kind, const QString& name, const KindIn
 /// engine's vocabulary: a key is written only into the block it belongs to, so a
 /// machine profile's retraction settings do not land in a printer preset.
 Report importPresets(const QString& sourceDirectory, SettingsModel& settings, bool write);
+
+/// Reads one preset file — an Orca/Bambu single-preset `.json` export or a
+/// PrusaSlicer `.ini`, whether it holds one preset or a whole bundle — and writes
+/// what this engine can express into the user's own bundle. Inheritance is
+/// resolved against the slicer installs found on this machine, which is what a
+/// single exported preset cannot carry.
+Report importPresetFile(const QString& path, SettingsModel& settings, bool write);
+
+/// The other slicers this app knows how to read, as name and directory, in the
+/// order they are worth offering. Absent directories are included; the caller
+/// checks.
+QVector<QPair<QString, QString>> slicerCandidates();
 
 } // namespace next_layer::presetimport

@@ -92,4 +92,15 @@ struct ThreeMfProject
 
 ThreeMfProject readThreeMfProject(const QString& path);
 
+/// Whether the file is a print that has already been sliced rather than a model:
+/// a `.gcode`, or a `.3mf` archive that carries a G-code and no mesh (what
+/// MakerWorld and Printables hand out). Re-slicing one of those is not a thing
+/// that can happen, so the caller offers the toolpath preview instead of a mesh.
+bool isPreSlicedFile(const QString& path);
+
+/// Writes the G-code inside a pre-sliced file to \p outPath, which is how a
+/// `.gcode.3mf` becomes something the toolpath view can read. A plain `.gcode`
+/// is copied. False when the file holds no G-code.
+bool extractPreSlicedGcode(const QString& path, const QString& outPath);
+
 }

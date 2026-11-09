@@ -4,6 +4,8 @@
 #include "ThreeMfProject.hpp"
 
 #include <QByteArray>
+#include <QFile>
+#include <QFileInfo>
 #include <QRegularExpression>
 #include <QSet>
 #include <QXmlStreamReader>
@@ -462,6 +464,64 @@ ThreeMfProject readThreeMfProject(const QString& path)
 
     project.valid = true;
     return project;
+}
+
+namespace {
+
+/// The G-code entry inside a sliced 3MF, whatever the slicer named it. Prusa
+/// writes `Metadata/Slicer PE_...gcode`, Bambu and Orca write
+/// `Metadata/plate_1.gcode`, and a renamed archive may carry anything ending in
+/// `.gcode`.
+QString locateGcodeEntry(mz_zip_archive& archive)
+{
+    const mz_uint count = mz_zip_reader_get_num_files(&archive);
+    for (mz_uint index = 0; index < count; ++index) {
+        mz_zip_archive_file_stat stat{};
+        if (!mz_zip_reader_file_stat(&archive, index, &stat))
+            continue;
+        const QString name = QString::fromUtf8(stat.m_filename);
+        if (name.endsWith(QLatin1String(".gcode"), Qt::CaseInsensitive))
+            return name;
+    }
+    return {};
+}
+
+} // namespace
+
+bool isPreSlicedFile(const QString& path)
+{
+    if (path.endsWith(QLatin1String(".gcode"), Qt::CaseInsensitive))
+        return QFileInfo(path).isFile();
+    if (!path.endsWith(QLatin1String(".3mf"), Qt::CaseInsensitive))
+        return false;
+
+    mz_zip_archive archive{};
+    if (!mz_zip_reader_init_file(&archive, path.toUtf8().constData(), 0))
+        return false;
+    const bool hasModel =
+        mz_zip_reader_locate_file(&archive, kScene, nullptr, 0) >= 0;
+    const bool hasGcode = !locateGcodeEntry(archive).isEmpty();
+    mz_zip_reader_end(&archive);
+    return hasGcode && !hasModel;
+}
+
+bool extractPreSlicedGcode(const QString& path, const QString& outPath)
+{
+    if (path.endsWith(QLatin1String(".gcode"), Qt::CaseInsensitive))
+        return QFile::copy(path, outPath);
+
+    mz_zip_archive archive{};
+    if (!mz_zip_reader_init_file(&archive, path.toUtf8().constData(), 0))
+        return false;
+    const QByteArray gcode = readZipEntry(path, locateGcodeEntry(archive).toUtf8().constData());
+    mz_zip_reader_end(&archive);
+    if (gcode.isEmpty())
+        return false;
+
+    QFile out(outPath);
+    if (!out.open(QIODevice::WriteOnly))
+        return false;
+    return out.write(gcode) == gcode.size();
 }
 
 }

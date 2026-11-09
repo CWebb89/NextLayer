@@ -132,6 +132,13 @@ QString SliceController::gcodePath() const
     return m_gcodePath;
 }
 
+QString SliceController::scratchPath(const QString& name) const
+{
+    if (!m_tempDir || !m_tempDir->isValid())
+        return {};
+    return m_tempDir->filePath(name);
+}
+
 double SliceController::elapsedMs() const
 {
     return m_elapsedMs;

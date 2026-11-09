@@ -1061,12 +1061,28 @@ QString PlateDocument::importWildcards() const
     return patterns.join(QLatin1Char(' '));
 }
 
+bool PlateDocument::isPreSlicedFile(const QString& path) const
+{
+    return next_layer::isPreSlicedFile(toLocalPath(path));
+}
+
+bool PlateDocument::extractPreSlicedGcode(const QString& path, const QString& outPath) const
+{
+    return next_layer::extractPreSlicedGcode(toLocalPath(path), outPath);
+}
+
 int PlateDocument::importObject(const QString& path, const QString& label, bool placeOnBed)
 {
     if (refuseOnLockedPlate())
         return -1;
     const QString local = toLocalPath(path);
 
+    if (next_layer::isPreSlicedFile(local)) {
+        fail(QStringLiteral("%1 is already sliced, so there is nothing here to slice again -- "
+                            "open it in the toolpath preview to look at it")
+                 .arg(QFileInfo(local).fileName()));
+        return -1;
+    }
     // Everything the engine can read arrives through its own reader, which knows
     // STL, OBJ, 3MF, STEP and SVG and returns a scene rather than one mesh. A
     // single-mesh file keeps the placement behaviour this app has always had

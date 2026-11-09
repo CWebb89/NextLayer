@@ -471,7 +471,16 @@ Window {
             setupFlow.reopen()
             return 0
         }
-        const added = session.addModels(paths)
+        const models = []
+        for (let i = 0; i < paths.length; ++i) {
+            if (plateDocument.isPreSlicedFile(paths[i]))
+                root.openPreSliced(paths[i])
+            else
+                models.push(paths[i])
+        }
+        if (models.length === 0)
+            return 0
+        const added = session.addModels(models)
         if (added > 0) {
             root.mode = root.modelMode
             // A model that lands somewhere the camera is not looking is a model the
@@ -485,8 +494,30 @@ Window {
     }
 
     function openNewModel(path) {
+        if (plateDocument.isPreSlicedFile(path)) {
+            root.openPreSliced(path)
+            return
+        }
         if (session.open(path))
             root.mode = root.modelMode
+    }
+
+    /// A print somebody already sliced — from a download, or one of this app's own
+    /// files — is not something that can be sliced again: what it holds is
+    /// toolpaths, so it opens in the preview that reads them.
+    function openPreSliced(path) {
+        const extracted = sliceController.scratchPath("pre-sliced.gcode")
+        if (extracted.length === 0 || !plateDocument.extractPreSlicedGcode(path, extracted)) {
+            root.setStatus("that file holds no G-code this app can read")
+            return
+        }
+        if (toolpath.load(extracted)) {
+            toolpath.setLayer(toolpath.layerCount - 1)
+            root.mode = root.previewMode
+            root.setStatus("already sliced — showing its toolpaths, not a model to slice")
+        } else {
+            root.setStatus("the G-code in that file could not be read")
+        }
     }
 
     function moveObjectTo(centreX, centreY) {

@@ -91,6 +91,22 @@ open(sys.argv[6], 'a').write('\n')
 
 rm -rf $stage
 
+# Checksums for everything in dist/, rewritten rather than appended: the file a
+# download page links has to describe what is in the directory now, and it was
+# left at the previous release's two lines because nothing regenerated it.
+set -l sums $dist/SHA256SUMS.txt
+set -l artefacts (ls $dist/next-layer-$tag.tar.gz $dist/NextLayer-$tag-*.AppImage 2>/dev/null)
+if test (count $artefacts) -gt 0
+    cd $root
+    for artefact in $artefacts
+        printf '%s  %s\n' (sha256sum $artefact | string split ' ')[1] $artefact
+    end > $sums
+    echo "     checksums $sums"
+end
+if not test -f $dist/NextLayer-$tag-x86_64.AppImage
+    echo "     (no AppImage for $tag yet -- tools/package appimage $tag, then run this again)"
+end
+
 echo "built $archive"
 echo "     $size bytes, sha256 $sha"
 echo "     manifest $dist/update.json"

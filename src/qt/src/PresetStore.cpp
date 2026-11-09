@@ -1270,15 +1270,18 @@ QString PresetStore::createPrinter(const QString& name, double bedWidth, double 
 
 QVariantMap PresetStore::importSlicerPresets(const QString& directory)
 {
+    return finishImport(next_layer::presetimport::importPresets(directory, *m_settings, true));
+}
+
+QVariantMap PresetStore::importSlicerPresetFile(const QString& path)
+{
+    return finishImport(next_layer::presetimport::importPresetFile(path, *m_settings, true));
+}
+
+QVariantMap PresetStore::finishImport(const next_layer::presetimport::Report& report)
+{
     QVariantMap result;
     result.insert(QStringLiteral("ok"), false);
-    if (m_settings == nullptr) {
-        result.insert(QStringLiteral("error"), QStringLiteral("No settings to import into"));
-        return result;
-    }
-
-    const next_layer::presetimport::Report report =
-        next_layer::presetimport::importPresets(directory, *m_settings, true);
     m_settings->clearModified();
 
     result.insert(QStringLiteral("error"), report.error);
@@ -1290,6 +1293,7 @@ QVariantMap PresetStore::importSlicerPresets(const QString& directory)
     result.insert(QStringLiteral("elsewhere"), report.elsewhere);
     result.insert(QStringLiteral("dropped"), report.droppedKeys);
     result.insert(QStringLiteral("templates"), report.droppedTemplates);
+    result.insert(QStringLiteral("notes"), report.notes);
     result.insert(QStringLiteral("count"), report.count());
     result.insert(QStringLiteral("firstPrinter"),
                   report.printers.isEmpty() ? QString() : report.printers.first());
@@ -1327,30 +1331,13 @@ QVariantMap PresetStore::importSlicerPresets(const QString& directory)
 
 QVariantList PresetStore::slicerSources() const
 {
-    // Qt 6 hands back a URL for the config location, not a path.
-    const QUrl configUrl(QStandardPaths::writableLocation(QStandardPaths::ConfigLocation));
-    const QString config = configUrl.isLocalFile() ? configUrl.toLocalFile()
-                                                   : configUrl.toString();
-    const struct
-    {
-        const char* label;
-        const char* directory;
-    } candidates[] = {
-        {"OrcaSlicer", "/OrcaSlicer"},
-        {"PrusaSlicer", "/PrusaSlicer"},
-        {"SuperSlicer", "/SuperSlicer"},
-        {"BambuStudio", "/BambuStudio"},
-        {"Slic3r", "/Slic3r"},
-    };
-
     QVariantList sources;
-    for (const auto& candidate : candidates) {
-        const QString path = config + QLatin1String(candidate.directory);
-        if (!QFileInfo(path).isDir())
+    for (const auto& candidate : next_layer::presetimport::slicerCandidates()) {
+        if (!QFileInfo(candidate.second).isDir())
             continue;
         QVariantMap source;
-        source.insert(QStringLiteral("name"), QString::fromLatin1(candidate.label));
-        source.insert(QStringLiteral("path"), path);
+        source.insert(QStringLiteral("name"), candidate.first);
+        source.insert(QStringLiteral("path"), candidate.second);
         sources.append(source);
     }
     return sources;

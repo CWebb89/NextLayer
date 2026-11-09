@@ -4,6 +4,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtQuick.Layouts
 import QtCore
 import "../theme"
@@ -318,6 +319,89 @@ Popup {
                             onSelected: (value) => root.units = value
                         }
                     }
+
+                    // Presets from another slicer: the setup flow offers the installs
+                    // it finds, but a person who skipped setup, or who was handed a
+                    // single preset file, has no way back there. Both ways in live
+                    // here, and the result is reported rather than assumed.
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Metrics.sm
+
+                        SectionHeader {
+                            text: "Presets from another slicer"
+                            Layout.fillWidth: true
+                        }
+
+                        Button {
+                            text: "From an install…"
+                            onClicked: importFolderDialog.open()
+                        }
+
+                        Button {
+                            text: "From a file…"
+                            onClicked: importFileDialog.open()
+                        }
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Reads Orca, Bambu, Prusa or SuperSlicer presets -- a whole "
+                              + "configuration directory, or one .json/.ini file -- and writes "
+                              + "what this engine can express into your own bundle under their names."
+                        wrapMode: Text.WordWrap
+                        font.family: Type.family
+                        font.pixelSize: Type.sizeCaption
+                        color: Colors.textMuted
+                    }
+
+                    Text {
+                        id: importStatus
+                        Layout.fillWidth: true
+                        visible: text.length > 0
+                        wrapMode: Text.WordWrap
+                        font.family: Type.family
+                        font.pixelSize: Type.sizeSmall
+                        color: Colors.textSecondary
+
+                        function report(result) {
+                            if (!result.ok) {
+                                text = "import failed: " + result.error
+                                return
+                            }
+                            if (result.count === 0) {
+                                text = "nothing in there this engine can express"
+                                return
+                            }
+                            text = "took " + result.printers.length + " printers, "
+                                   + result.prints.length + " processes and "
+                                   + result.filaments.length + " filaments"
+                                   + (result.refused.length > 0
+                                      ? "; left out " + result.refused.slice(0, 3).join("; ")
+                                      : "")
+                                   + (result.restartNeeded
+                                      ? "; the machine appears after a restart" : "")
+                        }
+                    }
+
+                    FolderDialog {
+                        id: importFolderDialog
+                        title: "The other slicer's configuration folder"
+                        onAccepted: importStatus.report(
+                                        presetStore.importSlicerPresets(
+                                            selectedFolder.toString().replace("file://", "")))
+                    }
+
+                    FileDialog {
+                        id: importFileDialog
+                        title: "A preset file from another slicer"
+                        nameFilters: ["Preset (*.json *.ini)", "All files (*)"]
+                        onAccepted: importStatus.report(
+                                        presetStore.importSlicerPresetFile(
+                                            selectedFile.toString().replace("file://", "")))
+                    }
+
+                    Divider { Layout.fillWidth: true }
 
                     // Updates: the app checks a static channel -- one JSON manifest naming one
                     // artifact -- and installs by rename, so a running binary is never written

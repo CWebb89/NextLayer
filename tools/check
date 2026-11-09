@@ -892,6 +892,58 @@ else
     __ok "preset import: fixture -> '$import_printer' / '$import_print' / '$import_filament' sliced $import_layers layers, $import_arcs arc moves, $import_support support lines, tree hybrid branches"
 end
 
+# Single preset file gate: a preset someone shares is one file, not a directory,
+# and the slicer it came from may not be installed at all -- which is why the
+# file's own values have to be enough. The fixture is a PrusaSlicer INI with a
+# Klipper machine, the combination the engine refuses outright unless the import
+# resolves the machine-limits conflict the same way that slicer does.
+set -l file_home (mktemp -d /tmp/nl-check-file-XXXXXX)
+set -l file_out /tmp/nl-check-file.out
+env XDG_DATA_HOME=$file_home $bin $model --import-slicer $root/oracle/import-fixture-file/gate.ini >$file_out 2>&1
+set -l file_rc $status
+set -l file_printer (string match -r '^  printers:  (.+)$' -- (cat $file_out) | tail -n 1)
+set -l file_print (string match -r '^  prints:    (.+)$' -- (cat $file_out) | tail -n 1)
+set -l file_filament (string match -r '^  filaments: (.+)$' -- (cat $file_out) | tail -n 1)
+set -l file_cfg /tmp/nl-check-file.json
+set -l file_gcode /tmp/nl-check-file.gcode
+set -l file_bed 0
+rm -f $file_cfg $file_gcode
+if test $file_rc -eq 0 -a -n "$file_printer" -a -n "$file_print" -a -n "$file_filament"
+    set -l file_listed (env XDG_DATA_HOME=$file_home $bin $model --dump-presets 2>/dev/null | string match -r "^$file_printer .*" | head -n 1 | string sub -l 42 | string trim)
+    if test -z "$file_listed"
+        set file_listed $file_printer
+    end
+    env XDG_DATA_HOME=$file_home $bin $model --printer $file_listed --process $file_print --filament $file_filament --dump-config $file_cfg >/tmp/nl-check-file-resolve.out 2>&1
+    if test -f $file_cfg
+        # Overhangs, so the imported supports have something to hold up: the file
+        # asks for supports everywhere and a cube would pass with them switched off.
+        env XDG_DATA_HOME=$file_home $bin $root/oracle/models/bridge_30.stl --slice $file_cfg,$file_gcode >/dev/null 2>&1
+    end
+end
+set -l file_layers 0
+set -l file_support 0
+if test -f $file_cfg
+    set file_bed (string match -r 'bed=([0-9]+) pts' -- (cat /tmp/nl-check-file-resolve.out) | tail -n 1)
+end
+if test -f $file_gcode
+    set file_layers (grep -c ';LAYER_CHANGE' $file_gcode)
+    set file_support (grep -c ';TYPE:Support material' $file_gcode)
+end
+rm -rf $file_home
+if test $file_rc -ne 0
+    __bad "preset file import: importing failed ("(string match -r 'import: .*' -- (cat $file_out) | head -n 1)")"
+else if test -z "$file_printer" -o -z "$file_print" -o -z "$file_filament"
+    __bad "preset file import: the fixture produced printer '$file_printer', print '$file_print', filament '$file_filament'"
+else if test "$file_bed" != "4"
+    __bad "preset file import: the imported machine has $file_bed bed point(s), not the four its file states"
+else if test $file_layers -lt 20
+    __bad "preset file import: the imported triple sliced to $file_layers layer(s) -- a Klipper machine refused because machine limits cannot be emitted writes no file at all"
+else if test $file_support -lt 1
+    __bad "preset file import: the file asks for supports everywhere and the G-code has none"
+else
+    __ok "preset file import: one .ini -> '$file_printer' / '$file_print' / '$file_filament' sliced $file_layers layers, $file_support support lines, 4 bed points"
+end
+
 # Multi-tool gate: a tool changer has to resolve one material per extruder and a
 # painted facet has to reach the engine as that tool. The paint sat in
 # mm_segmentation_facets and the config collapsed every filament entry back to a
