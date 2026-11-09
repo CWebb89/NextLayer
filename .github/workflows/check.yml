@@ -1,5 +1,15 @@
 name: check
 
+# Only the static gates can run here. Everything else needs the built binary, and
+# building one means compiling the slicing engine and its dependencies -- hours and
+# tens of gigabytes on a hosted runner -- so the real gate set is `tools/check` on a
+# machine that already has a build tree. This job exists to catch a broken fish
+# script or a QML file that stops parsing before it reaches a push.
+#
+# The QML lint in particular cannot be measured here: the app's own types come from
+# the compiled module, and without it every property reads as unknown. That gate says
+# so and skips rather than reporting a number that means nothing.
+
 on:
   push:
     branches: [main]

@@ -27,8 +27,15 @@ set -l baseline $root/tools/qmllint-baseline
 # catalog publishes each machine's pair in defaults.json.
 set -l catalog_vendor Anycubic
 set -l catalog_machine 'Anycubic Kobra 2 0.4'
-set -l catalog_pair (python3 -c "import json,sys; v=json.load(open(sys.argv[1]))[sys.argv[2]]; print(v['process']); print(v['filament'])" \
-    $root/upstream/resources/presets/vendor-catalog/$catalog_vendor/defaults.json $catalog_machine)
+# `upstream/` is gitignored, so a checkout without the engine has no catalog at all:
+# the pair is read when the file is there, and the gates that need it are the ones
+# already skipped for a missing binary.
+set -l catalog_pair
+set -l catalog_defaults $root/upstream/resources/presets/vendor-catalog/$catalog_vendor/defaults.json
+if test -f $catalog_defaults
+    set catalog_pair (python3 -c "import json,sys; v=json.load(open(sys.argv[1]))[sys.argv[2]]; print(v['process']); print(v['filament'])" \
+        $catalog_defaults $catalog_machine)
+end
 set -l catalog_process $catalog_pair[1]
 set -l catalog_filament $catalog_pair[2]
 
@@ -150,6 +157,17 @@ set -l qml_import (qtpaths6 --query QT_INSTALL_QML 2>/dev/null)
 set -l lint (qmllint --unqualified disable -I $qml_import $qmlfiles 2>&1)
 popd >/dev/null
 set -l warnings (string match --entire --regex '^Warning: ' -- $lint)
+
+# qmllint only knows what this app's own types are when the NextLayer QML module can
+# be imported, and that module is a build product -- the C++ registers the types. A
+# machine without a build or an install (CI) gets "failed to import" instead, and
+# then every property in every file reads as unknown: tens of thousands of warnings
+# that say nothing about the code. That is a measurement this gate cannot make, so it
+# says so rather than failing on the number.
+if string match -q -- '*Failed to import NextLayer*' $lint; and test (count $warnings) -gt 500
+    __skip 'qmllint (the NextLayer QML module cannot be imported here -- no build or install of the app, so every type would read as unknown)'
+    set warnings
+end
 
 set -l keys
 for line in $warnings
