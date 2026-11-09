@@ -17,6 +17,7 @@ proven and what the print itself got wrong.
 | Printer | Firmware | Tool count | Slicer version | Tester | Date | Result |
 |---|---|---|---|---|---|---|
 | Voron 2.4 R2 350 | Klipper + Moonraker | 1 | 0.1.0 | Curtis | 2026-11-06 | printed and measured, sliced on the default profile (see below) |
+| Voron 2.4 R2 350 | Klipper + Moonraker | 1 | 0.1.0 | Curtis | 2026-11-08 | 3DBenchy, printed and judged by eye against Orca's own print of the same model: no visible difference |
 
 A row goes in here only after a print finished and was looked at. A print that
 failed goes in too, with what failed — a table of successes alone is a table of
@@ -105,3 +106,27 @@ $B oracle/models/cube_20.stl --slice /tmp/v.json,dist/prints/voron-cube20.gcode
 The next print should be the same cube with these presets; until that is recorded
 here, the "wrong settings" column above stands for the presets next-layer
 ships by default.
+
+## 2026-11-08 — 3DBenchy, Voron 2.4 350
+
+The first print of a model with the kind of geometry that exposes a slicer: an
+overhanging bow, a smooth hull, a small cabin, lettering on the stern.
+
+| | |
+|---|---|
+| Printer | Voron 2.4 R2 350 mm, Klipper + Moonraker |
+| Model | 3DBenchy, downloaded by Curtis, opened from the Downloads directory |
+| Sliced in | next-layer, `0.1.0` |
+| Result | Printed to completion. Curtis' verdict, in his own words: "looks very good and just as good as if I printed it on orca". |
+
+What this entry does **not** have, and the cube entry does: the G-code file and
+its hash, plus the Moonraker job record. The printers were unreachable when this
+was written, so those fields are missing rather than checked. It is still the
+first print of a real model, and the first comparison against the same model
+sliced by OrcaSlicer on the same machine, so it is recorded as that and no more.
+
+What it establishes: overhangs, bridges, retraction and cooling on a shape that
+shows them, from a project this app opened and sliced. What it does not establish:
+dimensional accuracy (nothing was measured with calipers), a tool change (one
+tool), or any of the file-format round trips this repository now knows are broken.
+
