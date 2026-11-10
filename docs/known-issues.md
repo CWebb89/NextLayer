@@ -120,6 +120,17 @@ complete inventory, this is the part you need before you start a print.
   colour schemes.
 - Printer selection is one flat searchable list, not a vendor → machine →
   variant tree.
+- **Measure only measures on a model.** Clicking twice on the bed places no
+  point and reports nothing: the tool needs a mesh hit, where OrcaSlicer measures
+  between bed points as well. Found in the 2026-11-10 audit
+  (`docs/audit-2026-11-10.md`), not yet fixed.
+- **The object list and per-object settings stay open over the preview**, covering
+  the toolpath you switched there to look at.
+- The camera view keys `1`–`7` only work while the viewport itself has focus, so
+  they stop working after clicking any button. `F`, `R` and `O` work everywhere.
+- There is no recent-files list in the File menu, and no on-screen card for the
+  selected object's size, volume and triangle count (right-click ▸ Statistics…
+  has the numbers).
 
 ## Packaging
 

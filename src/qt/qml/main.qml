@@ -185,6 +185,10 @@ Window {
     readonly property var objectActions: [
         { id: "open", icon: "folder_open", label: "Add model", hint: "Add a model to this plate (Ctrl+O)",
           enabled: true },
+        { id: "undo", icon: "undo", label: "Undo", hint: "Undo the last change (Ctrl+Z)",
+          enabled: plateDocument.canUndo },
+        { id: "redo", icon: "redo", label: "Redo", hint: "Redo the last undone change (Ctrl+Shift+Z)",
+          enabled: plateDocument.canRedo },
         { id: "objects", icon: "list", label: "Object list", hint: "Show the objects on this plate (Ctrl+L)",
           enabled: root.hasModel },
         { id: "delete", icon: "delete", label: "Delete", hint: "Delete the selected object",
@@ -341,15 +345,11 @@ Window {
         case "shortcuts": shortcutMap.openWithCurrent(); break
         case "setup": setupFlow.reopen(); break
         case "undo": {
-            const label = plateDocument.undoLabel
-            plateDocument.undo()
-            root.setStatus(label.length > 0 ? "undid " + label.toLowerCase() : "nothing to undo")
+            root.runAction("undo")
             break
         }
         case "redo": {
-            const label = plateDocument.redoLabel
-            plateDocument.redo()
-            root.setStatus(label.length > 0 ? "redid " + label.toLowerCase() : "nothing to redo")
+            root.runAction("redo")
             break
         }
         case "delete": plateDocument.removeSelection(); break
@@ -687,6 +687,18 @@ Window {
         }
         switch (id) {
         case "open": openDialog.open(); break
+        case "undo": {
+            const label = plateDocument.undoLabel
+            plateDocument.undo()
+            root.setStatus(label.length > 0 ? "undid " + label.toLowerCase() : "nothing to undo")
+            break
+        }
+        case "redo": {
+            const label = plateDocument.redoLabel
+            plateDocument.redo()
+            root.setStatus(label.length > 0 ? "redid " + label.toLowerCase() : "nothing to redo")
+            break
+        }
         case "objects": root.objectListVisible = !root.objectListVisible; break
         case "delete": plateDocument.removeSelection(); break
         case "duplicate": plateDocument.duplicateSelection(); break
@@ -790,10 +802,32 @@ Window {
         root.setStatus("added a " + type + " volume to " + info.name)
     }
 
+    // The transform panel edits the selected object, so it has to show that
+    // object's numbers. It used to open on 125/110 -- the centre of a Prusa bed,
+    // left over as property defaults -- whatever the object's real position was.
+    function seedTransformPanel() {
+        const id = plateDocument.selectedId
+        if (id <= 0)
+            return
+        const info = plateDocument.objectInfo(id)
+        if (!info || info.x === undefined)
+            return
+        transformPanel.moveX = info.x
+        transformPanel.moveY = info.y
+        transformPanel.rotateX = info.rotation_x
+        transformPanel.rotateY = info.rotation_y
+        transformPanel.rotateZ = info.rotation_z
+        transformPanel.scaleFactor = info.scale_x
+        transformPanel.cutZ = Math.max(0.1, info.height / 2)
+    }
+
     function runTool(id) {
         if (id === "move" || id === "rotate" || id === "scale" || id === "cut"
                 || id === "duplicate") {
-            root.activeTool = root.activeTool === id ? "" : id
+            const arming = root.activeTool !== id
+            root.activeTool = arming ? id : ""
+            if (arming)
+                root.seedTransformPanel()
             return
         }
         if (id === "face") {
@@ -1262,7 +1296,6 @@ Window {
                 root.addMenuVisible = !root.addMenuVisible
             }
             onSliceRequested: footer.startSlice()
-            onSliceAllRequested: footer.startSliceAll()
         }
 
         ToolRail {
@@ -1596,7 +1629,13 @@ Window {
             root.title = "NextLayer · " + session.displayName()
             // Only a different model moves the camera. Re-framing on every document
             // change is what made a plain move or delete look like a zoom.
-            if (session.path !== root.lastModelPath) {
+            //
+            // An empty plate reports no path, so deleting the last object used to
+            // reset the remembered path and the undo that brought it back counted as
+            // a new model: the camera then zoomed into the part at the closest zoom.
+            // Neither an empty plate nor a returning one is a new model.
+            if (session.path.length > 0 && session.path !== root.lastModelPath) {
+                console.log("PROBE frame path=" + session.path + " last=" + root.lastModelPath)
                 root.lastModelPath = session.path
                 frameTimer.restart()
             }
@@ -1778,9 +1817,10 @@ Window {
         anchors.fill: parent
         visible: root.objectMenuVisible
         z: 112
-        menuWidth: 300
+        menuWidth: 400
         entries: root.objectMenuEntries
-        anchorX: Math.min(root.objectMenuX, root.width - 320)
+        anchorX: Math.max(Metrics.xs,
+                          Math.min(root.objectMenuX, root.width - menuWidth - Metrics.xs))
         anchorY: Math.min(root.objectMenuY, root.height - 420)
         onTriggered: (id) => {
             const objectId = root.objectMenuObjectId
@@ -2409,6 +2449,11 @@ Window {
     }
 
     Component.onCompleted: {
+        // Whatever the command line opened was framed by the document, not by this
+        // handler: the first model change this window sees must therefore not frame
+        // again. Without this, the first change -- an undo, a delete -- counted as a
+        // new model and the camera zoomed into the part.
+        root.lastModelPath = session.path
         shell.forceActiveFocus()
         preferencesDialog.load()
         root.applyPreferences()

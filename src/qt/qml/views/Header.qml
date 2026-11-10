@@ -20,7 +20,6 @@ Item {
 
     signal modeRequested(string mode)
     signal fileMenuRequested(real x, real y)
-    signal sideToggleRequested()
     signal savePresetRequested()
 
     readonly property int groupGap: Metrics.lg

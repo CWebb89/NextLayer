@@ -339,7 +339,13 @@ QVariantMap PlateDocument::objectInfo(int id) const
     info.insert(QStringLiteral("y"), position.y());
     info.insert(QStringLiteral("z"), position.z());
     info.insert(QStringLiteral("rotation"), rotation.z());
+    info.insert(QStringLiteral("rotation_x"), rotation.x());
+    info.insert(QStringLiteral("rotation_y"), rotation.y());
+    info.insert(QStringLiteral("rotation_z"), rotation.z());
     info.insert(QStringLiteral("scale"), scale.x());
+    info.insert(QStringLiteral("scale_x"), scale.x());
+    info.insert(QStringLiteral("scale_y"), scale.y());
+    info.insert(QStringLiteral("scale_z"), scale.z());
     info.insert(QStringLiteral("width"), high.x() - low.x());
     info.insert(QStringLiteral("depth"), high.y() - low.y());
     info.insert(QStringLiteral("height"), high.z() - low.z());

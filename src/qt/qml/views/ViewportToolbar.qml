@@ -38,7 +38,6 @@ Item {
     /// a corner of the window.
     signal addRequested(real x, real y)
     signal sliceRequested()
-    signal sliceAllRequested()
     /// The slice button's chevron: the same two actions plus the whole project.
     signal sliceMenuRequested(real x, real y)
     /// The export button's own menu, whose entries live in the window: a menu at the
