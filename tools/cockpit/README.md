@@ -39,6 +39,7 @@ app replaces its window during start-up and a fullscreen toggle remaps it.
 | --- | --- |
 | `start <app> [--command BIN] [--model FILE] [--workspace N] [--no-fullscreen]` | launch alone on an unused workspace |
 | `status` / `windows` / `focus` / `stop` | session management |
+| `log [--lines N]` | what the app wrote to stdout and stderr since it started |
 | `shot <out.png>` | capture the workspace |
 | `ocr` / `find-text TEXT` / `click-text TEXT [--index N]` | read the screen and click a label |
 | `move X Y [--hover]`, `click X Y [--double] [--button]` | pointer; `--hover` also refreshes hover state |
@@ -63,6 +64,11 @@ app replaces its window during start-up and a fullscreen toggle remaps it.
   notice; the two steps cancel out.
 - Everything runs through the compositor, so it is the same input path a person
   would take. There is no test-only hook in either application.
+- `start` redirects the app's output to `/tmp/cockpit/<app>.log` (hyprctl throws it
+  away otherwise) and sets `QT_ASSUME_STDERR_HAS_CONSOLE=1` in the command. Without
+  that variable Qt drops every message -- warnings and QML `console.log` alike --
+  whenever stderr is not a terminal, which a redirected file never is, so a probe
+  written into QML printed nothing and looked like an engine bug.
 - The session file survives between commands, so the app keeps running while
   other work happens; `cockpit stop` closes it.
 

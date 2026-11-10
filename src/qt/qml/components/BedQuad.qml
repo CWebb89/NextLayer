@@ -43,8 +43,12 @@ Model {
         alphaMode: PrincipledMaterial.Blend
         cullMode: Material.NoCulling
         baseColorMap: Texture {
+            // No flip on either axis: the built-in rectangle's UVs already run with the
+            // item's own axes, u to printer +x and v to printer +y, so the plate's name
+            // reads left to right with the bed seen from the front. A flip on one axis
+            // is a mirror and on both a half turn -- invisible on a symmetric glyph,
+            // which is how the name stayed upside down.
             sourceItem: bedQuad.sourceItem
-            flipV: true
         }
     }
 }

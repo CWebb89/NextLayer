@@ -96,6 +96,9 @@ def spawn(command: str) -> None:
     escaped = command.replace("\\", "\\\\").replace('"', '\\"')
     hypr("dispatch", f'hl.dsp.exec_cmd("{escaped}")')
 
+def log_path(app: str) -> str:
+    return os.path.join(STATE_DIR, f"{app}.log")
+
 
 # ------------------------------------------------------------------ uinput ---
 
@@ -395,6 +398,17 @@ def cmd_start(args: argparse.Namespace) -> int:
         command = f"{command} {' '.join(shlex.quote(value) for value in args.arg)}"
     if args.model:
         command = f"{command} {shlex.quote(os.path.abspath(args.model))}"
+
+    # hyprctl dispatches the command to the compositor, so the app's stdout and
+    # stderr go nowhere a caller can read. Redirecting them here is the only reason
+    # `cockpit log` can exist. QT_ASSUME_STDERR_HAS_CONSOLE is what keeps it non-empty:
+    # Qt drops every message -- warnings and QML console.log alike -- when stderr is
+    # not a terminal, and a redirected file is not one.
+    os.makedirs(STATE_DIR, exist_ok=True)
+    log = log_path(args.app)
+    with open(log, "w", encoding="utf-8"):
+        pass
+    command = f"QT_ASSUME_STDERR_HAS_CONSOLE=1 {command} >{shlex.quote(log)} 2>&1"
     spawn(command)
 
     address = ""
@@ -421,7 +435,8 @@ def cmd_start(args: argparse.Namespace) -> int:
     time.sleep(0.5)
 
     state = {"app": args.app, "ws": workspace, "return_ws": here, "address": address,
-             "class": window_class, "command": command, "started": time.time()}
+             "class": window_class, "command": command, "log": log,
+             "started": time.time()}
     save_state(args.app, state)
     window = window_of(state)
 
@@ -533,6 +548,19 @@ def cmd_status_args(_: argparse.Namespace) -> int:
               f"address {state.get('address')}")
     return 0
 
+
+def cmd_log(args: argparse.Namespace) -> int:
+    state = load_state(args.app)
+    path = state.get("log") or log_path(args.app)
+    if not os.path.exists(path):
+        print(f"cockpit: no output captured for {args.app} at {path}", file=sys.stderr)
+        return 1
+    with open(path, encoding="utf-8", errors="replace") as handle:
+        lines = handle.readlines()
+    if args.lines > 0:
+        lines = lines[-args.lines:]
+    sys.stdout.write("".join(lines))
+    return 0
 
 def cmd_windows(args: argparse.Namespace) -> int:
     state = load_state(args.app)
@@ -927,6 +955,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     status = subparsers.add_parser("status", help="list sessions")
     status.set_defaults(func=cmd_status_args)
+
+    log = subparsers.add_parser("log", help="print what the app wrote to stdout and stderr")
+    log.add_argument("--lines", type=int, default=100,
+                     help="how many trailing lines to print (0 for all)")
+    log.set_defaults(func=cmd_log)
 
     windows = subparsers.add_parser("windows", help="list windows on the session workspace")
     windows.set_defaults(func=cmd_windows)

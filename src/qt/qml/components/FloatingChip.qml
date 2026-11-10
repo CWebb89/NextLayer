@@ -17,6 +17,8 @@ Item {
     property string hint: ""
 
     signal restoreRequested()
+    /// Where the chip ended up, so the window can remember it across launches.
+    signal moved(real x, real y)
 
     implicitWidth: Metrics.rowHeight + Metrics.sm * 2
     implicitHeight: implicitWidth
@@ -96,6 +98,8 @@ Item {
             const point = scenePoint(event)
             if (Math.abs(point.x - pressSceneX) < 4 && Math.abs(point.y - pressSceneY) < 4)
                 root.restoreRequested()
+            else
+                root.moved(root.x, root.y)
         }
     }
 

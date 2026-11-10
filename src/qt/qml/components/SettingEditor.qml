@@ -63,6 +63,13 @@ Item {
                                     : root.item.units !== undefined && root.item.units !== null
                                       && root.item.units.length > 0 ? String(root.item.units[0]) : ""
 
+    /// The absolute side of a unit-or-percentage setting, in the engine's own words:
+    /// mm/s for a speed, mm for a width. A percent toggle labelled "mm" on a speed
+    /// field says the wrong thing about what the number means.
+    readonly property string absoluteUnits: root.item.units !== undefined && root.item.units !== null
+                                            && root.item.units.length > 0
+                                            ? String(root.item.units[0]) : "mm"
+
     /// A millimetre quantity. Everything stored is millimetres; the field shows
     /// the user's system and converts back on write, so no value on disk ever
     /// depends on the preference.
@@ -284,18 +291,24 @@ Item {
             value: root.numericValue(root.value)
             from: root.isPercentValue ? 0 : root.lower
             to: root.isPercentValue ? 100 : root.upper
-            units: root.isPercentValue ? "%" : Units.lengthSuffix
-            decimals: root.isPercentValue ? root.decimals : Units.lengthDecimals
+            units: root.isPercentValue ? "%" : root.absoluteUnits
+            decimals: root.isPercentValue || root.absoluteUnits !== "mm"
+                      ? root.decimals : Units.lengthDecimals
             onEdited: (value) => root.writeFloatOrPercent(value)
         }
 
         Button {
             id: unitButton
-            width: Metrics.controlHeight * 1.6
+            width: Metrics.controlHeight * 1.9
             height: Metrics.controlHeight
-            text: root.isPercentValue ? "%" : "mm"
-            hint: "Switch between a percentage and an absolute value"
-            onClicked: root.write({ value: root.numericValue(root.value), is_percent: !root.isPercentValue })
+            primary: root.isPercentValue
+            text: root.isPercentValue ? "%" : root.absoluteUnits
+            hint: "Switch between " + root.absoluteUnits + " and %: the number is kept as typed"
+            onClicked: {
+                const raw = root.value !== null && typeof root.value === "object"
+                          ? Number(root.value.value) : Number(root.value)
+                root.write({ value: raw, is_percent: !root.isPercentValue })
+            }
         }
     }
 

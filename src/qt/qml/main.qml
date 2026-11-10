@@ -37,6 +37,19 @@ Window {
 
     readonly property bool hasModel: session.hasModel
 
+    /// The one selected object, out of the document's own list: the card in the
+    /// viewport shows its name, size and position, and there is nothing to show when
+    /// the selection is empty or several parts are selected at once.
+    readonly property var selectedObject: {
+        const objects = plateDocument.objects
+        const id = plateDocument.selectedId
+        for (let i = 0; i < objects.length; ++i) {
+            if (objects[i].id === id)
+                return objects[i]
+        }
+        return null
+    }
+
     // The version the binary was compiled with, so the header and About cannot
     // disagree with the build.
     readonly property string appVersion: typeof appVersionString !== "undefined"
@@ -473,6 +486,18 @@ Window {
         property string recentJson: "[]"
     }
 
+    /// Where the two stowed panels were parked. -1 means "never moved": the chip
+    /// falls back to the corner it is designed to start in, which stays right when
+    /// the window is resized or the panel width changes.
+    Settings {
+        id: chipSettings
+        category: "chips"
+        property real objectListX: -1
+        property real objectListY: -1
+        property real objectPanelX: -1
+        property real objectPanelY: -1
+    }
+
     readonly property var recentFiles: {
         try {
             const parsed = JSON.parse(homeSettings.recentJson)
@@ -489,6 +514,10 @@ Window {
     }
 
     function noteRecent(path, kind) {
+        // Scratch files are the app's own: a cut result, an unpacked 3MF, the plate
+        // the slicer wrote. Only what the person opened belongs in the list.
+        if (path.indexOf("/tmp/") === 0)
+            return
         const name = path.split("/").pop()
         const kept = root.recentFiles.filter(entry => entry.path !== path)
         kept.unshift({ path: path, name: name, kind: kind, when: new Date().toISOString() })
@@ -498,6 +527,11 @@ Window {
     function clearRecent() {
         homeSettings.recentJson = "[]"
         root.setStatus("recently opened cleared")
+    }
+
+    function forgetRecent(path) {
+        homeSettings.recentJson = JSON.stringify(root.recentFiles.filter(entry => entry.path !== path))
+        root.setStatus("forgot " + path.split("/").pop())
     }
 
     /// A card on the home screen: a project opens as a project, anything else is
@@ -678,6 +712,23 @@ Window {
 
     /// The object list and its chip are one control with two faces: showing either
     /// hides the other, so a keyboard toggle while the chip is up cannot leave both.
+    /// Switching screens leaves nothing floating over the new one: the object list is
+    /// a model-mode drawer, an armed tool edits what is on the plate, and a shape's
+    /// settings do not belong over the preview or the printer's own page.
+    function closeOverlays() {
+        root.showObjectList(false)
+        root.objectListChipVisible = false
+        root.objectPanelChipVisible = false
+        root.objectMenuVisible = false
+        root.addMenuVisible = false
+        root.fileMenuVisible = false
+        root.activeTool = ""
+        if (objectPanel.opened)
+            objectPanel.close()
+    }
+
+    onModeChanged: root.closeOverlays()
+
     function showObjectList(visible) {
         root.objectListVisible = visible
         if (visible)
@@ -1153,7 +1204,6 @@ Window {
             anchors.bottom: parent.bottom
             z: 8
             visible: root.mode === root.homeMode
-            version: root.appVersion
             recent: root.recentFiles
 
             onNewProjectRequested: {
@@ -1163,6 +1213,7 @@ Window {
             onOpenProjectRequested: openProjectDialog.open()
             onOpenModelRequested: openDialog.open()
             onRecentRequested: (path) => root.openRecent(path)
+            onForgetRequested: (path) => root.forgetRecent(path)
             onClearRecentRequested: root.clearRecent()
         }
 
@@ -1468,9 +1519,17 @@ Window {
             visible: root.objectListChipVisible
             icon: "list"
             hint: "Objects, collapsed — click to reopen, drag to move"
-            x: Math.max(0, viewport.x + viewport.width - width - Metrics.md)
-            y: viewportToolbar.y + viewportToolbar.height + Metrics.sm
+            x: chipSettings.objectListX >= 0
+               ? chipSettings.objectListX
+               : Math.max(0, viewport.x + viewport.width - width - Metrics.md)
+            y: chipSettings.objectListY >= 0
+               ? chipSettings.objectListY
+               : viewportToolbar.y + viewportToolbar.height + Metrics.sm
             onRestoreRequested: root.showObjectList(true)
+            onMoved: (x, y) => {
+                chipSettings.objectListX = x
+                chipSettings.objectListY = y
+            }
         }
 
         FloatingChip {
@@ -1479,14 +1538,36 @@ Window {
             visible: root.objectPanelChipVisible
             icon: "tune"
             hint: "This object's settings, collapsed — click to reopen, drag to move"
-            x: Math.max(0, viewport.x + viewport.width - width - Metrics.md
-                          - (root.objectListChipVisible ? objectListChip.width + Metrics.sm : 0))
-            y: viewportToolbar.y + viewportToolbar.height + Metrics.sm
+            x: chipSettings.objectPanelX >= 0
+               ? chipSettings.objectPanelX
+               : Math.max(0, viewport.x + viewport.width - width - Metrics.md
+                             - (root.objectListChipVisible ? objectListChip.width + Metrics.sm : 0))
+            y: chipSettings.objectPanelY >= 0
+               ? chipSettings.objectPanelY
+               : viewportToolbar.y + viewportToolbar.height + Metrics.sm
+            onMoved: (x, y) => {
+                chipSettings.objectPanelX = x
+                chipSettings.objectPanelY = y
+            }
             onRestoreRequested: {
                 root.objectPanelChipVisible = false
                 if (root.objectPanelChipObject > 0)
                     objectPanel.openFor(root.objectPanelChipObject)
             }
+        }
+
+        // What is selected, in the viewport's corner: the object list is the full
+        // answer and this is the answer without opening a drawer.
+        SelectionCard {
+            id: selectionCard
+            anchors.left: viewport.left
+            anchors.bottom: footer.top
+            anchors.leftMargin: Metrics.md
+            anchors.bottomMargin: Metrics.md
+            z: 5
+            object: root.selectedObject
+            selectedCount: plateDocument.selectedCount
+            visible: root.mode === root.modelMode && root.selectedObject !== null
         }
 
         TransformPanel {
@@ -1758,8 +1839,8 @@ Window {
             // a new model: the camera then zoomed into the part at the closest zoom.
             // Neither an empty plate nor a returning one is a new model.
             if (session.path.length > 0 && session.path !== root.lastModelPath) {
-                console.log("PROBE frame path=" + session.path + " last=" + root.lastModelPath)
                 root.lastModelPath = session.path
+                root.noteRecent(session.path, "model")
                 frameTimer.restart()
             }
         }
@@ -1869,6 +1950,22 @@ Window {
         // engine does not answer `in` for them, so ask for the values instead.
         return typeof item.cursorPosition !== "undefined"
                || typeof item.acceptableInput !== "undefined"
+    }
+
+    // The seven view presets are window shortcuts, not viewport ones: the viewport's
+    // own Keys handler needs focus, and once a button in a panel had it the digits
+    // went to the button and the camera never moved. Guarded by `editingText()`, so a
+    // digit typed into a field is still a value.
+    Instantiator {
+        model: ["iso", "top", "bottom", "front", "rear", "left", "right"]
+
+        delegate: Shortcut {
+            required property string modelData
+            required property int index
+            sequence: String(index + 1)
+            enabled: !root.editingText()
+            onActivated: viewport.setView(modelData)
+        }
     }
 
     Instantiator {
@@ -2584,6 +2681,11 @@ Window {
         // again. Without this, the first change -- an undo, a delete -- counted as a
         // new model and the camera zoomed into the part.
         root.lastModelPath = session.path
+        // A model named on the command line is opened before this window exists, so
+        // the document-changed handler that records it never runs for it. It is the
+        // first thing the person opened; it belongs at the top of the list.
+        if (session.path.length > 0)
+            root.noteRecent(session.path, "model")
         shell.forceActiveFocus()
         preferencesDialog.load()
         root.applyPreferences()
