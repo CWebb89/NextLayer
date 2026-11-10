@@ -7,15 +7,19 @@ import QtQuick.Controls
 import "../theme"
 import "../components"
 
-// The screen the app lands on: the machine, the three ways to start, and what was
-// open last. Modelled on the reference slicers' home pages, minus their account
-// column -- there is nothing to sign in to here, so the whole page is the artwork,
-// the three actions and the recent files. Nothing on this page touches a network.
+// The screen the app lands on: what this program is for, the three ways to start,
+// what was open last, which machine will slice it, and the two sibling projects
+// that make up the rest of the stack. Modelled on the reference slicers' home
+// pages, minus their account column -- there is nothing to sign in to here.
+// Nothing on this page touches a network.
 Item {
     id: root
 
-    /// The illustration on the right. Swapping it for another SVG is this one line.
-    property string heroSource: "qrc:/next-layer/brand/next-layer-hero.png"
+    /// The printer artwork. A transparent PNG, so the page colour shows through and
+    /// the drawing reads as part of the page rather than as a picture in a frame.
+    property string heroSource: "qrc:/next-layer/brand/next-layer-printer.png"
+    property string version: ""
+    property string engineVersion: ""
     /// [{ path, name, when, kind }], newest first, written by the window whenever a
     /// project or a model is opened or saved.
     property var recent: []
@@ -27,50 +31,38 @@ Item {
     signal forgetRequested(string path)
     signal clearRecentRequested()
 
-    readonly property int pageMargin: Metrics.huge * 2
-    readonly property int columnWidth: Math.max(420, Math.min(600, width * 0.46))
-    /// The artwork is drawn only when the asset carries its own transparency. The
-    /// shipped PNG is a drawing on opaque black, and a black rectangle on a warm grey
-    /// page is worse than no picture: point `heroSource` at an SVG in the brand
-    /// directory and the page fills itself.
-    readonly property bool artVisible: width > 980 && root.heroSource.slice(-4) === ".svg"
+    readonly property int pageMargin: width > 1400 ? Metrics.huge * 3 : Metrics.huge * 2
+    readonly property int columnWidth: Math.max(440, Math.min(720, width * 0.44))
+    readonly property bool artVisible: width > 1080 && root.heroSource !== ""
+
+    /// The three promises the whole application keeps. They are the answer to "why
+    /// another slicer", so they sit under the sentence rather than in a settings
+    /// page nobody opens.
+    readonly property var promises: ["No account", "No telemetry", "G-code on your disk"]
+
+    readonly property string printerName: presetStore.currentPrinter
+    readonly property string processName: presetStore.currentPrint
+    readonly property string filamentName: presetStore.currentFilament
 
     Rectangle {
         anchors.fill: parent
         color: Colors.surface
     }
 
-    // The artwork, off the right edge and behind everything: a backdrop rather than
-    // a framed picture. The drawing is a raster on opaque black and this page is warm
-    // grey, so the page colour is laid over its left edge in a gradient and the
-    // picture fades in instead of starting at a border. An SVG on a transparent
-    // ground does not need that, and putting one at `heroSource` leaves the fade
-    // reading as a vignette rather than a patch.
     Image {
         id: hero
 
         anchors.verticalCenter: parent.verticalCenter
         anchors.right: parent.right
-        anchors.rightMargin: -width * 0.06
-        width: Math.min(root.width * 0.62, 900)
-        height: Math.min(root.height * 0.86, width * 0.72)
+        anchors.rightMargin: Metrics.xl
+        width: Math.min(root.width * 0.56, 860)
+        height: Math.min(root.height * 0.84, width * 0.72)
         visible: root.artVisible
-        source: root.heroSource
+        source: root.artVisible ? root.heroSource : ""
         fillMode: Image.PreserveAspectFit
         asynchronous: true
         smooth: true
-    }
-
-    Rectangle {
-        anchors.fill: hero
-        visible: root.artVisible
-        gradient: Gradient {
-            orientation: Gradient.Horizontal
-            GradientStop { position: 0.0; color: Colors.surface }
-            GradientStop { position: 0.16; color: Colors.alpha(Colors.surface, 0.85) }
-            GradientStop { position: 0.38; color: Colors.alpha(Colors.surface, 0.0) }
-            GradientStop { position: 1.0; color: Colors.alpha(Colors.surface, 0.0) }
-        }
+        mipmap: true
     }
 
     Flickable {
@@ -80,22 +72,93 @@ Item {
         anchors.top: parent.top
         anchors.bottom: parent.bottom
         anchors.leftMargin: root.pageMargin
-        anchors.rightMargin: root.pageMargin
         width: root.columnWidth
         contentWidth: width
-        contentHeight: body.height
+        contentHeight: body.height + body.topPadding + body.bottomPadding
         clip: true
         boundsBehavior: Flickable.StopAtBounds
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
         Column {
             id: body
+
             width: page.width
-            topPadding: Math.max(Metrics.huge, (page.height - body.implicitHeight) * 0.16)
-            bottomPadding: Metrics.huge
+            topPadding: Math.max(Metrics.huge * 2,
+                                 Math.min(Metrics.huge * 3, (page.height - body.implicitHeight) * 0.3))
+            bottomPadding: Metrics.huge * 2
             spacing: Metrics.lg
 
-            SectionHeader {
+            // --- What this is -------------------------------------------------
+
+            Text {
+                width: parent.width
+                text: "LOCAL SLICING, END TO END"
+                font.family: Type.family
+                font.pixelSize: Type.sizeCaption
+                font.letterSpacing: 2.4
+                color: Colors.accent
+            }
+
+            Text {
+                width: parent.width
+                text: "Slice on your own machine."
+                wrapMode: Text.WordWrap
+                font.family: Type.family
+                font.pixelSize: Math.min(Type.sizeXLarge, Math.max(Type.sizeLarge,
+                                                                  body.width * 0.062))
+                font.bold: true
+                color: Colors.textPrimary
+            }
+
+            Text {
+                width: parent.width
+                text: "A slicer of our own: this interface, an open slicing engine, and every "
+                      + "toolpath calculated here. Your models, your settings and your G-code "
+                      + "stay on this disk, in formats another slicer can read."
+                wrapMode: Text.WordWrap
+                lineHeight: 1.28
+                font.family: Type.family
+                font.pixelSize: Type.sizeSmall
+                color: Colors.textSecondary
+            }
+
+            Row {
+                width: parent.width
+                spacing: Metrics.sm
+
+                Repeater {
+                    model: root.promises
+
+                    delegate: Rectangle {
+                        id: promise
+
+                        required property string modelData
+
+                        width: promiseText.implicitWidth + Metrics.lg * 2
+                        height: promiseText.implicitHeight + Metrics.sm
+                        radius: height / 2
+                        color: Colors.alpha(Colors.accent, 0.10)
+                        border.width: Metrics.borderWidth
+                        border.color: Colors.alpha(Colors.accent, 0.28)
+
+                        Text {
+                            id: promiseText
+                            anchors.centerIn: parent
+                            text: promise.modelData
+                            font.family: Type.family
+                            font.pixelSize: Type.sizeCaption
+                            color: Colors.accent
+                        }
+                    }
+                }
+            }
+
+            Item { width: 1; height: Metrics.sm }
+
+            // --- Start --------------------------------------------------------
+
+            SectionTitle {
+                width: parent.width
                 text: "Start"
             }
 
@@ -132,17 +195,23 @@ Item {
                 }
             }
 
+            Item { width: 1; height: Metrics.md }
+
+            // --- Recent -------------------------------------------------------
+
             Item {
                 width: parent.width
-                height: Metrics.huge
+                height: Metrics.controlHeight
 
-                SectionHeader {
+                SectionTitle {
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
+                    width: parent.width - clearButton.width - Metrics.lg
                     text: "Recently opened"
                 }
 
                 Button {
+                    id: clearButton
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     text: "Clear all"
@@ -294,11 +363,213 @@ Item {
                     }
                 }
             }
+
+            Item { width: 1; height: Metrics.md }
+
+            // --- This machine -------------------------------------------------
+
+            SectionTitle {
+                width: parent.width
+                text: "This machine"
+            }
+
+            Rectangle {
+                width: parent.width
+                height: machineColumn.implicitHeight + Metrics.lg * 2
+                radius: Metrics.radiusMedium
+                color: Colors.surfaceContainer
+                border.width: Metrics.borderWidth
+                border.color: Colors.edge
+
+                Column {
+                    id: machineColumn
+
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.leftMargin: Metrics.lg
+                    anchors.rightMargin: Metrics.lg
+                    spacing: Metrics.sm
+
+                    Repeater {
+                        model: [
+                            { role: "Printer", value: root.printerName },
+                            { role: "Process", value: root.processName },
+                            { role: "Filament", value: root.filamentName }
+                        ]
+
+                        delegate: Row {
+                            id: machineRow
+
+                            required property var modelData
+
+                            width: machineColumn.width
+                            spacing: Metrics.md
+
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: Math.max(90, machineColumn.width * 0.22)
+                                text: machineRow.modelData.role
+                                elide: Text.ElideRight
+                                font.family: Type.family
+                                font.pixelSize: Type.sizeCaption
+                                font.letterSpacing: 1.2
+                                color: Colors.textMuted
+                            }
+
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: machineRow.width - parent.spacing * 2
+                                       - Math.max(90, machineColumn.width * 0.22)
+                                text: machineRow.modelData.value.length > 0
+                                      ? machineRow.modelData.value
+                                      : "not resolved yet"
+                                elide: Text.ElideRight
+                                font.family: Type.family
+                                font.pixelSize: Type.sizeSmall
+                                color: machineRow.modelData.value.length > 0
+                                       ? Colors.textPrimary : Colors.textMuted
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        width: parent.width
+                        height: Metrics.borderWidth
+                        color: Colors.separator
+                    }
+
+                    Text {
+                        width: parent.width
+                        text: presetStore.printers.length + " printers · "
+                              + presetStore.printProfiles.length + " processes · "
+                              + presetStore.filamentProfiles.length + " filaments available, "
+                              + "from the engine's bundle and your own presets"
+                        wrapMode: Text.WordWrap
+                        font.family: Type.family
+                        font.pixelSize: Type.sizeCaption
+                        color: Colors.textMuted
+                    }
+                }
+            }
+
+            Item { width: 1; height: Metrics.md }
+
+            // --- The stack ----------------------------------------------------
+
+            SectionTitle {
+                width: parent.width
+                text: "The rest of the stack"
+            }
+
+            Text {
+                width: parent.width
+                text: "next-layer plans the paths. The two projects below run the machine and "
+                      + "watch it, and the three share one data file format: the G-code."
+                wrapMode: Text.WordWrap
+                lineHeight: 1.25
+                font.family: Type.family
+                font.pixelSize: Type.sizeCaption
+                color: Colors.textSecondary
+            }
+
+            ProductCard {
+                width: parent.width
+                icon: "dashboard"
+                name: "klipshell"
+                tagline: "A desktop control surface for Klipper printers: dashboard, console, "
+                         + "print files, history, bed mesh, G-code viewer and machine health, "
+                         + "in one keyboard-driven window over Moonraker."
+                tags: ["Quickshell · QML", "Klipper / Moonraker", "8 views"]
+            }
+
+            ProductCard {
+                width: parent.width
+                icon: "monitor_heart"
+                name: "LayerMind"
+                tagline: "Sits above Klipper and Moonraker and turns every print into a data "
+                         + "point: hardware health over time, failure patterns, and diagnostics "
+                         + "that end in a recommendation rather than a chart."
+                tags: ["Rust", "252 tests", "AI diagnostics"]
+            }
+
+            Item { width: 1; height: Metrics.lg }
+
+            Rectangle {
+                width: parent.width
+                height: Metrics.borderWidth
+                color: Colors.separator
+            }
+
+            Row {
+                width: parent.width
+                spacing: Metrics.md
+
+                Text {
+                    text: root.version.length > 0 ? "version " + root.version : ""
+                    font.family: Type.family
+                    font.pixelSize: Type.sizeCaption
+                    color: Colors.textMuted
+                }
+
+                Text {
+                    text: "·"
+                    visible: footerText.text.length > 0
+                    font.family: Type.family
+                    font.pixelSize: Type.sizeCaption
+                    color: Colors.textMuted
+                }
+
+                Text {
+                    id: footerText
+                    width: parent.width - parent.spacing * 2
+                           - (root.version.length > 0 ? root.version.length * Type.sizeCaption * 0.6 + 40 : 0)
+                    text: "AGPL-3.0 · slicing engine " + engineLabel()
+                    elide: Text.ElideRight
+                    font.family: Type.family
+                    font.pixelSize: Type.sizeCaption
+                    color: Colors.textMuted
+                }
+            }
         }
+    }
+
+    function engineLabel() {
+        return root.engineVersion.length > 0 ? root.engineVersion : "bundled"
     }
 
     function stamp(when) {
         const date = new Date(when)
         return isNaN(date.getTime()) ? "" : Qt.formatDateTime(date, "yyyy-MM-dd HH:mm")
+    }
+
+    // A section heading: the words, then the rule that carries them across the page.
+    component SectionTitle: Item {
+        id: title
+
+        property string text: ""
+
+        implicitHeight: titleText.implicitHeight
+
+        Text {
+            id: titleText
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            text: title.text
+            font.family: Type.family
+            font.pixelSize: Type.sizeCaption
+            font.letterSpacing: 1.8
+            font.bold: true
+            color: Colors.textSecondary
+        }
+
+        Rectangle {
+            anchors.left: titleText.right
+            anchors.leftMargin: Metrics.lg
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            height: Metrics.borderWidth
+            color: Colors.separator
+        }
     }
 }

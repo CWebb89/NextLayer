@@ -102,6 +102,7 @@ Window {
             { id: "objOrient", label: "Auto-orient" },
             { id: "objLayFace", label: "Lay on face", hint: "then click a facet" },
             { id: "objSep3", label: "" },
+            { id: "objPart", label: "Add part", hint: "a solid unioned into this object" },
             { id: "objModifier", label: "Add modifier" },
             { id: "objNegative", label: "Add negative volume" },
             { id: "objBlocker", label: "Add support blocker" },
@@ -195,6 +196,7 @@ Window {
         { id: "addShapeSphere", label: "Add sphere", hint: "40 mm" },
         { id: "addText", label: "Add text…", hint: "glyphs as a solid" },
         { id: "sep1" },
+        { id: "addPart", label: "Add part volume", hint: "", disabled: !root.hasModel },
         { id: "addModifier", label: "Add modifier volume", hint: "", disabled: !root.hasModel },
         { id: "addNegative", label: "Add negative volume", hint: "", disabled: !root.hasModel },
         { id: "addBlocker", label: "Add support blocker", hint: "", disabled: !root.hasModel },
@@ -840,6 +842,8 @@ Window {
         case "addShapeSphere":
             root.addShape("sphere", 40, 40, 40); break
         case "addText": textDialog.open(); break
+        case "addPart":
+            root.addVolume("part"); break
         case "addModifier":
             root.addVolume("modifier"); break
         case "addNegative":
@@ -915,7 +919,10 @@ Window {
                                                           : "could not add a " + type + " volume")
             return
         }
-        root.setStatus("added a " + type + " volume to " + info.name)
+        // It lands beside the part, selected: the next thing you do with a
+        // modifier is drag it where it belongs, which needs it in hand.
+        root.setStatus("added a " + type + " volume beside " + info.name
+                       + " — drag it into place, or use the move handles")
     }
 
     // The transform panel edits the selected object, so it has to show that
@@ -1205,6 +1212,8 @@ Window {
             z: 8
             visible: root.mode === root.homeMode
             recent: root.recentFiles
+            version: root.appVersion
+            engineVersion: root.engineVersion
 
             onNewProjectRequested: {
                 root.newPlate()
@@ -2066,10 +2075,11 @@ Window {
             case "objDrop": plateDocument.dropSelection(); break
             case "objOrient": plateDocument.autoOrient(objectId); break
             case "objLayFace": root.runTool("face"); break
-            case "objModifier": plateDocument.addVolume(objectId, "box", "modifier", 20, 20, 10); break
-            case "objNegative": plateDocument.addVolume(objectId, "box", "negative", 20, 20, 10); break
-            case "objBlocker": plateDocument.addVolume(objectId, "box", "blocker", 20, 20, 10); break
-            case "objEnforcer": plateDocument.addVolume(objectId, "box", "enforcer", 20, 20, 10); break
+            case "objPart": root.addVolume("part"); break
+            case "objModifier": root.addVolume("modifier"); break
+            case "objNegative": root.addVolume("negative"); break
+            case "objBlocker": root.addVolume("blocker"); break
+            case "objEnforcer": root.addVolume("enforcer"); break
             case "objStatistics": statisticsDialog.openFor(objectId); break
             case "objHollow": hollowDialog.openFor(objectId); break
             case "objMerge": plateDocument.mergeSelection(); break

@@ -6,10 +6,12 @@
 #include "Calibration.hpp"
 
 #include "PlateDocument.hpp"
+#include "PlateScene.hpp"
 #include "SettingsModel.hpp"
 #include "SliceController.hpp"
 #include "SliceRuntime.hpp"
 
+#include <QElapsedTimer>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -1133,6 +1135,18 @@ int runVolumeSettingsSelftest(const QString& configPath, const QString& dataDir)
         std::fprintf(stderr, "%s\n", qPrintable(document.error()));
         return 1;
     }
+    // A new volume lands beside the part, clear of it, so it can be picked up;
+    // it only changes the print where it overlaps, which is what moving it into
+    // place does. Both halves are checked here: placed, then moved in.
+    const PlateDocument::Object* plainBox = document.object(box);
+    if (!document.setVolumePosition(
+            box, volume,
+            QVector3D((plainBox->localMin.x() + plainBox->localMax.x()) * 0.5f,
+                      (plainBox->localMin.y() + plainBox->localMax.y()) * 0.5f,
+                      plainBox->localMin.z()))) {
+        std::fprintf(stderr, "the modifier volume could not be moved into the box\n");
+        return 1;
+    }
 
     SliceResult untouched;
     if (!slicePlate(document, configPath, untouched)) {
@@ -1556,6 +1570,17 @@ int runShapeSelftest(const QString& configPath, const QString& dataDir)
                                         24.0, 24.0, 40.0);
     if (hole < 0) {
         std::fprintf(stderr, "%s\n", qPrintable(document.error()));
+        return 1;
+    }
+    // Cut through the middle of the box, not wherever the volume was dropped:
+    // a new volume is placed beside the part so it can be grabbed.
+    const PlateDocument::Object* boxObject = document.object(box);
+    if (!document.setVolumePosition(
+            box, hole,
+            QVector3D((boxObject->localMin.x() + boxObject->localMax.x()) * 0.5f,
+                      (boxObject->localMin.y() + boxObject->localMax.y()) * 0.5f,
+                      boxObject->localMin.z()))) {
+        std::fprintf(stderr, "the negative volume could not be moved into the box\n");
         return 1;
     }
     SliceResult cut;
@@ -2334,6 +2359,126 @@ int runThreeMfExportSelftest(const QString& model, const QString& configPath,
     }
 
     std::printf("3mf-export-selftest passed with %d painted facet group(s)\n", painted);
+    return 0;
+}
+
+int runPaintSelftest(const QString& configPath, const QString& dataDir, int dabs)
+{
+    Q_UNUSED(dataDir)
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+
+    QVector2D centre;
+    QVector2D size;
+    if (!bedOfConfig(configPath, centre, size)) {
+        std::fprintf(stderr, "cannot read the bed out of %s\n", qPrintable(configPath));
+        return 2;
+    }
+
+    PlateDocument document(centre, size);
+    // A part dense enough for the cost to matter: the engine's own sphere at
+    // 80 mm carries some sixty thousand facets, which is the density of a
+    // printed miniature and an order of magnitude past every model in the
+    // oracle corpus.
+    const int id = document.addShape(QStringLiteral("sphere"), 80.0, 80.0, 80.0);
+    if (id < 0) {
+        std::fprintf(stderr, "%s\n", qPrintable(document.error()));
+        return 1;
+    }
+
+    const PlateDocument::Object* object = document.object(id);
+    const auto mesh = object->mesh;
+    const Slic3r::Domain::Transform3d trafo = object->trafo.get_matrix();
+    if (mesh == nullptr || mesh->its.indices.empty()) {
+        std::fprintf(stderr, "the sphere came back without triangles\n");
+        return 1;
+    }
+
+    // Picking: a ray straight down onto the top of the part, which is the shape
+    // of every hover the brush does while painting.
+    PlateScene scene(&document);
+    const QVector3D origin(centre.x(), centre.y(), 400.0f);
+    const QVector3D direction(0.0f, 0.0f, -1.0f);
+    const int picks = 200;
+    // The first ray builds the picking tree, which is a one-off per object; the
+    // number that matters is what the next ray costs, because that is the one
+    // every mouse move pays for.
+    for (int i = 0; i < 5; ++i)
+        scene.pick(origin, direction);
+    QElapsedTimer pickTimer;
+    pickTimer.start();
+    int hits = 0;
+    for (int i = 0; i < picks; ++i)
+        if (scene.pick(origin, direction).w() > 0.0f)
+            ++hits;
+    const double pickMs = double(pickTimer.nsecsElapsed()) / 1e6 / picks;
+    if (hits != picks) {
+        std::fprintf(stderr, "%d of %d rays missed the part they were aimed at\n", picks - hits,
+                     picks);
+        return 1;
+    }
+
+    // Dabs, spaced around the equator so each one lands on fresh facets rather
+    // than repainting the same patch: an up-facing facet every so often, which
+    // is what a stroke along the outside of the part does.
+    std::vector<int> facets;
+    for (size_t facet = 0; facet < mesh->its.indices.size(); ++facet) {
+        const auto& face = mesh->its.indices[facet];
+        const Vec3d a = mesh->its.vertices[face[0]].cast<double>();
+        const Vec3d b = mesh->its.vertices[face[1]].cast<double>();
+        const Vec3d c = mesh->its.vertices[face[2]].cast<double>();
+        const Vec3d normal = (trafo.linear() * (b - a).cross(c - a)).normalized();
+        const Vec3d middle = trafo * ((a + b + c) / 3.0);
+        if (normal.z() > 0.5 && middle.z() > 1.0)
+            facets.push_back(int(facet));
+    }
+    if (facets.size() < size_t(dabs)) {
+        std::fprintf(stderr, "only %zu up-facing facet(s) to paint, wanted %d\n", facets.size(),
+                     dabs);
+        return 1;
+    }
+
+    document.setBrushRadius(2.0);
+    std::vector<double> dabMs;
+    dabMs.reserve(size_t(dabs));
+    int paintedFacets = 0;
+    for (int i = 0; i < dabs; ++i) {
+        const int facet = facets[size_t((double(i) / double(dabs)) * double(facets.size()))];
+        const auto& face = mesh->its.indices[size_t(facet)];
+        const Vec3d a = mesh->its.vertices[face[0]].cast<double>();
+        const Vec3d b = mesh->its.vertices[face[1]].cast<double>();
+        const Vec3d c = mesh->its.vertices[face[2]].cast<double>();
+        const Vec3d middle = trafo * ((a + b + c) / 3.0);
+        const Vec3d eye = middle + Vec3d(0.0, 0.0, 100.0);
+
+        QElapsedTimer dabTimer;
+        dabTimer.start();
+        paintedFacets += document.paintObject(id, QStringLiteral("supports"),
+                                              QVector3D(middle.x(), middle.y(), middle.z()),
+                                              QVector3D(eye.x(), eye.y(), eye.z()),
+                                              QStringLiteral("enforce"), 2, facet);
+        dabMs.push_back(double(dabTimer.nsecsElapsed()) / 1e6);
+    }
+
+    double total = 0.0;
+    double worst = 0.0;
+    for (const double ms : dabMs) {
+        total += ms;
+        worst = std::max(worst, ms);
+    }
+    const double mean = total / double(dabMs.size());
+
+    std::printf("paint: %d dabs on %zu facet(s), mean %.1f ms, max %.1f ms, %d facet(s) painted; "
+                "pick %.3f ms/ray\n",
+                dabs, mesh->its.indices.size(), mean, worst, paintedFacets, pickMs);
+
+    if (paintedFacets == 0) {
+        std::fprintf(stderr, "no dab landed paint: the brush wrote nothing to the object\n");
+        return 1;
+    }
+    if (document.paintedFacetCount(id, QStringLiteral("supports")) <= 0) {
+        std::fprintf(stderr, "the paint did not reach the object's stored state\n");
+        return 1;
+    }
     return 0;
 }
 

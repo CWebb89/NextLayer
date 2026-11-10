@@ -23,6 +23,7 @@ Popup {
     focus: true
 
     property string tab: "process"
+    property string subTab: ""
     property string filterText: ""
     property string nameField: ""
     property string message: ""
@@ -48,7 +49,28 @@ Popup {
     readonly property int modified: settingsModel.modifiedCount(root.tab)
     readonly property var groups: root.filterText.length > 0
                                   ? settingsModel.groups("", "", root.filterText)
-                                  : settingsModel.groups(root.tab, "", "")
+                                  : settingsModel.groups(root.tab, root.subTab, "")
+
+    /// The categories of the preset being edited -- Filament has material,
+    /// cooling, tool changes; Printer has general, bed, machine limits -- which is
+    /// what the reference slicers put in this window and what makes 68 settings
+    /// readable at all.
+    readonly property var categories: {
+        const tabs = settingsModel.tabList()
+        const wanted = root.tab === "filament" ? "filament"
+                     : root.tab === "printer" ? "printer" : "process"
+        for (let i = 0; i < tabs.length; ++i) {
+            if (tabs[i].key !== wanted)
+                continue
+            const out = []
+            for (let j = 0; j < tabs[i].subtabs.length; ++j) {
+                const entry = tabs[i].subtabs[j]
+                out.push({ key: entry.key, title: entry.title, modified: entry.modified })
+            }
+            return out
+        }
+        return []
+    }
 
     readonly property var tabChoices: {
         if (root.tab === "filament")
@@ -91,12 +113,26 @@ Popup {
 
     function openOn(tabKey) {
         root.tab = tabKey
+        root.subTab = root.firstCategory()
         root.filterText = ""
         root.message = ""
         root.showAddPrinter = false
         root.nameField = root.currentName
         root.open()
     }
+
+    function showSubtab(tabKey, subTabKey) {
+        root.tab = tabKey
+        root.subTab = subTabKey
+        root.filterText = ""
+        root.open()
+    }
+
+    function firstCategory() {
+        return root.categories.length > 0 ? root.categories[0].key : ""
+    }
+
+    onTabChanged: root.subTab = root.firstCategory()
 
     function title() {
         return root.tab === "filament" ? "Filament settings"
@@ -641,6 +677,21 @@ Popup {
 
             Separator {
                 Layout.fillWidth: true
+            }
+
+            // The categories of this preset, the way the reference slicers put
+            // them at the top of the same window: material and cooling for a
+            // filament, the bed and the machine limits for a printer.
+            TabStrip {
+                Layout.fillWidth: true
+                Layout.leftMargin: Metrics.lg
+                Layout.rightMargin: Metrics.lg
+                Layout.topMargin: Metrics.xs
+                Layout.preferredHeight: Metrics.rowHeight
+                visible: root.filterText.length === 0
+                categories: root.categories
+                current: root.subTab
+                onActivated: (key) => root.subTab = key
             }
 
             SettingsTree {

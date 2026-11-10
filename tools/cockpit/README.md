@@ -72,6 +72,26 @@ app replaces its window during start-up and a fullscreen toggle remaps it.
 - The session file survives between commands, so the app keeps running while
   other work happens; `cockpit stop` closes it.
 
+## What it cannot do yet
+
+Driving next-layer is fully covered. Driving Orca or Prusa is not, and the failures are
+not OCR quality — they are window and frame handling:
+
+- **One window per session.** A reference slicer opens its preset editors as separate
+  top-level windows, so once a dialog is up the recorded window rect belongs to the
+  window behind it and window-relative clicks miss. Re-run `windows` and pass explicit
+  coordinates until `--window` exists.
+- **wxWidgets, not Qt** (Orca, BambuStudio and PrusaSlicer are all wx/GTK). A wx child
+  takes the wheel only with the pointer over it, tabs are custom-painted, and small
+  labels OCR badly (`Slice plate` → `sicepate`). Read coordinates off `ocr --json` and
+  click those.
+- **No self-report.** When a label cannot be found, `find-text` prints nothing and the
+  caller learns nothing. Until `describe`/`want` exist, run `ocr` and read the screen.
+- **No verification.** `run FILE` continues after a failed step, so a broken sequence
+  looks like a successful one.
+
+The plan for all four is in the project memory under `Cockpit v2`.
+
 ## Scripts
 
 `scripts/` holds recorded sequences:

@@ -34,8 +34,9 @@ Item {
     readonly property string kind: root.item.type === undefined || root.item.type === null
                                    ? "" : String(root.item.type)
     readonly property var value: root.item.value
-    readonly property bool isOpenEnum: root.gui === "i_enum_open" || root.gui === "f_enum_open"
-                                       || root.gui === "s_enum_open"
+    readonly property bool isOpenEnum: (root.gui === "i_enum_open" || root.gui === "f_enum_open"
+                                       || root.gui === "s_enum_open")
+                                       && !root.isFloatOrPercent
     readonly property bool isSequence: root.isSequenceValue(root.value)
     readonly property bool isVec2: root.kind === "Float" && root.isSequence
                                    && root.value.length === 2 && root.gui !== "points"
@@ -58,17 +59,26 @@ Item {
                                  : root.item.max !== undefined && root.item.max !== null
                                    ? Number(root.item.max) : 1000000
     readonly property int decimals: root.kind === "Int" ? 0 : 2
-    readonly property string units: root.kind === "Percentage" || root.isPercentValue
-                                    ? "%"
-                                    : root.item.units !== undefined && root.item.units !== null
-                                      && root.item.units.length > 0 ? String(root.item.units[0]) : ""
-
-    /// The absolute side of a unit-or-percentage setting, in the engine's own words:
-    /// mm/s for a speed, mm for a width. A percent toggle labelled "mm" on a speed
+    /// The engine's own unit list for this setting: ["mm/s", "%"] for a speed it
+    /// can hold either way, ["mm"] for a length, empty for a bare number.
+    readonly property var unitList: root.item.units !== undefined && root.item.units !== null
+                                    ? root.item.units : []
+    /// The absolute side of a unit-or-percentage setting, in the engine's own
+    /// words: mm/s for a speed, mm for a width. A label reading "mm" on a speed
     /// field says the wrong thing about what the number means.
-    readonly property string absoluteUnits: root.item.units !== undefined && root.item.units !== null
-                                            && root.item.units.length > 0
-                                            ? String(root.item.units[0]) : "mm"
+    readonly property string firstUnit: root.unitList.length > 0 ? String(root.unitList[0]) : ""
+    readonly property string absoluteUnits: root.firstUnit.length > 0 ? root.firstUnit
+                                             : root.isFloatOrPercent ? "mm" : ""
+    /// What the suffix beside the number says. A setting the engine can hold as a
+    /// quantity or a share names both, the way the reference slicers' fields do;
+    /// everything else names its one unit.
+    readonly property string unitPair: root.unitList.length > 1
+                                       ? root.firstUnit + " or "
+                                         + String(root.unitList[root.unitList.length - 1])
+                                       : root.absoluteUnits + " or %"
+
+    readonly property string units: root.kind === "Percentage" || root.isPercentValue
+                                    ? "%" : root.absoluteUnits
 
     /// A millimetre quantity. Everything stored is millimetres; the field shows
     /// the user's system and converts back on write, so no value on disk ever
@@ -89,11 +99,14 @@ Item {
 
     function numericValue(v) {
         const raw = v !== null && typeof v === "object" ? Number(v.value) : Number(v)
-        return root.isLength ? Units.fromMillimetres(raw) : raw
+        return root.isLength && !root.isPercentValue ? Units.fromMillimetres(raw) : raw
     }
 
-    function storedValue(value) {
-        return root.isLength ? Units.toMillimetres(value) : value
+    /// A percentage is a share, not a length, so the user's millimetre preference
+    /// must not convert it. Passing `true` says the number is one.
+    function storedValue(value, percent) {
+        return root.isLength && !percent && !root.isPercentValue
+               ? Units.toMillimetres(value) : value
     }
 
     function listText(v) {
@@ -281,35 +294,29 @@ Item {
         onEdited: (value) => root.write(value)
     }
 
-    Row {
+    // A number the engine can hold either as a quantity or as a share, which is
+    // what the reference slicers' "mm or %" fields are: the unit is part of the
+    // value, so there is no switch beside it. Typing 120 keeps the absolute
+    // number, typing 120% makes it a share of the base value, and the suffix names
+    // the two things on offer.
+    NumberField {
+        id: unitOrPercentField
+
         anchors.fill: parent
-        spacing: Metrics.xs
         visible: root.isFloatOrPercent
-
-        NumberField {
-            width: parent.width - unitButton.width - Metrics.xs
-            value: root.numericValue(root.value)
-            from: root.isPercentValue ? 0 : root.lower
-            to: root.isPercentValue ? 100 : root.upper
-            units: root.isPercentValue ? "%" : root.absoluteUnits
-            decimals: root.isPercentValue || root.absoluteUnits !== "mm"
-                      ? root.decimals : Units.lengthDecimals
-            onEdited: (value) => root.writeFloatOrPercent(value)
-        }
-
-        Button {
-            id: unitButton
-            width: Metrics.controlHeight * 1.9
-            height: Metrics.controlHeight
-            primary: root.isPercentValue
-            text: root.isPercentValue ? "%" : root.absoluteUnits
-            hint: "Switch between " + root.absoluteUnits + " and %: the number is kept as typed"
-            onClicked: {
-                const raw = root.value !== null && typeof root.value === "object"
-                          ? Number(root.value.value) : Number(root.value)
-                root.write({ value: raw, is_percent: !root.isPercentValue })
-            }
-        }
+        value: root.numericValue(root.value)
+        from: root.isPercentValue ? 0 : root.lower
+        to: root.isPercentValue ? 100 : root.upper
+        units: root.unitPair
+        isPercent: root.isPercentValue
+        decimals: root.isPercentValue ? root.decimals
+                  : root.firstUnit === "mm" ? Units.lengthDecimals : root.decimals
+        acceptsUnit: true
+        onEdited: (value) => root.writeFloatOrPercent(value)
+        onPercentEdited: (value) => root.write({
+            value: root.storedValue(value, true),
+            is_percent: true
+        })
     }
 
     Row {

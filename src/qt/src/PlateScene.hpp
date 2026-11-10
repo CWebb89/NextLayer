@@ -3,12 +3,19 @@
 
 #pragma once
 
+#include <QHash>
 #include <QObject>
+#include <QVector>
 #include <QVector3D>
 #include <QVector4D>
 
+#include <Slic3r/Domain/TriangleMesh.hpp>
+
+#include "PlateDocument.hpp"
+
+#include <memory>
+
 class MeshGeometry;
-class PlateDocument;
 class QQuick3DGeometry;
 
 // The plate as the viewport draws it: one mesh for every unselected object and
@@ -48,6 +55,11 @@ class PlateScene : public QObject
     Q_PROPERTY(bool hasGizmo READ hasGizmo NOTIFY geometryChanged)
     Q_PROPERTY(int pickedId READ pickedId NOTIFY pickedIdChanged)
     Q_PROPERTY(int pickedFacet READ pickedFacet NOTIFY pickedIdChanged)
+    /// The volume under the ray, when the ray hit one before it hit the part it
+    /// belongs to. A modifier is a thing on the plate you can point at, so a
+    /// click that lands on one selects the volume rather than the object.
+    Q_PROPERTY(int pickedVolume READ pickedVolumeId NOTIFY pickedIdChanged)
+    Q_INVOKABLE int pickedVolumeId() const { return m_pickedVolume; }
 
 public:
     explicit PlateScene(PlateDocument* document, QObject* parent = nullptr);
@@ -107,8 +119,30 @@ signals:
     void geometryChanged();
     void pickedIdChanged();
 
+public:
+    ~PlateScene() override;
+
 private:
     void rebuild();
+    /// The painted facets of one object, cached per object: a dab rebuilds the
+    /// part it landed on and nothing else, then every cached piece is merged into
+    /// the one overlay mesh. Without the cache a dab re-walked the paint selector
+    /// of every object on the plate.
+    struct PickIndex;
+    /// The ray-picking tree of one object, built on first use and thrown away
+    /// when the object's mesh changes. Picking used to test every facet of every
+    /// object on every mouse move -- fine on a cube, and the reason a brush
+    /// hovered over a benchy stuttered.
+    std::shared_ptr<PickIndex> pickIndex(int objectId, const PlateDocument::Object& object);
+
+    struct PaintPiece
+    {
+        Slic3r::Domain::TriangleMesh mesh;
+        QVector<QVector4D> colours;
+    };
+    void rebuildPaint(int objectId);
+    void rebuildPaintPiece(int objectId);
+    void composePaint();
     void rebuildGizmo();
     float gizmoReach() const;
     QVector3D gizmoAxisStart(int axis) const;
@@ -120,6 +154,8 @@ private:
     MeshGeometry* m_selection;
     MeshGeometry* m_paint;
     MeshGeometry* m_brushRing;
+    QHash<int, PaintPiece> m_paintPieces;
+    QHash<int, std::shared_ptr<PickIndex>> m_pickIndex;
     QVector3D m_pickedNormal;
     MeshGeometry* m_volumes;
     MeshGeometry* m_plateMarkers;
@@ -133,4 +169,5 @@ private:
     bool m_hasVolumes = false;
     int m_pickedId = 0;
     int m_pickedFacet = -1;
+    int m_pickedVolume = 0;
 };

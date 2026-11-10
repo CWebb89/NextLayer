@@ -1,0 +1,1297 @@
+{
+  "comment": [
+    "next-layer's own settings taxonomy. Not Orca's pages, not Prusa's tabs: a page",
+    "per question the print asks, ordered from the skin inwards and then out to the",
+    "machine. tools/settings_layout.py turns this into src/qt/resources/settings-layout.json,",
+    "which is what the app loads. Nothing here is read at run time.",
+    "",
+    "A rule moves a whole engine section; `keys` moves one setting out of its section,",
+    "for the engine groups that mix two subjects (walls quality holds both wall and",
+    "overhang settings, resolution holds both slicing and G-code output)."
+  ],
+  "pages": {
+    "process": [
+      {
+        "key": "surface",
+        "title": "Surface",
+        "sections": [
+          "Layer height",
+          "Line width",
+          "Seam",
+          "Ironing",
+          "Surface finish",
+          "Precision",
+          "Wall generator"
+        ]
+      },
+      {
+        "key": "structure",
+        "title": "Structure",
+        "sections": [
+          "Walls",
+          "Top & bottom shells",
+          "Infill",
+          "Bridging & overhangs",
+          "Retraction"
+        ]
+      },
+      {
+        "key": "motion",
+        "title": "Motion",
+        "sections": [
+          "First layer",
+          "Other layers",
+          "Overhangs",
+          "Travel",
+          "Z hop",
+          "Acceleration",
+          "Flow limits"
+        ]
+      },
+      {
+        "key": "support",
+        "title": "Support",
+        "sections": [
+          "Support",
+          "Support interface",
+          "Tree supports"
+        ]
+      },
+      {
+        "key": "adhesion",
+        "title": "Adhesion",
+        "sections": [
+          "Skirt",
+          "Brim",
+          "Raft"
+        ]
+      },
+      {
+        "key": "multi",
+        "title": "Multi-tool",
+        "sections": [
+          "Prime tower",
+          "Filament assignment",
+          "Ooze prevention",
+          "Tool changes",
+          "Interlocking"
+        ]
+      },
+      {
+        "key": "output",
+        "title": "Output",
+        "sections": [
+          "Special modes",
+          "G-code output",
+          "Post-processing",
+          "Custom G-code",
+          "Notes"
+        ]
+      },
+      {
+        "key": "advanced",
+        "title": "Advanced",
+        "sections": [
+          "Expert"
+        ]
+      }
+    ],
+    "filament": [
+      {
+        "key": "material",
+        "title": "Material",
+        "sections": [
+          "Filament",
+          "Shrinkage"
+        ]
+      },
+      {
+        "key": "temperatures",
+        "title": "Temperatures",
+        "sections": [
+          "Nozzle",
+          "Bed & chamber"
+        ]
+      },
+      {
+        "key": "flow",
+        "title": "Flow",
+        "sections": [
+          "Flow ratio",
+          "Pressure advance",
+          "Volumetric limits"
+        ]
+      },
+      {
+        "key": "cooling",
+        "title": "Cooling",
+        "sections": [
+          "First layers",
+          "Fan control",
+          "Cooling logic",
+          "Cooling thresholds",
+          "Dynamic fan",
+          "Per-role fans"
+        ]
+      },
+      {
+        "key": "toolchange",
+        "title": "Tool change",
+        "sections": [
+          "Ramming",
+          "Tip shaping",
+          "Loading & unloading",
+          "Purge volumes"
+        ]
+      },
+      {
+        "key": "gcode",
+        "title": "G-code",
+        "sections": [
+          "Custom G-code"
+        ]
+      },
+      {
+        "key": "notes",
+        "title": "Notes",
+        "sections": [
+          "Notes"
+        ]
+      },
+      {
+        "key": "advanced",
+        "title": "Advanced",
+        "sections": [
+          "Expert"
+        ]
+      }
+    ],
+    "printer": [
+      {
+        "key": "machine",
+        "title": "Machine",
+        "sections": [
+          "Firmware & G-code",
+          "Capabilities",
+          "Size & clearances",
+          "Sequential printing"
+        ]
+      },
+      {
+        "key": "motion",
+        "title": "Motion",
+        "sections": [
+          "Limits",
+          "Accelerations",
+          "Feedrates",
+          "Jerk & junction deviation"
+        ]
+      },
+      {
+        "key": "extruders",
+        "title": "Extruders",
+        "sections": [
+          "Extruder offsets",
+          "Single extruder MM"
+        ]
+      },
+      {
+        "key": "bed",
+        "title": "Bed & probe",
+        "sections": [
+          "Build plate"
+        ]
+      },
+      {
+        "key": "gcode",
+        "title": "Custom G-code",
+        "sections": [
+          "Custom G-code"
+        ]
+      },
+      {
+        "key": "notes",
+        "title": "Notes",
+        "sections": [
+          "Notes"
+        ]
+      },
+      {
+        "key": "advanced",
+        "title": "Advanced",
+        "sections": [
+          "Expert"
+        ]
+      }
+    ]
+  },
+  "rules": [
+    {
+      "tab": "process",
+      "from": [
+        "Layers & Surfaces",
+        "Layer height"
+      ],
+      "to": [
+        "surface",
+        "Layer height"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Extrusion & Retraction",
+        "Extrusion Width"
+      ],
+      "to": [
+        "surface",
+        "Line width"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Walls & Perimeters",
+        "Seams"
+      ],
+      "to": [
+        "surface",
+        "Seam"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Layers & Surfaces",
+        "Ironing"
+      ],
+      "to": [
+        "surface",
+        "Ironing"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Walls & Perimeters",
+        "Fuzzy skin"
+      ],
+      "to": [
+        "surface",
+        "Surface finish"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Precision & Slicing",
+        "Dimensional Accuracy"
+      ],
+      "to": [
+        "surface",
+        "Precision"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Precision & Slicing",
+        "Resolution & G-code Data"
+      ],
+      "to": [
+        "surface",
+        "Precision"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Precision & Slicing",
+        "Arachne perimeter generator"
+      ],
+      "to": [
+        "surface",
+        "Wall generator"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Precision & Slicing",
+        "Perimeter Generator"
+      ],
+      "to": [
+        "surface",
+        "Wall generator"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Layers & Surfaces",
+        "Only one perimeter"
+      ],
+      "to": [
+        "structure",
+        "Walls"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Walls & Perimeters",
+        "Perimeters"
+      ],
+      "to": [
+        "structure",
+        "Walls"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Walls & Perimeters",
+        "Walls quality"
+      ],
+      "to": [
+        "structure",
+        "Walls"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Layers & Surfaces",
+        "Top/Bottom shells"
+      ],
+      "to": [
+        "structure",
+        "Top & bottom shells"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Layers & Surfaces",
+        "Surface patterns"
+      ],
+      "to": [
+        "structure",
+        "Top & bottom shells"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Infill",
+        "Density pattern"
+      ],
+      "to": [
+        "structure",
+        "Infill"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Infill",
+        "Infill combination"
+      ],
+      "to": [
+        "structure",
+        "Infill"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Infill",
+        "Overlap"
+      ],
+      "to": [
+        "structure",
+        "Infill"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Infill",
+        "Walls anchoring"
+      ],
+      "to": [
+        "structure",
+        "Infill"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Infill",
+        "Advanced"
+      ],
+      "to": [
+        "structure",
+        "Infill"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Extrusion & Retraction",
+        "Retraction"
+      ],
+      "to": [
+        "structure",
+        "Retraction"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Extrusion & Retraction",
+        "Idle Tool Retraction"
+      ],
+      "to": [
+        "structure",
+        "Retraction"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Speed",
+        "First layer"
+      ],
+      "to": [
+        "motion",
+        "First layer"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Speed",
+        "Main structure"
+      ],
+      "to": [
+        "motion",
+        "Other layers"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Speed",
+        "Support and Bridges"
+      ],
+      "to": [
+        "motion",
+        "Other layers"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Speed",
+        "Dynamic overhang speed"
+      ],
+      "to": [
+        "motion",
+        "Overhangs"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Speed",
+        "Travels"
+      ],
+      "to": [
+        "motion",
+        "Travel"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Motion & Dynamics",
+        "Travel Avoidance"
+      ],
+      "to": [
+        "motion",
+        "Travel"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Motion & Dynamics",
+        "Vertical Lift"
+      ],
+      "to": [
+        "motion",
+        "Z hop"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Motion & Dynamics",
+        "Main Structure Acceleration"
+      ],
+      "to": [
+        "motion",
+        "Acceleration"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Motion & Dynamics",
+        "First layer Acceleration"
+      ],
+      "to": [
+        "motion",
+        "Acceleration"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Motion & Dynamics",
+        "Bridges Acceleration"
+      ],
+      "to": [
+        "motion",
+        "Acceleration"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Motion & Dynamics",
+        "Travels Acceleration"
+      ],
+      "to": [
+        "motion",
+        "Acceleration"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Motion & Dynamics",
+        "Wipe Tower Acceleration"
+      ],
+      "to": [
+        "motion",
+        "Acceleration"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Speed",
+        "Volumetric speed"
+      ],
+      "to": [
+        "motion",
+        "Flow limits"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Speed",
+        "Pressure equalizer"
+      ],
+      "to": [
+        "motion",
+        "Flow limits"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Supports",
+        "Generation"
+      ],
+      "to": [
+        "support",
+        "Support"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Supports",
+        "Pattern density"
+      ],
+      "to": [
+        "support",
+        "Support"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Supports",
+        "Support geometry"
+      ],
+      "to": [
+        "support",
+        "Support"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Supports",
+        "Interface separation"
+      ],
+      "to": [
+        "support",
+        "Support interface"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Supports",
+        "Organic supports"
+      ],
+      "to": [
+        "support",
+        "Tree supports"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Bed adhesion",
+        "Skirt"
+      ],
+      "to": [
+        "adhesion",
+        "Skirt"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Bed adhesion",
+        "Brim"
+      ],
+      "to": [
+        "adhesion",
+        "Brim"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Bed adhesion",
+        "Raft"
+      ],
+      "to": [
+        "adhesion",
+        "Raft"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Tools & Wipe Tower",
+        "Wipe Tower"
+      ],
+      "to": [
+        "multi",
+        "Prime tower"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Tools & Wipe Tower",
+        "Extruder Assignment"
+      ],
+      "to": [
+        "multi",
+        "Filament assignment"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Tools & Wipe Tower",
+        "Ooze prevention"
+      ],
+      "to": [
+        "multi",
+        "Ooze prevention"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Tools & Wipe Tower",
+        "Tool changes"
+      ],
+      "to": [
+        "multi",
+        "Tool changes"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Tools & Wipe Tower",
+        "Bonding & Interlocking"
+      ],
+      "to": [
+        "multi",
+        "Interlocking"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Precision & Slicing",
+        "Slicing Strategy"
+      ],
+      "to": [
+        "output",
+        "Special modes"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Output options",
+        "Output file"
+      ],
+      "to": [
+        "output",
+        "G-code output"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Precision & Slicing",
+        "Scripts & Substitutions"
+      ],
+      "to": [
+        "output",
+        "Post-processing"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Custom G-code",
+        "Custom G-code"
+      ],
+      "to": [
+        "output",
+        "Custom G-code"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Notes",
+        "Notes"
+      ],
+      "to": [
+        "output",
+        "Notes"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Advanced",
+        ""
+      ],
+      "to": [
+        "advanced",
+        "Expert"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Advanced",
+        "First layer"
+      ],
+      "to": [
+        "advanced",
+        "Expert"
+      ]
+    },
+    {
+      "tab": "process",
+      "from": [
+        "Advanced",
+        "Scripts & Substitutions"
+      ],
+      "to": [
+        "advanced",
+        "Expert"
+      ]
+    },
+    {
+      "tab": "filament",
+      "from": [
+        "Material & Temperatures",
+        "Material Property"
+      ],
+      "to": [
+        "material",
+        "Filament"
+      ]
+    },
+    {
+      "tab": "filament",
+      "from": [
+        "Extrusion & Calibration",
+        "Compensation"
+      ],
+      "to": [
+        "material",
+        "Shrinkage"
+      ]
+    },
+    {
+      "tab": "filament",
+      "from": [
+        "Material & Temperatures",
+        "Nozzle Temperature"
+      ],
+      "to": [
+        "temperatures",
+        "Nozzle"
+      ]
+    },
+    {
+      "tab": "filament",
+      "from": [
+        "Material & Temperatures",
+        "Bed & Chamber Temperature"
+      ],
+      "to": [
+        "temperatures",
+        "Bed & chamber"
+      ]
+    },
+    {
+      "tab": "filament",
+      "from": [
+        "Extrusion & Calibration",
+        "Pressure Advance"
+      ],
+      "to": [
+        "flow",
+        "Pressure advance"
+      ]
+    },
+    {
+      "tab": "filament",
+      "from": [
+        "Overrides",
+        "Print Speed Override"
+      ],
+      "to": [
+        "flow",
+        "Volumetric limits"
+      ]
+    },
+    {
+      "tab": "filament",
+      "from": [
+        "Cooling",
+        "First Layers"
+      ],
+      "to": [
+        "cooling",
+        "First layers"
+      ]
+    },
+    {
+      "tab": "filament",
+      "from": [
+        "Cooling",
+        "Fan Control & Limits"
+      ],
+      "to": [
+        "cooling",
+        "Fan control"
+      ]
+    },
+    {
+      "tab": "filament",
+      "from": [
+        "Cooling",
+        "Cooling logic"
+      ],
+      "to": [
+        "cooling",
+        "Cooling logic"
+      ]
+    },
+    {
+      "tab": "filament",
+      "from": [
+        "Cooling",
+        "Cooling Thresholds"
+      ],
+      "to": [
+        "cooling",
+        "Cooling thresholds"
+      ]
+    },
+    {
+      "tab": "filament",
+      "from": [
+        "Cooling",
+        "Dynamic Fan Speed"
+      ],
+      "to": [
+        "cooling",
+        "Dynamic fan"
+      ]
+    },
+    {
+      "tab": "filament",
+      "from": [
+        "Cooling",
+        "Per-role fan speeds"
+      ],
+      "to": [
+        "cooling",
+        "Per-role fans"
+      ]
+    },
+    {
+      "tab": "filament",
+      "from": [
+        "Tool Changes",
+        "Multitool Ramming"
+      ],
+      "to": [
+        "toolchange",
+        "Ramming"
+      ]
+    },
+    {
+      "tab": "filament",
+      "from": [
+        "Tool Changes",
+        "Tip Shaping & Cooling"
+      ],
+      "to": [
+        "toolchange",
+        "Tip shaping"
+      ]
+    },
+    {
+      "tab": "filament",
+      "from": [
+        "Tool Changes",
+        "Movement & Timing"
+      ],
+      "to": [
+        "toolchange",
+        "Loading & unloading"
+      ]
+    },
+    {
+      "tab": "filament",
+      "from": [
+        "Tool Changes",
+        "Wipe Tower Purging"
+      ],
+      "to": [
+        "toolchange",
+        "Purge volumes"
+      ]
+    },
+    {
+      "tab": "filament",
+      "from": [
+        "Custom G-code",
+        "Custom G-code"
+      ],
+      "to": [
+        "gcode",
+        "Custom G-code"
+      ]
+    },
+    {
+      "tab": "filament",
+      "from": [
+        "Notes",
+        "Notes"
+      ],
+      "to": [
+        "notes",
+        "Notes"
+      ]
+    },
+    {
+      "tab": "filament",
+      "from": [
+        "Advanced",
+        ""
+      ],
+      "to": [
+        "advanced",
+        "Expert"
+      ]
+    },
+    {
+      "tab": "printer",
+      "from": [
+        "General",
+        "Firmware & G-code"
+      ],
+      "to": [
+        "machine",
+        "Firmware & G-code"
+      ]
+    },
+    {
+      "tab": "printer",
+      "from": [
+        "General",
+        "Capabilities & Features"
+      ],
+      "to": [
+        "machine",
+        "Capabilities"
+      ]
+    },
+    {
+      "tab": "printer",
+      "from": [
+        "General",
+        "Size & Clearances"
+      ],
+      "to": [
+        "machine",
+        "Size & clearances"
+      ]
+    },
+    {
+      "tab": "printer",
+      "from": [
+        "General",
+        "Sequential Printing Limits"
+      ],
+      "to": [
+        "machine",
+        "Sequential printing"
+      ]
+    },
+    {
+      "tab": "printer",
+      "from": [
+        "Machine limits",
+        "General"
+      ],
+      "to": [
+        "motion",
+        "Limits"
+      ]
+    },
+    {
+      "tab": "printer",
+      "from": [
+        "Machine limits",
+        "Maximum Accelerations"
+      ],
+      "to": [
+        "motion",
+        "Accelerations"
+      ]
+    },
+    {
+      "tab": "printer",
+      "from": [
+        "Machine limits",
+        "Maximum Feedrates"
+      ],
+      "to": [
+        "motion",
+        "Feedrates"
+      ]
+    },
+    {
+      "tab": "printer",
+      "from": [
+        "Machine limits",
+        "Minimum Feedrates"
+      ],
+      "to": [
+        "motion",
+        "Feedrates"
+      ]
+    },
+    {
+      "tab": "printer",
+      "from": [
+        "Machine limits",
+        "Jerk Limits"
+      ],
+      "to": [
+        "motion",
+        "Jerk & junction deviation"
+      ]
+    },
+    {
+      "tab": "printer",
+      "from": [
+        "Machine limits",
+        "Junction Deviation"
+      ],
+      "to": [
+        "motion",
+        "Jerk & junction deviation"
+      ]
+    },
+    {
+      "tab": "printer",
+      "from": [
+        "Multiple extruders",
+        "Position"
+      ],
+      "to": [
+        "extruders",
+        "Extruder offsets"
+      ]
+    },
+    {
+      "tab": "printer",
+      "from": [
+        "Single extruder MM setup",
+        "Single Extruder Multimaterial parameters"
+      ],
+      "to": [
+        "extruders",
+        "Single extruder MM"
+      ]
+    },
+    {
+      "tab": "printer",
+      "from": [
+        "Bed",
+        "Size & Coordinates"
+      ],
+      "to": [
+        "bed",
+        "Build plate"
+      ]
+    },
+    {
+      "tab": "printer",
+      "from": [
+        "Custom G-code",
+        "Custom G-code"
+      ],
+      "to": [
+        "gcode",
+        "Custom G-code"
+      ]
+    },
+    {
+      "tab": "printer",
+      "from": [
+        "Printer notes",
+        "Notes"
+      ],
+      "to": [
+        "notes",
+        "Notes"
+      ]
+    },
+    {
+      "tab": "printer",
+      "from": [
+        "Advanced",
+        ""
+      ],
+      "to": [
+        "advanced",
+        "Expert"
+      ]
+    }
+  ],
+  "keys": {
+    "ensure_vertical_shell_thickness": [
+      "structure",
+      "Top & bottom shells"
+    ],
+    "top_one_perimeter_type": [
+      "structure",
+      "Top & bottom shells"
+    ],
+    "extra_perimeters_on_overhangs": [
+      "structure",
+      "Bridging & overhangs"
+    ],
+    "overhangs": [
+      "structure",
+      "Bridging & overhangs"
+    ],
+    "thick_bridges": [
+      "structure",
+      "Bridging & overhangs"
+    ],
+    "bridge_angle": [
+      "structure",
+      "Bridging & overhangs"
+    ],
+    "bridge_flow_ratio": [
+      "structure",
+      "Bridging & overhangs"
+    ],
+    "only_retract_when_crossing_perimeters": [
+      "structure",
+      "Retraction"
+    ],
+    "bridge_speed": [
+      "motion",
+      "Overhangs"
+    ],
+    "over_bridge_speed": [
+      "motion",
+      "Overhangs"
+    ],
+    "support_material_speed": [
+      "motion",
+      "Other layers"
+    ],
+    "support_material_interface_speed": [
+      "motion",
+      "Other layers"
+    ],
+    "gcode_comments": [
+      "output",
+      "G-code output"
+    ],
+    "gcode_label_objects": [
+      "output",
+      "G-code output"
+    ],
+    "extrusion_multiplier": [
+      "flow",
+      "Flow ratio"
+    ],
+    "filament_diameter": [
+      "material",
+      "Filament"
+    ]
+  }
+}

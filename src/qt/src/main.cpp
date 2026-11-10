@@ -795,6 +795,9 @@ int main(int argc, char* argv[])
     const QCommandLineOption preview_option("preview", "Open a G-code file in the toolpath preview.", "path");
     const QCommandLineOption dump_config_option("dump-config", "Write the settings model's engine config to a file and exit.", "path");
     const QCommandLineOption dump_tabs_option("dump-tabs", "Print the settings tab tree with per-sub-tab counts and exit.");
+    const QCommandLineOption dump_settings_json_option(
+        "dump-settings-json",
+        "Print every setting the sidebar exposes -- tab, page, section, name, label, type -- as JSON and exit.");
     const QCommandLineOption dump_plates_option("dump-plates", "Print the plate count and the objects on each plate after loading, then exit.");
     const QCommandLineOption dump_objects_option("dump-objects", "Print every loaded object's name, facet count, plate and position, then exit.");
     const QCommandLineOption dump_applied_option(
@@ -868,6 +871,9 @@ int main(int argc, char* argv[])
     const QCommandLineOption mesh_tools_option("mesh-tools-test",
         "Measure a cube, hollow it, then merge two boxes and split the result back into two "
         "objects; CONFIG is a resolved config.", "CONFIG");
+    const QCommandLineOption paint_perf_option("paint-perf",
+        "Time what a brush pays per mouse report -- one dab and one ray pick -- on a "
+        "sixty-thousand-facet part; CONFIG is a resolved config.", "CONFIG");
     const QCommandLineOption multi_tool_option("multi-tool-test",
         "Paint the top of a box with tool 2, slice it on a tool changer and report the tool "
         "changes and colours; CONFIG is a resolved config of a printer with two or more tools.",
@@ -934,11 +940,12 @@ int main(int argc, char* argv[])
         "Write the current printer's whole preset bundle into a directory: every preset "
         "file plus the manifest that names its machines. Prints what it wrote.", "dir");
     parser.addOptions({qml_option, smoke_option, shot_option, slice_option, preview_option, dump_config_option,
-                       dump_tabs_option, dump_names_option, dump_subtab_option, dump_plates_option, dump_objects_option, dump_applied_option, transform_option, hide_feature_option,
+                       dump_tabs_option, dump_settings_json_option, dump_names_option, dump_subtab_option, dump_plates_option, dump_objects_option, dump_applied_option, transform_option, hide_feature_option,
                        view_type_option, hide_option_option,
                        single_layer_option, layer_option, layer_from_option, moves_option, view_option, camera_view_option,
                        ortho_option, plates_option,
-                       settings_tab_option, paint_test_option, input_test_option, slider_test_option,
+                       settings_tab_option, paint_test_option, paint_perf_option,
+                       input_test_option, slider_test_option,
                        preset_dialog_option,
                        hover_test_option, panel_left_option, selftest_option, slice_all_option, plate_tools_option, slice_features_option,
                        project_version_test_option, project_test_option, export_project_option, mesh_tools_option, update_option,
@@ -1287,6 +1294,10 @@ int main(int argc, char* argv[])
     if (parser.isSet(mesh_tools_option))
         return next_layer::runMeshToolsSelftest(parser.value(mesh_tools_option),
                                                QString::fromStdString(dataDir()));
+
+    if (parser.isSet(paint_perf_option))
+        return next_layer::runPaintSelftest(parser.value(paint_perf_option),
+                                            QString::fromStdString(dataDir()), 40);
 
     if (parser.isSet(multi_tool_option))
         return next_layer::runMultiToolSelftest(parser.value(multi_tool_option),
@@ -1677,6 +1688,12 @@ int main(int argc, char* argv[])
         return 0;
     }
 
+    if (parser.isSet(dump_settings_json_option)) {
+        const QString json = settings->settingsJson();
+        std::fwrite(json.toUtf8().constData(), 1, size_t(json.toUtf8().size()), stdout);
+        return 0;
+    }
+
     if (parser.isSet(dump_names_option)) {
         std::printf("%s", settings->nameDump().toUtf8().constData());
         return 0;
@@ -1685,7 +1702,7 @@ int main(int argc, char* argv[])
     if (parser.isSet(dump_subtab_option)) {
         const QStringList parts = parser.value(dump_subtab_option).split('/');
         if (parts.size() != 2) {
-            std::fprintf(stderr, "--dump-subtab expects TAB/SUBTAB, e.g. process/100\n");
+            std::fprintf(stderr, "--dump-subtab expects TAB/SUBTAB, e.g. process/surface\n");
             return 2;
         }
         const QVariantList groups = settings->groups(parts.at(0), parts.at(1), QString());

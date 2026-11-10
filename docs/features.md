@@ -26,12 +26,27 @@ not a market this app serves, so resin profiles, drain holes and the resin
 settings tab are *n/a* rather than missing. Hollow is the one piece reused, and
 only as a mesh operation: growing an inner wall is useful for FFF parts too.
 
-## Settings — tabs and sub-tabs
+## Settings — tabs and pages
 
-The tab tree is the engine's own taxonomy (`ConfigItemDef::Category` and
-`OptionGroup`), not a hand-written list. Verify with
-`next-layer-qt --dump-tabs` and inspect one sub-tab with
-`next-layer-qt --dump-subtab process/104`.
+The inventory is the engine's (every `ConfigItemDef` the sidebar can show, 352 of
+them), but the pages and sections are next-layer's own, because the engine's
+taxonomy is named after its data model (`Layers & Surfaces`, `Motion & Dynamics`)
+rather than after the print. Three surfaces, three spines:
+
+- **Process** (the left panel): Surface · Structure · Motion · Support · Adhesion ·
+  Multi-tool · Output · Advanced — 219 settings.
+- **Filament** (its own window, gear beside the Filament row): Material ·
+  Temperatures · Flow · Cooling · Tool change · G-code · Notes · Advanced — 68.
+- **Printer** (its own window, gear beside the Printer row): Machine · Motion ·
+  Extruders · Bed & probe · Custom G-code · Notes · Advanced — 65.
+
+The table lives in `tools/settings-layout-map.json` (pages, section order, and the
+per-setting exceptions where one engine group holds two subjects), and
+`tools/settings_layout.py` joins it with `--dump-settings-json` to write
+`src/qt/assets/settings-layout.json`, which is what the app loads. The script
+fails if any setting the app shows has no page, so a new engine setting cannot
+silently disappear. Verify with `next-layer-qt --dump-tabs` and inspect one page
+with `next-layer-qt --dump-subtab process/surface`.
 
 ### Presets and onboarding, before the tabs
 
@@ -50,54 +65,50 @@ The tab tree is the engine's own taxonomy (`ConfigItemDef::Category` and
 | Near/far clip planes scale with camera distance | done — a fixed 1 mm near plane clipped into the model when zoomed in close |
 | Sliced toolpaths survive orbiting, panning and zooming | done — verified in the window with real input at 5 zoom steps and three drags |
 
-### Process (`FDMConfigLocation::Print`, 222 settings → 14 sub-tabs)
+### Process (`FDMConfigLocation::Print`, 219 settings → 8 pages)
 
-| Sub-tab | Settings | Status |
+Pages are next-layer's own, from `tools/settings-layout-map.json`; see the
+settings section above for how they are generated and gated.
+
+| Page | Settings | What is in it |
 | --- | --- | --- |
-| Layers & Surfaces | 17 | done |
-| Walls & Perimeters | 22 | done |
-| Infill | 15 | done |
-| Bed adhesion | 13 | done |
-| Supports | 30 | done — grid/snug/**tree** style from `support_material_style`, four tree shapes (Tree, Tree slim, Tree strong, Tree hybrid) as parameter profiles over the engine's one organic generator, with the tree branch diameter, angle, double-wall and distance options exposed alongside them and editable after a shape is picked (confirmed in a real slice's `--dump-config`) |
-| Speed | 25 | done |
-| Motion & Dynamics | 22 | done |
-| Extrusion & Retraction | 19 | done |
-| Tools & Wipe Tower | 21 | done — the engine's own extruder assignment, wipe tower and tool-change options; the seven colour-mixing-only options are filtered out |
-| Precision & Slicing | 19 | done |
-| Custom G-code | 1 | done |
-| Output options | 1 | done |
-| Notes | 1 | done |
-| Advanced (legacy aliases + profile identity) | 9 | done |
+| Surface | 44 | layer height, line widths, seam (alignment, gap, scarf), ironing, fuzzy skin, slicing precision, wall generator (classic/Arachne and its parameters) |
+| Structure | 42 | walls, top/bottom shells, infill (density, pattern, combination, anchoring, overlap), bridging and overhangs, retraction and idle-tool retraction |
+| Motion | 47 | first-layer and per-role speeds, overhang slowdown, travel and avoidance, Z hop and lift, acceleration per role, volumetric limits and the pressure equalizer |
+| Support | 30 | support generation, pattern and spacing, interface layers and spacing, **tree supports** — grid/snug/**tree** from `support_material_style`, four tree shapes (Tree, Tree slim, Tree strong, Tree hybrid) as parameter profiles over the engine's one organic generator, editable after a shape is picked (confirmed in a real slice's `--dump-config`) |
+| Adhesion | 13 | skirt (loops, distance, height, draft shield), brim (type, width, gap), raft (layers, expansion, contact distance) |
+| Multi-tool | 25 | prime tower, per-feature extruder assignment, ooze prevention, tool changes, interlocking — the engine's own options; the seven colour-mixing-only options are filtered out |
+| Output | 9 | spiral vase and sequential printing, G-code output and labels, post-processing scripts, custom parameters, notes |
+| Advanced | 9 | settings the engine marks hidden (legacy aliases, first-layer speed overrides) |
 
-### Filament (`FDMConfigLocation::Filament`, 65 settings → 8 sub-tabs)
+### Filament (`FDMConfigLocation::Filament`, 68 settings → 8 pages)
 
 Single material slot today. The saved config keeps the engine's per-slot array
 shape; a second material needs the multi-slot UI, which is not built.
 
-| Sub-tab | Settings | Status |
+| Page | Settings | What is in it |
 | --- | --- | --- |
-| Material & Temperatures | 13 | done |
-| Extrusion & Calibration | 6 | done |
-| Cooling | 23 | done — overhang fan speed (graded across four overlap steps) and its on/off gate, first-layer fan override, support-interface, ironing and internal-bridge fan speeds, minimum/maximum speed limits and layering thresholds |
-| Tool Changes | 18 | done — ramming, tip shaping and wipe-tower purging; the MMU flush/purge options are filtered out |
-| Overrides | 3 | done |
-| Custom G-code | 3 | done |
-| Notes | 1 | done |
-| Advanced (filament identity) | 2 | done |
+| Material | 9 | type, vendor flags, density, diameter, cost, spool weight, shrinkage compensation |
+| Temperatures | 7 | nozzle (first layer, other layers, idle, standby), bed (first layer, other) and chamber |
+| Flow | 6 | flow ratio, pressure advance, and the per-filament volumetric and crossing-speed limits |
+| Cooling | 22 | first-layer fan override, min/max and bridge fan speeds, cooling thresholds, dynamic overhang fan (graded across four overlap steps) with its on/off gate, support-interface, ironing and internal-bridge fan speeds |
+| Tool change | 18 | ramming, tip shaping and cooling moves, loading/unloading timing, wipe-tower purging; the MMU flush/purge options are filtered out |
+| G-code | 3 | start/end filament G-code and custom parameters |
+| Notes | 1 | free text carried with the preset |
+| Advanced | 2 | filament identity the engine derives |
 | Per-filament colour picker (`gui_type: color`) | — | staged — edited as text |
 
-### Printer (`FDMConfigLocation::Printer`, 65 settings → 8 sub-tabs)
+### Printer (`FDMConfigLocation::Printer`, 65 settings → 7 pages)
 
-| Sub-tab | Settings | Status |
+| Page | Settings | What is in it |
 | --- | --- | --- |
-| General | 17 | done |
-| Bed | 3 | done — `bed_shape` shown as points, no visual bed editor |
-| Custom G-code | 11 | done |
-| Machine limits | 19 | done |
-| Multiple extruders | 1 | done |
-| Single extruder MM setup | 7 | done |
-| Printer notes | 1 | done |
-| Advanced (printer identity: model/variant/vendor) | 6 | done |
+| Machine | 17 | G-code flavour, firmware capabilities, remaining-time and thumbnails, Z offset, sequential-printing clearance limits |
+| Motion | 19 | machine limits: usage mode, maximum feedrates and accelerations, jerk, junction deviation, minimum rates |
+| Extruders | 8 | extruder offsets, single-extruder multi-material parameters |
+| Bed & probe | 3 | `bed_shape` as points, custom bed model and texture |
+| Custom G-code | 11 | start/end/pause/layer-change/tool-change G-code, temperature command emission |
+| Notes | 1 | free text carried with the preset |
+| Advanced | 6 | printer identity (model, variant, vendor) |
 | Bed shape editor (drag polygon, SVG/STL background) | — | needs-engine — the plater's bed editor is not exposed |
 | Physical printer / host offsets | — | n/a — vendor connection dialogs |
 
@@ -185,11 +196,11 @@ nothing is not a roadmap.
 | Measure (two points, distance, deltas, angle from vertical) | done — a point is wherever the ray hits a mesh, or failing that the bed beneath it, so the tool measures across the plate as well as across a part (the reference slicers do the same, and checking whether something fits is the usual reason to reach for it). A click that lands outside the build plate's outline is ignored rather than measured against nothing. Verified: two clicks on a 350 mm plate read 267.23 mm across, dz 0.00 |
 | Fuzzy skin | done — jumps to Process › Walls & Perimeters |
 | Lay on face | done — click a face; the facet normal is turned down and the object dropped to the bed. With the tool armed the face under the pointer is collected as one whole flat face (`PlateScene::setHoverFacet` floods out through shared vertices to every coplanar triangle, so a square face is 2 triangles, not 1; `--hover-test N` proves the flood) and drawn tinted before the click. Verified in a real window: `l`, pointer over the cube, whole top face cyan, click reports "laid face 3 on the bed" |
-| Support painting | done — sphere brush over the picked facets, stored as the engine's own `FacetsAnnotation`, drawn in the viewport and honoured by the slice (`--slice-features` proves 0 → 983 support moves) |
+| Support painting | done — circle or sphere brush over the picked facets, stored as the engine's own `FacetsAnnotation`, drawn in the viewport and honoured by the slice (`--slice-features` proves 0 → 983 support moves). While a brush is armed the bed is gone entirely — plate, logo, grid, chrome and origin axes — so every edge on screen belongs to the part being painted; the camera keeps working (left drag off the part or with Ctrl held orbits, middle and right drag pan, wheel zooms). A stroke is incremental: one live triangle selector per object, only the painted overlay rebuilt per dab, and picking through a cached `igl::AABB` — measured by `--paint-perf` on an 82k-facet part at **15.6 ms per dab and 1 µs per ray** *(was: two full selector rebuilds and a whole-scene rebuild per dab, plus a brute-force ray against every facet of every object per mouse move)*, gated in `tools/check` at 32 ms and 0.5 ms |
 | Seam painting | done — same brush, `seam_facets` |
 | Colour painting for a tool changer | done — the brush writes a per-facet tool index (`mm_segmentation_facets`, the engine's tool field) and the swatch list is the printer's own tool colours, so the overlay is what the machine will print. **There is no MMU and no single-nozzle colour mixing anywhere in this app**: those options are filtered out of the settings panel and the words do not appear in the UI |
 | Add a shape (box, cylinder, sphere) | done — an object built by the engine's own `its_make_cube`/`make_cylinder`/`make_sphere`, normalised to the app's XY-centred, Z-on-the-bed convention, so every tool and per-object setting works on it. `--shape-test` slices one and measures the filament |
-| Modifier, negative, support-blocker and support-enforcer volumes | done — a volume on the selected object with the engine's own `ModelVolumeType`; the FDM slice path slices each type and booleans it, so a negative volume cuts the toolpath (`--shape-test`: 3899.4 mm → 2823.2 mm of filament, and back to 3899.4 when removed). Drawn translucent by role (red subtracts, amber modifies, purple blocks, green forces) and the object turns into a ghost so an interior volume is visible. The object list nests the volumes with their type and a delete |
+| Part, modifier, negative, support-blocker and support-enforcer volumes | done — a volume on the selected object with the engine's own `ModelVolumeType`; the FDM slice path slices each type and booleans it, so a negative volume cuts the toolpath (`--shape-test`: 1599091.9 mm → 813860.3 mm of filament, and back when removed). **A volume is a thing you can point at**: a new one is placed beside the part resting on the bed and selected immediately (the reference's own rule — a volume spawned inside the model cannot be seen, clicked or therefore placed), the brush-free pointer selects a volume before the object behind it, the move gizmo attaches to the volume rather than the part, dragging it moves the volume live, and the transform tools act on it. Drawn opaque by role when selected, translucent otherwise (red subtracts, amber modifies, purple blocks, green forces) while the part it belongs to becomes a ghost. The object list nests the volumes, highlights the selected one and selects it on click; `Add part` puts a `MODEL_PART` beside the others |
 | Text object | done — Add ▸ Add text…: a line of glyphs as a solid, through the engine's `Biz::Emboss::text2shapes` plus `Biz::Algorithms::Tesselate`. Fonts come from fontconfig, because the engine's own `get_font_list()` is a no-op off Windows. `--mesh-tools-test`: "next-layer" at 10 mm is 61.5 mm wide, 1.2 mm thick and slices. The outline is baked into the mesh, so the text is geometry afterwards, not a parametric volume |
 | Hollow | done — Object ▸ Hollow… grows an inner wall `n` mm inside the surface through the engine's own voxel hollowing (`sla::hollow_mesh`, which is FDM-agnostic); `--mesh-tools-test`: an 8000 mm³ cube becomes a 3941.6 mm³ shell at 2 mm and keeps its 20 mm height |
 | Variable layer height | done — a band and a height in the object panel, written as a `LayerHeightProfile` on the object; the slice honours it (`--slice-features` proves 125 → 187 layers) |
@@ -285,7 +296,7 @@ nothing is not a roadmap.
 | Multiple plates | done — the tab strip adds, renames, duplicates, clears and deletes plates, and every plate is drawn in the scene as its own bed with its objects, so a new plate appears where it will print |
 | Plate options | done — the chevron on the active plate tab: rename, duplicate, clear, delete |
 | Custom G-code per layer | done — right-click the layer slider: custom G-code, a pause (M601) or a tool change at that Z. Markers draw as ticks on the slider, are saved in the project, and the engine's own `CustomGCode::Info` emits them at their layer (`tools/check` proves the marker lands once, in the right layer) |
-| Object right-click menu | done — right-click a row in the object list, or an object in the viewport: per-object settings, duplicate, delete, isolate, show all, centre, drop, auto-orient, lay on face, and modifier / negative / blocker / enforcer volumes. In the viewport a right *drag* still pans — the menu is a right press that does not travel, which is how the reference slicer keeps the two apart |
+| Object right-click menu | done — right-click a row in the object list, or an object in the viewport: per-object settings, duplicate, delete, isolate, show all, centre, drop, auto-orient, lay on face, and part / modifier / negative / blocker / enforcer volumes. In the viewport a right *drag* still pans — the menu is a right press that does not travel, which is how the reference slicer keeps the two apart |
 | Send to printer (Klipper/Moonraker, OctoPrint, PrusaLink…) | done — File ▸ Send to printer…: host, type, API key, Test, Send, Send and print. The upload goes through the engine's own `PrintHostMoonraker` / `OctoPrint` / `PrusaLink` / `Duet` implementations; `tools/check` proves it against a stand-in Moonraker, marker-verified |
 | Multi-filament / multicolour | done, for tool changers — one material per extruder is resolved (`--filaments A,B`), each tool has its own picker in the preset editor, an object prints with a chosen tool (T chip in the object list) and a painted facet prints with the tool it carries. `tools/check` slices a two-tool plate where painting tool 2 adds a tool change and the second colour. MMU single-nozzle mixing stays out by design |
 | Calibration suite | done — File ▸ Calibration…: ten tests, each with its own parameter page, then Build. See "Calibration" below for the per-test contract |

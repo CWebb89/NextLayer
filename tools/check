@@ -279,6 +279,19 @@ else
     __ok "settings: $tab_count tabs, $tab_total settings"
 end
 
+# The pages and sections the sidebar shows are generated from the engine's own
+# definitions plus tools/settings-layout-map.json. Regenerating and comparing is
+# what keeps the committed table honest: a setting added to the engine, or a
+# rename in the map, fails here instead of quietly landing under the engine's
+# category instead of its page.
+set -l layout_out (tools/settings_layout.py --check 2>&1)
+set -l layout_rc $status
+if test $layout_rc -ne 0
+    __bad "settings layout: "(string join ' ' (string match -r 'unmapped:.*|is stale.*' -- $layout_out | head -n 3))
+else
+    __ok 'settings layout: generated table matches the engine'
+end
+
 set -l font_out ($bin --dump-fonts 2>&1)
 set -l font_rc $status
 set -l font_count (string match -r '^fonts: (\d+) openable$' -- $font_out)
@@ -1040,6 +1053,27 @@ if test $host_rc -ne 0
     __bad "print host: "(string join '; ' -- (string match -r 'print host: .*' -- $host_out))
 else
     __ok "print host: "(string match -r 'print host: uploaded .*' -- $host_out)
+end
+
+# Paint cost gate: what a brush pays per mouse report on a part dense enough for
+# it to matter. A dab used to rebuild the engine's split representation twice and
+# re-walk every facet of every object, and picking tested every facet of every
+# object per move; both numbers are measured here so neither can come back
+# quietly. The ceilings are twice the measured cost on this machine.
+set -l paint_out (env $bin --paint-perf /tmp/nl-check-calibration.json 2>&1 | grep -E '^paint:')
+set -l paint_rc $status
+set -l paint_ms (string match -r 'mean [0-9.]+' -- $paint_out | string replace 'mean ' '')
+set -l pick_ms (string match -r 'pick [0-9.]+' -- $paint_out | string replace 'pick ' '')
+if test $paint_rc -ne 0
+    __bad "paint cost: "(string join '; ' -- $paint_out)
+else if test -z "$paint_ms"
+    __bad "paint cost: no measurement in '"$paint_out"'"
+else if test (math "$paint_ms > 32") -eq 1
+    __bad "paint cost: a dab costs $paint_ms ms, over the 32 ms ceiling"
+else if test (math "$pick_ms > 0.5") -eq 1
+    __bad "paint cost: a ray pick costs $pick_ms ms, over the 0.5 ms ceiling"
+else
+    __ok "paint cost: "(string match -r 'mean [0-9.]+ ms.*pick [0-9.]+ ms/ray' -- $paint_out)
 end
 
 # Per-volume settings gate: a modifier changes what the object becomes, and its

@@ -8,6 +8,7 @@
 #include "SliceRuntime.hpp"
 #include "ThreeMfProject.hpp"
 
+#include <QHash>
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -239,6 +240,27 @@ public:
     /// A volume attached to an existing object. a type is one of "modifier",
     /// "negative", "blocker" or "enforcer"; the shape is the same set of
     /// primitives, sized to sit inside the object it will affect.
+    /// The volume being edited, if any: a modifier, a negative volume or a
+    /// support blocker belonging to the selected object. A volume is a thing on
+    /// the plate you can point at, not a property buried in the part, so it has
+    /// its own selection and the move, scale and rotate tools act on it.
+    Q_PROPERTY(int selectedVolume READ selectedVolumeId NOTIFY selectionChanged)
+    Q_INVOKABLE void selectVolume(int objectId, int volumeId);
+    Q_INVOKABLE void clearVolumeSelection();
+    Q_INVOKABLE int selectedVolumeId() const { return m_selectedVolume; }
+    /// Where a volume sits in the world and how big it is, for the panel that
+    /// edits a selected volume the way the transform panel edits an object.
+    Q_INVOKABLE QVariantMap volumeInfo(int objectId, int volumeId) const;
+    /// The selected volume's centre and size in printer coordinates, which is
+    /// what the move gizmo attaches to. False when no volume is selected.
+    bool selectedVolumeFrame(QVector3D& centre, QVector3D& size) const;
+    /// The volume a ray hit, if any: the scene asks this while it is already
+    /// walking the object, so the world matrix comes from the caller.
+    static bool volumeBounds(const Volume& volume,
+                             const Slic3r::Domain::Transformation& object,
+                             QVector3D& centre, QVector3D& size);
+    Q_INVOKABLE bool setVolumeRotation(int objectId, int volumeId, const QVector3D& degrees);
+
     Q_INVOKABLE int addVolume(int objectId, const QString& kind, const QString& type,
                               double width, double depth, double height);
     Q_INVOKABLE bool removeVolume(int objectId, int volumeId);
@@ -336,6 +358,12 @@ public:
                                 const QVector3D& cameraPoint, const QString& mode,
                                 int extruder = 2, int facetHint = -1);
     Q_INVOKABLE void clearPaint(int id, const QString& kind);
+
+    /// The painted facets of one object, all three kinds together, for the
+    /// viewport overlay. The object is passed rather than an id because the scene
+    /// already holds it and this is called once per object per rebuild.
+    Slic3r::Domain::indexed_triangle_set_with_color paintedGeometry(
+        const Object& object, next_layer::PaintKind kind) const;
     /// The tool an object prints with. A tool changer keeps one setting per
     /// region -- perimeter, infill, solid infill, support -- and the object as a
     /// whole is at tool 1 until one of them says otherwise.
@@ -460,6 +488,10 @@ signals:
     void errorChanged();
     void undoChanged();
     void geometryChanged();
+    /// One object's painted facets changed and nothing else did. Painting emits
+    /// this instead of geometryChanged: a dab used to rebuild every mesh in the
+    /// scene, which on a full plate was most of what made a stroke crawl.
+    void paintChanged(int objectId);
     void plateChanged();
     void brushChanged();
     void printSetupChanged();
@@ -477,6 +509,10 @@ private:
         QString label;
         int coalesceKey = 0;
     };
+
+    /// The live paint state of one object and kind, built on demand and kept
+    /// until the object's mesh changes or the document is replaced.
+    next_layer::PaintSession* paintSession(int objectId, next_layer::PaintKind kind);
 
     Object* find(int id);
     const Object* find(int id) const;
@@ -518,6 +554,19 @@ private:
 
     QVector2D m_bedCentre;
     QVector2D m_bedSize;
+    /// Keyed by object id and paint kind. A session is only valid while the
+    /// object still carries the mesh it was built from and the document is still
+    /// the one it was built in, which is what the generation guards: undo, a
+    /// project load and a cleared paint all replace the stored data behind a
+    /// session's back.
+    struct PaintEntry
+    {
+        std::shared_ptr<next_layer::PaintSession> session;
+        quint64 generation = 0;
+    };
+    QHash<qint64, PaintEntry> m_paintSessions;
+    quint64 m_paintGeneration = 0;
+
     std::vector<Object> m_objects;
     std::vector<Snapshot> m_undo;
     std::vector<Snapshot> m_redo;
@@ -537,6 +586,7 @@ private:
     std::vector<InLayerMark> m_inLayerMarks;
     double m_baseLayerHeight = 0.2;
     std::vector<int> m_selectedIds;
+    int m_selectedVolume = 0;
     int m_version = 0;
     QString m_error;
     QStringList m_pendingNotes;

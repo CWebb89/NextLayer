@@ -13,6 +13,7 @@ MenuPanel 1.0 MenuPanel.qml
 MovesSlider 1.0 MovesSlider.qml
 NumberField 1.0 NumberField.qml
 Panel 1.0 Panel.qml
+ProductCard 1.0 ProductCard.qml
 RangeSlider 1.0 RangeSlider.qml
 ResizeGrip 1.0 ResizeGrip.qml
 SectionHeader 1.0 SectionHeader.qml
@@ -21,6 +22,7 @@ Separator 1.0 Separator.qml
 SettingEditor 1.0 SettingEditor.qml
 Slider 1.0 Slider.qml
 SplitButton 1.0 SplitButton.qml
+TabStrip 1.0 TabStrip.qml
 ThemedScrollBar 1.0 ThemedScrollBar.qml
 Toggle 1.0 Toggle.qml
 ToolButton 1.0 ToolButton.qml

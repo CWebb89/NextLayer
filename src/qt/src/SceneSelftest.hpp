@@ -63,4 +63,12 @@ int runCalibrationSelftest(const QString& configPath, const QString& dataDir,
 int runMeshToolsSelftest(const QString& configPath, const QString& dataDir);
 int runShapeSelftest(const QString& configPath, const QString& dataDir);
 
+/// Measures what a brush pays per mouse report on a part dense enough for it to
+/// matter: one dab (split the facets, write the plate's stored paint) and one
+/// ray pick (decide what is under the pointer). A stroke used to rebuild the
+/// engine's split representation twice per dab and re-walk every facet of every
+/// object, which is what made painting a large part crawl; the gate holds the
+/// numbers to a ceiling so it cannot come back quietly.
+int runPaintSelftest(const QString& configPath, const QString& dataDir, int dabs);
+
 }

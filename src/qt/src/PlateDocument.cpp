@@ -1012,6 +1012,8 @@ void PlateDocument::restore(const Snapshot& snapshot)
     m_objects = snapshot.objects;
     m_selectedIds = snapshot.selection;
     m_activePlate = snapshot.activePlate;
+    m_paintSessions.clear();
+    ++m_paintGeneration;
     emit objectsChanged();
     emit selectionChanged();
     emit undoChanged();
@@ -1622,11 +1624,17 @@ int PlateDocument::addVolume(int objectId, const QString& kind, const QString& t
     volume.mesh = std::make_shared<const TriangleMesh>(std::move(mesh));
     volume.localMin = low;
     volume.localMax = high;
-    // The volume sits in the middle of the object's footprint, in the object's
-    // own frame, so it stays with the object when that object is transformed.
-    volume.trafo.set_offset(Vec3d((object->localMin.x() + object->localMax.x()) * 0.5,
-                                  (object->localMin.y() + object->localMax.y()) * 0.5,
-                                  object->localMin.z()));
+    // Beside the part, resting on the bed, not buried at its centre. A volume
+    // spawned inside the model is a volume you cannot see, cannot click and
+    // therefore cannot place -- the reference is explicit about this ("translate
+    // the new modifier to be pickable"). It is in the object's own frame, so it
+    // still follows the object when that object is moved, rotated or scaled.
+    const double halfWidth = (high.x() - low.x()) * 0.5;
+    const double halfDepth = (high.y() - low.y()) * 0.5;
+    const double halfHeight = (high.z() - low.z()) * 0.5;
+    volume.trafo.set_offset(Vec3d(object->localMax.x() + halfWidth + 2.0,
+                                  object->localMin.y() + halfDepth,
+                                  object->localMin.z() + halfHeight));
 
     const QString label = volumeTypeName(volume.type);
     pushUndo(QStringLiteral("Add %1 to %2").arg(label, displayNameOf(objectId)));
@@ -1635,7 +1643,9 @@ int PlateDocument::addVolume(int objectId, const QString& kind, const QString& t
         return -1;
     const int volumeId = volume.id;
     object->volumes.push_back(std::move(volume));
+    m_selectedVolume = volumeId;
     changed();
+    emit selectionChanged();
     emit geometryChanged();
     return volumeId;
 }
@@ -1864,9 +1874,133 @@ void PlateDocument::clear()
                     m_objects.end());
     m_selectedIds.clear();
     m_stagedRevision = 0;
+    m_paintSessions.clear();
+    ++m_paintGeneration;
     changed();
     emit selectionChanged();
     emit geometryChanged();
+}
+
+void PlateDocument::selectVolume(int objectId, int volumeId)
+{
+    const Object* object = find(objectId);
+    if (object == nullptr)
+        return;
+    const auto it = std::find_if(object->volumes.begin(), object->volumes.end(),
+                                 [volumeId](const Volume& volume) {
+                                     return volume.id == volumeId;
+                                 });
+    if (it == object->volumes.end())
+        return;
+    m_selectedVolume = volumeId;
+    if (m_selectedIds.size() != 1 || m_selectedIds.front() != objectId) {
+        m_selectedIds.assign(1, objectId);
+        emit objectsChanged();
+    }
+    emit selectionChanged();
+}
+
+void PlateDocument::clearVolumeSelection()
+{
+    if (m_selectedVolume == 0)
+        return;
+    m_selectedVolume = 0;
+    emit selectionChanged();
+}
+
+QVariantMap PlateDocument::volumeInfo(int objectId, int volumeId) const
+{
+    const Object* object = find(objectId);
+    if (object == nullptr)
+        return {};
+    for (const Volume& volume : object->volumes) {
+        if (volume.id != volumeId)
+            continue;
+        const Vec3d offset = volume.trafo.get_offset();
+        const Vec3d rotation = volume.trafo.get_rotation();
+        const Vec3d scale = volume.trafo.get_scaling_factor();
+        QVariantMap info;
+        info.insert(QStringLiteral("id"), volume.id);
+        info.insert(QStringLiteral("name"), volume.name);
+        info.insert(QStringLiteral("type"), volumeTypeName(volume.type));
+        info.insert(QStringLiteral("width"), volume.localMax.x() - volume.localMin.x());
+        info.insert(QStringLiteral("depth"), volume.localMax.y() - volume.localMin.y());
+        info.insert(QStringLiteral("height"), volume.localMax.z() - volume.localMin.z());
+        info.insert(QStringLiteral("x"), offset.x());
+        info.insert(QStringLiteral("y"), offset.y());
+        info.insert(QStringLiteral("z"), offset.z());
+        info.insert(QStringLiteral("rotation_x"), qRadiansToDegrees(rotation.x()));
+        info.insert(QStringLiteral("rotation_y"), qRadiansToDegrees(rotation.y()));
+        info.insert(QStringLiteral("rotation_z"), qRadiansToDegrees(rotation.z()));
+        info.insert(QStringLiteral("scale"), scale.x());
+        return info;
+    }
+    return {};
+}
+
+bool PlateDocument::volumeBounds(const Volume& volume,
+                                 const Slic3r::Domain::Transformation& object,
+                                 QVector3D& centre, QVector3D& size)
+{
+    if (volume.mesh == nullptr)
+        return false;
+    const Transform3d world = volume.worldMatrix(object);
+    const Vec3d middle((volume.localMin.x() + volume.localMax.x()) * 0.5,
+                       (volume.localMin.y() + volume.localMax.y()) * 0.5,
+                       (volume.localMin.z() + volume.localMax.z()) * 0.5);
+    const Vec3d scale = volume.trafo.get_scaling_factor();
+    const Vec3d scaled((volume.localMax.x() - volume.localMin.x()) * scale.x(),
+                       (volume.localMax.y() - volume.localMin.y()) * scale.y(),
+                       (volume.localMax.z() - volume.localMin.z()) * scale.z());
+    const Vec3d centre3 = world * middle;
+    centre = QVector3D(centre3.x(), centre3.y(), centre3.z());
+    size = QVector3D(float(std::abs(scaled.x())), float(std::abs(scaled.y())),
+                     float(std::abs(scaled.z())));
+    return true;
+}
+
+bool PlateDocument::selectedVolumeFrame(QVector3D& centre, QVector3D& size) const
+{
+    if (m_selectedVolume == 0 || m_selectedIds.size() != 1)
+        return false;
+    const Object* object = find(m_selectedIds.front());
+    if (object == nullptr)
+        return false;
+    for (const Volume& volume : object->volumes) {
+        if (volume.id == m_selectedVolume)
+            return volumeBounds(volume, object->trafo, centre, size);
+    }
+    return false;
+}
+
+bool PlateDocument::setVolumeRotation(int objectId, int volumeId, const QVector3D& degrees)
+{
+    Object* object = find(objectId);
+    if (object == nullptr)
+        return false;
+    const auto it = std::find_if(object->volumes.begin(), object->volumes.end(),
+                                 [volumeId](const Volume& volume) {
+                                     return volume.id == volumeId;
+                                 });
+    if (it == object->volumes.end())
+        return false;
+
+    pushUndo(QStringLiteral("Rotate %1 volume").arg(volumeTypeName(it->type)),
+             volumeId * 16 + 5);
+    object = find(objectId);
+    if (object == nullptr)
+        return false;
+    for (Volume& volume : object->volumes) {
+        if (volume.id != volumeId)
+            continue;
+        const Vec3d rotation = volume.trafo.get_rotation();
+        volume.trafo.set_rotation(Vec3d(rotation.x() + qDegreesToRadians(double(degrees.x())),
+                                        rotation.y() + qDegreesToRadians(double(degrees.y())),
+                                        rotation.z() + qDegreesToRadians(double(degrees.z()))));
+    }
+    changed();
+    emit geometryChanged();
+    return true;
 }
 
 void PlateDocument::selectObject(int id, bool additive)
@@ -1883,9 +2017,15 @@ void PlateDocument::selectObject(int id, bool additive)
         selection.push_back(next);
     }
 
-    if (selection == m_selectedIds)
+    if (selection == m_selectedIds) {
+        if (m_selectedVolume != 0) {
+            m_selectedVolume = 0;
+            emit selectionChanged();
+        }
         return;
+    }
     m_selectedIds = std::move(selection);
+    m_selectedVolume = 0;
     emit selectionChanged();
     emit objectsChanged();
 }
@@ -1929,6 +2069,7 @@ void PlateDocument::selectAll()
     if (selection == m_selectedIds)
         return;
     m_selectedIds = std::move(selection);
+    m_selectedVolume = 0;
     emit selectionChanged();
     emit objectsChanged();
 }
@@ -1948,6 +2089,7 @@ void PlateDocument::selectObjects(const QVariantList& ids)
     if (selection == m_selectedIds)
         return;
     m_selectedIds = std::move(selection);
+    m_selectedVolume = 0;
     emit selectionChanged();
     emit objectsChanged();
 }
@@ -1984,6 +2126,37 @@ bool PlateDocument::moveSelection(double deltaX, double deltaY, double deltaZ)
     if (std::abs(deltaX) + std::abs(deltaY) + std::abs(deltaZ) < 1e-9)
         return true;
 
+    // A selected volume moves, not the part it belongs to: that is the whole
+    // point of being able to grab one, and dragging a modifier across a wall is
+    // how it gets placed.
+    if (m_selectedVolume != 0 && m_selectedIds.size() == 1) {
+        Object* object = find(m_selectedIds.front());
+        if (object != nullptr) {
+            const auto it = std::find_if(object->volumes.begin(), object->volumes.end(),
+                                         [this](const Volume& volume) {
+                                             return volume.id == m_selectedVolume;
+                                         });
+            if (it != object->volumes.end()) {
+                pushUndo(QStringLiteral("Move %1 volume").arg(volumeTypeName(it->type)),
+                         m_selectedVolume * 16 + 3);
+                object = find(m_selectedIds.front());
+                if (object == nullptr)
+                    return false;
+                for (Volume& volume : object->volumes) {
+                    if (volume.id != m_selectedVolume)
+                        continue;
+                    const Vec3d offset = volume.trafo.get_offset();
+                    volume.trafo.set_offset(Vec3d(offset.x() + deltaX, offset.y() + deltaY,
+                                                  offset.z() + deltaZ));
+                }
+                changed();
+                emit geometryChanged();
+                return true;
+            }
+        }
+        m_selectedVolume = 0;
+    }
+
     pushUndo(m_selectedIds.size() > 1
                  ? QStringLiteral("Move %1 objects").arg(m_selectedIds.size())
                  : QStringLiteral("Move %1").arg(displayNameOf(m_selectedIds.front())),
@@ -1997,6 +2170,7 @@ bool PlateDocument::moveSelection(double deltaX, double deltaY, double deltaZ)
         object->trafo.set_offset(Vec3d(offset.x() + deltaX, offset.y() + deltaY, offset.z() + deltaZ));
     }
     changed();
+    emit objectsChanged();
     return true;
 }
 
@@ -2004,6 +2178,31 @@ bool PlateDocument::rotateSelection(double degrees)
 {
     if (m_selectedIds.empty())
         return false;
+    if (m_selectedVolume != 0 && m_selectedIds.size() == 1) {
+        Object* object = find(m_selectedIds.front());
+        if (object != nullptr) {
+            for (const Volume& volume : object->volumes) {
+                if (volume.id != m_selectedVolume)
+                    continue;
+                pushUndo(QStringLiteral("Rotate %1 volume").arg(volumeTypeName(volume.type)),
+                         m_selectedVolume * 16 + 5);
+                object = find(m_selectedIds.front());
+                if (object == nullptr)
+                    return false;
+                for (Volume& entry : object->volumes) {
+                    if (entry.id != m_selectedVolume)
+                        continue;
+                    const Vec3d rotation = entry.trafo.get_rotation();
+                    entry.trafo.set_rotation(Vec3d(rotation.x(), rotation.y(),
+                                                   rotation.z() + qDegreesToRadians(degrees)));
+                }
+                changed();
+                emit geometryChanged();
+                return true;
+            }
+        }
+        m_selectedVolume = 0;
+    }
     pushUndo(m_selectedIds.size() > 1
                  ? QStringLiteral("Rotate %1 objects").arg(m_selectedIds.size())
                  : QStringLiteral("Rotate %1").arg(displayNameOf(m_selectedIds.front())),
@@ -2017,6 +2216,7 @@ bool PlateDocument::rotateSelection(double degrees)
                                          rotation.z() + qDegreesToRadians(degrees)));
     }
     changed();
+    emit objectsChanged();
     return true;
 }
 
@@ -2024,6 +2224,31 @@ bool PlateDocument::scaleSelection(double factor)
 {
     if (m_selectedIds.empty() || factor <= 0.0)
         return false;
+    if (m_selectedVolume != 0 && m_selectedIds.size() == 1) {
+        Object* object = find(m_selectedIds.front());
+        if (object != nullptr) {
+            for (const Volume& volume : object->volumes) {
+                if (volume.id != m_selectedVolume)
+                    continue;
+                pushUndo(QStringLiteral("Resize %1 volume").arg(volumeTypeName(volume.type)),
+                         m_selectedVolume * 16 + 4);
+                object = find(m_selectedIds.front());
+                if (object == nullptr)
+                    return false;
+                for (Volume& entry : object->volumes) {
+                    if (entry.id != m_selectedVolume)
+                        continue;
+                    const Vec3d scale = entry.trafo.get_scaling_factor();
+                    entry.trafo.set_scaling_factor(Vec3d(scale.x() * factor, scale.y() * factor,
+                                                         scale.z() * factor));
+                }
+                changed();
+                emit geometryChanged();
+                return true;
+            }
+        }
+        m_selectedVolume = 0;
+    }
     pushUndo(m_selectedIds.size() > 1
                  ? QStringLiteral("Scale %1 objects").arg(m_selectedIds.size())
                  : QStringLiteral("Scale %1").arg(displayNameOf(m_selectedIds.front())),
@@ -2037,6 +2262,7 @@ bool PlateDocument::scaleSelection(double factor)
                                                scale.z() * factor));
     }
     changed();
+    emit objectsChanged();
     return true;
 }
 
@@ -2171,6 +2397,7 @@ bool PlateDocument::setPosition(int id, const QVector3D& position)
     pushUndo(QStringLiteral("Move %1").arg(object->displayName()), id * 16 + 1);
     object->trafo.set_offset(Vec3d(position.x(), position.y(), position.z()));
     changed();
+    emit objectsChanged();
     return true;
 }
 
@@ -2184,6 +2411,7 @@ bool PlateDocument::setRotation(int id, const QVector3D& degrees)
                                      qDegreesToRadians(degrees.y()),
                                      qDegreesToRadians(degrees.z())));
     changed();
+    emit objectsChanged();
     return true;
 }
 
@@ -2195,6 +2423,7 @@ bool PlateDocument::setScale(int id, const QVector3D& factor)
     pushUndo(QStringLiteral("Scale %1").arg(object->displayName()), id * 16 + 3);
     object->trafo.set_scaling_factor(Vec3d(factor.x(), factor.y(), factor.z()));
     changed();
+    emit objectsChanged();
     return true;
 }
 
@@ -2632,11 +2861,6 @@ int PlateDocument::paintObject(int id, const QString& kind, const QVector3D& wor
     const Vec3d eye = inverse * Vec3d(cameraPoint.x(), cameraPoint.y(), cameraPoint.z());
     const Vec3f camera(eye.x(), eye.y(), eye.z());
 
-    Slic3r::Domain::TriangleSelector::TriangleSplittingData& data =
-        paintKind == next_layer::PaintKind::Seam ? object->seamPaint
-      : paintKind == next_layer::PaintKind::Tool ? object->toolPaint
-                                                          : object->supportPaint;
-
     const next_layer::PaintMode paintMode =
         mode == QLatin1String("erase") ? next_layer::PaintMode::Erase
       : mode == QLatin1String("block") ? next_layer::PaintMode::Block
@@ -2648,16 +2872,71 @@ int PlateDocument::paintObject(int id, const QString& kind, const QVector3D& wor
     Transform3d rotation = object->trafo.get_matrix();
     rotation.translation().setZero();
 
-    const int changedFacets = next_layer::paintSphere(*object->mesh, data, centre, camera,
-                                                      m_brush, paintKind, paintMode, extruder,
-                                                      facetHint, rotation);
+    next_layer::PaintSession* session = paintSession(id, paintKind);
+    if (session == nullptr)
+        return 0;
+
+    // The snapshot goes in before the brush moves, once per stroke: the engine's
+    // cut is what an undo has to step back over, and pushing it afterwards stored
+    // the state the dab had just produced.
+    pushUndo(QStringLiteral("%1: paint").arg(object->displayName()), object->id * 64 + 1);
+
+    const int changedFacets = session->dab(centre, camera, m_brush, paintKind, paintMode,
+                                           extruder, facetHint, rotation);
     if (changedFacets == 0)
         return 0;
 
-    pushUndo(QStringLiteral("%1: paint").arg(object->displayName()), object->id * 64 + 1);
+    object = find(id);
+    if (object == nullptr)
+        return 0;
+    auto& data = paintKind == next_layer::PaintKind::Seam ? object->seamPaint
+               : paintKind == next_layer::PaintKind::Tool ? object->toolPaint
+                                                          : object->supportPaint;
+    data = session->data();
+
     changed();
-    emit geometryChanged();
+    emit paintChanged(id);
     return changedFacets;
+}
+
+next_layer::PaintSession* PlateDocument::paintSession(int objectId, next_layer::PaintKind kind)
+{
+    Object* object = find(objectId);
+    if (object == nullptr || object->mesh == nullptr)
+        return nullptr;
+
+    const qint64 key = qint64(objectId) * 4 + int(kind);
+    const auto it = m_paintSessions.find(key);
+    if (it != m_paintSessions.end() && it->session != nullptr
+        && it->generation == m_paintGeneration && it->session->mesh() == object->mesh)
+        return it->session.get();
+
+    const auto& stored = kind == next_layer::PaintKind::Seam ? object->seamPaint
+                       : kind == next_layer::PaintKind::Tool ? object->toolPaint
+                                                             : object->supportPaint;
+    PaintEntry entry;
+    entry.generation = m_paintGeneration;
+    entry.session = std::make_shared<next_layer::PaintSession>(object->mesh, stored);
+    next_layer::PaintSession* session = entry.session.get();
+    m_paintSessions.insert(key, std::move(entry));
+    return session;
+}
+
+Slic3r::Domain::indexed_triangle_set_with_color PlateDocument::paintedGeometry(
+    const Object& object, next_layer::PaintKind kind) const
+{
+    const auto& stored = kind == next_layer::PaintKind::Seam ? object.seamPaint
+                       : kind == next_layer::PaintKind::Tool ? object.toolPaint
+                                                             : object.supportPaint;
+    if (object.mesh == nullptr || next_layer::paintIsEmpty(stored))
+        return {};
+
+    const auto it = m_paintSessions.constFind(qint64(object.id) * 4 + int(kind));
+    if (it != m_paintSessions.constEnd() && it->session != nullptr
+        && it->generation == m_paintGeneration && it->session->mesh() == object.mesh)
+        return it->session->painted(kind);
+
+    return next_layer::paintedTriangles(*object.mesh, stored, kind);
 }
 
 void PlateDocument::clearPaint(int id, const QString& kind)
@@ -2673,8 +2952,10 @@ void PlateDocument::clearPaint(int id, const QString& kind)
         return;
     pushUndo(QStringLiteral("%1: clear %2 paint").arg(object->displayName(), kind));
     data = {};
+    m_paintSessions.clear();
+    ++m_paintGeneration;
     changed();
-    emit geometryChanged();
+    emit paintChanged(id);
 }
 
 int PlateDocument::paintedFacetCount(int id, const QString& kind) const
@@ -3020,6 +3301,8 @@ QString PlateDocument::loadProject(const QString& path)
     pushUndo(QStringLiteral("Open project"));
 
     m_objects.clear();
+    m_paintSessions.clear();
+    ++m_paintGeneration;
     m_selectedIds.clear();
     m_nextId = 1;
     for (next_layer::ProjectObject& entry : objects) {

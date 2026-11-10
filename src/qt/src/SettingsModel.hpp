@@ -53,6 +53,7 @@ public:
     /// per-object override starts from the value that is actually in force.
     Q_INVOKABLE QVariantList objectSettingDefs(const QString& filter) const;
     Q_INVOKABLE QString tabDump() const;
+    Q_INVOKABLE QString settingsJson() const;
     /// Every setting name the sidebar exposes, one per line: the tab tree
     /// measured against the engine's own config instead of a hand-written list.
     Q_INVOKABLE QString nameDump() const;

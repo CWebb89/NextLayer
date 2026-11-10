@@ -84,12 +84,14 @@ qt_add_resources(next-layer-qt "app_assets"
     PREFIX "/next-layer"
     BASE assets
     FILES assets/base-config.json
+          assets/settings-layout.json
           assets/fonts/MaterialSymbolsOutlined.ttf
           assets/bed/voron24_350_plate.stl
           assets/bed/voron24_350_bed.png
           assets/bed/voron24_350_logo.svg
           assets/brand/next-layer-mark.svg
           assets/brand/next-layer-hero.png
+          assets/brand/next-layer-printer.png
 )
 
 # The generic filament library: one preset per material, shipped as the engine reads

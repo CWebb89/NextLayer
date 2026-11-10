@@ -10,17 +10,32 @@ import "../theme"
 // quantised to `decimals` places, and emitted as `edited(value)`. Edits commit
 // on focus loss, Return, or a stepper; Up/Down and the wheel step by the
 // smallest representable increment.
+//
+// The field understands the unit as part of the number, which is how the
+// reference slicers work: `50%`, `0.4mm` and a bare `0.4` are all a value, and
+// there is no separate switch to say which one you meant. The suffix beside it
+// names both possibilities (`mm or %`) rather than being a control.
 Item {
     id: root
 
     property real value: 0
     property real from: -1e9
     property real to: 1e9
+    /// The unit shown beside the number: "mm", "mm/s", "mm or %".
     property string units: root.isLength ? Units.lengthSuffix : ""
     property int decimals: root.isLength ? Units.lengthDecimals : 2
     /// `value` is always millimetres; the field shows the user's system.
     property bool isLength: false
+    /// The value is a share, so the number carries its own `%`.
+    property bool isPercent: false
+    /// The typed value may carry its own unit: a trailing `%`, or the absolute
+    /// unit this field is measured in.
+    property bool acceptsUnit: false
+    readonly property string absoluteUnits: root.isLength ? Units.lengthSuffix
+                                             : root.units.replace(/ or %$/, "")
     signal edited(real value)
+    /// The typed value named a percentage, so it is a share rather than a quantity.
+    signal percentEdited(real value)
 
     readonly property real shownValue: root.isLength ? Units.fromMillimetres(root.value) : root.value
     readonly property real shownFrom: root.isLength ? Units.fromMillimetres(root.from) : root.from
@@ -34,6 +49,8 @@ Item {
     opacity: enabled ? 1.0 : 0.45
 
     function format(v) {
+        if (root.isPercent)
+            return Number(Number(v).toFixed(Math.max(0, root.decimals))) + "%"
         return Number(v).toFixed(Math.max(0, root.decimals))
     }
 
@@ -43,14 +60,41 @@ Item {
     }
 
     function commit() {
-        var parsed = parseFloat(input.text)
-        if (isNaN(parsed))
-            parsed = root.shownValue
-        const next = root.quantize(Math.max(root.shownFrom, Math.min(root.shownTo, parsed)))
+        if (!root.acceptsUnit && !/^-?[0-9]*[.,]?[0-9]*$/.test(String(input.text).trim())) {
+            input.text = root.format(root.shownValue)
+            return
+        }
+        const typed = root.parseTyped(input.text)
+        const next = root.quantize(isNaN(typed.value) ? root.shownValue
+                                                       : Math.max(root.shownFrom,
+                                                                  Math.min(root.shownTo, typed.value)))
         input.text = root.format(next)
+        if (typed.percent) {
+            root.percentEdited(next)
+            return
+        }
         const millimetres = next * root.perShownUnit
         if (millimetres !== root.value)
             root.edited(millimetres)
+    }
+
+    /// A typed number with an optional unit: `50%`, `50 mm/s` or a bare `50`, which
+    /// keeps the field's current unit. A suffix the field does not accept is not a
+    /// number, and the commit keeps the old value.
+    function parseTyped(text) {
+        const raw = String(text).trim()
+        if (!root.acceptsUnit)
+            return { value: parseFloat(raw), percent: false }
+        if (raw.slice(-1) === "%") {
+            const share = parseFloat(raw.slice(0, -1).replace(",", "."))
+            return { value: share, percent: !isNaN(share) }
+        }
+        const suffix = root.absoluteUnits.trim()
+        if (suffix.length > 0 && raw.slice(-suffix.length) === suffix) {
+            const absolute = parseFloat(raw.slice(0, -suffix.length))
+            return { value: absolute, percent: false }
+        }
+        return { value: parseFloat(raw.replace(",", ".")), percent: false }
     }
 
     function bump(direction) {

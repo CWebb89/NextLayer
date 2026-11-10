@@ -8,10 +8,15 @@ import QtCore
 import "../theme"
 import "../components"
 
-// Settings surface: Process / Filament / Printer
-// tabs on top, a horizontal strip of the engine's own option groups under them,
-// then one scroll of two-column rows (label left, editor right). Only the active
-// group is instantiated, so 335 engine settings cost a few dozen items.
+// The settings surface: what will slice the plate, the process categories, and
+// one scroll of two-column setting rows (label left, editor right). Only the
+// active category is instantiated, so 219 process settings cost a few dozen items.
+//
+// Process only, as the reference slicers have it. A filament and a machine are
+// edited in their own window, because they are their own presets: they carry
+// settings a process does not have, they outlive the process in use, and three
+// sets of tabs in one 490 px column made every one of them a cramped half-page.
+// The gears beside the Filament and Printer rows open those windows.
 Item {
     id: root
 
@@ -21,7 +26,6 @@ Item {
     /// File menu opens, reachable where a person is editing the machine.
     signal networkRequested()
 
-    property string activeTab: "process"
     property string activeSubtab: ""
     property string filterText: ""
 
@@ -30,9 +34,10 @@ Item {
     property var lastSubtab: ({})
 
     readonly property bool filtering: root.filterText.length > 0
+    readonly property string activeTab: "process"
     readonly property var currentTab: root.tabData(root.activeTab)
     readonly property var currentSubtabs: root.currentTab ? root.currentTab.subtabs : []
-    readonly property int modifiedTotal: settingsModel.modifiedCount("")
+    readonly property int modifiedTotal: settingsModel.modifiedCount(root.activeTab)
 
     function tabData(key) {
         for (let i = 0; i < root.tabs.length; ++i)
@@ -41,17 +46,10 @@ Item {
         return null
     }
 
-    function selectTab(key) {
-        root.activeTab = key
-        root.activeSubtab = root.lastSubtab[key] !== undefined ? root.lastSubtab[key] : ""
-        root.refresh()
-    }
-
     function showSubtab(tab, subtab) {
         const remembered = Object.assign({}, root.lastSubtab)
         remembered[tab] = subtab
         root.lastSubtab = remembered
-        root.activeTab = tab
         root.activeSubtab = subtab
         root.refresh()
     }
@@ -68,15 +66,14 @@ Item {
         root.refresh()
     }
 
-    /// The categories of the open tab, for the selector row. A category with
-    /// changed settings carries a dot in its label, so the one place that lists
-    /// them all also says which ones are not at their preset value.
-    function subtabChoices() {
+    /// The categories of the process tab, for the strip. A category with changed
+    /// settings carries a dot, so the one place that lists them all also says
+    /// which of them is not at its preset value.
+    function categoryEntries() {
         const out = []
         for (let i = 0; i < root.currentSubtabs.length; ++i) {
             const entry = root.currentSubtabs[i]
-            out.push({ value: entry.key,
-                       label: entry.modified > 0 ? entry.title + "  \u2022" : entry.title })
+            out.push({ key: entry.key, title: entry.title, modified: entry.modified })
         }
         return out
     }
@@ -115,16 +112,20 @@ Item {
     }
 
     Component.onCompleted: {
+        // A startup flag naming a filament or a printer sub-tab opens the window
+        // that edits it: this panel no longer has those tabs, and silently landing
+        // on the process tab would be the flag doing nothing.
         const start = typeof startupSettingsTab !== "undefined" ? String(startupSettingsTab) : ""
-        if (start.length > 0) {
-            const parts = start.split("/")
-            root.activeTab = parts[0]
-            if (parts.length > 1) {
-                const remembered = {}
-                remembered[parts[0]] = parts[1]
-                root.lastSubtab = remembered
-                root.activeSubtab = parts[1]
-            }
+        const parts = start.length > 0 ? start.split("/") : []
+        if (parts.length > 0 && (parts[0] === "filament" || parts[0] === "printer")) {
+            presetEditor.openOn(parts[0])
+            if (parts.length > 1)
+                presetEditor.showSubtab(parts[0], parts[1])
+        } else if (parts.length > 1) {
+            const remembered = {}
+            remembered[parts[0]] = parts[1]
+            root.lastSubtab = remembered
+            root.activeSubtab = parts[1]
         }
         root.refresh()
         presetStore.refreshPrinters()
@@ -461,158 +462,44 @@ Item {
         }
     }
 
-    Item {
-        id: tabStrip
+    Separator {
+        id: presetSeparator
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: presetBar.bottom
-        anchors.leftMargin: Metrics.lg
-        anchors.rightMargin: Metrics.lg
         anchors.topMargin: Metrics.sm
-        height: Metrics.rowHeight
-
-        Row {
-            anchors.left: parent.left
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: Metrics.sm
-
-            Repeater {
-                model: root.tabs
-
-                delegate: Item {
-                    id: tabButton
-
-                    required property var modelData
-
-                    readonly property bool active: root.activeTab === modelData.key
-
-                    width: tabLabel.implicitWidth + Metrics.lg * 2
-                    height: tabStrip.height
-
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: Metrics.radiusSmall
-                        color: tabMouse.containsMouse && !tabButton.active ? Colors.hoverFill
-                             : "transparent"
-                    }
-
-                    Text {
-                        id: tabLabel
-                        anchors.centerIn: parent
-                        text: tabButton.modelData.title
-                        font.family: Type.family
-                        font.pixelSize: Type.sizeSmall
-                        font.bold: true
-                        color: tabButton.active ? Colors.textPrimary : Colors.textTertiary
-                    }
-
-                    Rectangle {
-                        visible: tabButton.modelData.modified > 0
-                        anchors.right: parent.right
-                        anchors.rightMargin: Metrics.xs
-                        anchors.top: parent.top
-                        anchors.topMargin: Metrics.xs
-                        width: Metrics.sm
-                        height: Metrics.sm
-                        radius: width / 2
-                        color: Colors.accent
-                    }
-
-                    Rectangle {
-                        visible: tabButton.active
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.bottom: parent.bottom
-                        height: Metrics.xxs
-                        radius: Metrics.xxs
-                        color: Colors.accent
-                    }
-
-                    MouseArea {
-                        id: tabMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        acceptedButtons: Qt.LeftButton
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.selectTab(tabButton.modelData.key)
-                    }
-                }
-            }
-        }
-
-        Row {
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: Metrics.xs
-
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                visible: root.modifiedTotal > 0
-                text: root.modifiedTotal + " changed"
-                font.family: Type.family
-                font.pixelSize: Type.sizeCaption
-                font.bold: true
-                color: Colors.accent
-
-                MouseArea {
-                    anchors.fill: parent
-                    anchors.margins: -Metrics.xs
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.changesRequested(root.activeTab)
-                }
-            }
-
-            ToolButton {
-                icon: "restart_alt"
-                hint: "Reset every change on this tab"
-                enabled: root.modifiedTotal > 0
-                onClicked: settingsModel.resetTab(root.activeTab)
-            }
-        }
     }
 
-    Separator {
-        id: tabSeparator
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: tabStrip.bottom
-    }
-
-    // The categories of the open tab and the filter over every tab, on one row.
-    //
-    // They were two: a wrapping strip of category chips that took up to four rows
-    // of a 490 px panel, and a search field under it. Fourteen chips cannot be
-    // read at a glance anyway, so the strip is a selector that names the category
-    // you are in and lists all of them, and the space it used to take belongs to
-    // the settings.
+    // The categories of the process, as the strip the reference slicers put in the
+    // same place, and the filter over every setting on the right.
     Item {
         id: categoryRow
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: tabSeparator.bottom
+        anchors.top: presetSeparator.bottom
         anchors.leftMargin: Metrics.lg
         anchors.rightMargin: Metrics.lg
-        anchors.topMargin: Metrics.sm
-        height: Metrics.controlHeight
+        anchors.topMargin: Metrics.xs
+        height: Metrics.rowHeight
 
-        ComboBox {
-            id: categoryPicker
+        TabStrip {
+            id: categoryStrip
             anchors.left: parent.left
+            anchors.right: categoryTail.left
+            anchors.rightMargin: Metrics.sm
             anchors.verticalCenter: parent.verticalCenter
-            width: 158
             visible: !root.filtering
-            elideMode: Text.ElideRight
-            popupWidth: 250
-            choices: root.subtabChoices()
-            currentValue: root.activeSubtab
-            onSelected: (value) => root.selectSubtab(String(value))
+            categories: root.categoryEntries()
+            current: root.activeSubtab
+            onActivated: (key) => root.selectSubtab(key)
         }
 
         Rectangle {
             id: searchBox
-            anchors.left: categoryPicker.visible ? categoryPicker.right : parent.left
-            anchors.leftMargin: categoryPicker.visible ? Metrics.sm : 0
-            anchors.right: parent.right
+            anchors.left: categoryStrip.visible ? categoryStrip.right : parent.left
+            anchors.leftMargin: categoryStrip.visible ? Metrics.sm : 0
+            anchors.right: categoryTail.left
+            anchors.rightMargin: Metrics.sm
             anchors.verticalCenter: parent.verticalCenter
             height: Metrics.controlHeight
             radius: Metrics.radiusSmall
@@ -638,7 +525,7 @@ Item {
                 anchors.leftMargin: Metrics.sm
                 anchors.rightMargin: Metrics.md
                 background: Item {}
-            placeholderText: "search all settings"
+                placeholderText: "search"
                 font.family: Type.family
                 font.pixelSize: Type.sizeSmall
                 color: Colors.textPrimary
@@ -648,6 +535,39 @@ Item {
                     root.filterText = text
                     root.refresh()
                 }
+            }
+        }
+
+        // What has been changed and the way back to the preset, where the strip
+        // leaves room for them: the count is the press, the icon reverts.
+        Row {
+            id: categoryTail
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Metrics.xs
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: root.modifiedTotal > 0
+                text: root.modifiedTotal + " changed"
+                font.family: Type.family
+                font.pixelSize: Type.sizeCaption
+                font.bold: true
+                color: Colors.accent
+
+                MouseArea {
+                    anchors.fill: parent
+                    anchors.margins: -Metrics.xs
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.changesRequested(root.activeTab)
+                }
+            }
+
+            ToolButton {
+                icon: "restart_alt"
+                hint: "Reset every change in this process"
+                enabled: root.modifiedTotal > 0
+                onClicked: settingsModel.resetTab(root.activeTab)
             }
         }
     }

@@ -113,6 +113,17 @@ complete inventory, this is the part you need before you start a print.
 
 ## Interface
 
+- **Scaling is about the model's own corner, not its centre.** Scaling a 20 mm cube to
+  1.5 makes it 30 mm, but it grows toward +X/+Y instead of staying where it was: the
+  transform scales the object in place around its own bounding-box minimum. Move, rotate
+  and scale do now reach the viewport (they did not before 2026-11-10 — the model snapped
+  back after a drag, which is fixed), so what is left is the pivot.
+- **Typing in the transform panel re-slices nothing but rebuilds the view on every
+  keystroke**, so a heavy plate will feel sticky while a number is typed. Nothing is lost;
+  it is a pause.
+- Painting is functional and measured (15.6 ms per dab on an 82k-facet part) but has not
+  had a usability pass since: the brush radius on concave geometry, the erase path and
+  painting across a hard edge are the known weak spots.
 - Per-filament colour is edited as text rather than a colour picker.
 - Travel and retraction are not separate filter categories in the preview's
   legend; they are lines in the toolpath.

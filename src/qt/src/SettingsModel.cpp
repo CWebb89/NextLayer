@@ -659,6 +659,8 @@ struct SettingsModel::Impl
         QString tabKey;
         QString subtabKey;
         QString subtabTitle;
+        QString engineSubtabTitle;
+        QString engineGroupTitle;
         QString type;
         QString guiType;
         QString groupKey;
@@ -666,6 +668,7 @@ struct SettingsModel::Impl
         int category = 0;
         int group = 0;
         int sortCategory = 0;
+        int sortPosition = -1;
         bool multiline = false;
         bool fullWidth = false;
         bool modified = false;
@@ -676,12 +679,69 @@ struct SettingsModel::Impl
         }
     };
 
+    struct Placement
+    {
+        QString pageKey;
+        QString pageTitle;
+        QString sectionKey;
+        QString sectionTitle;
+        int pageOrder = 0;
+        int sectionOrder = 0;
+        int position = 0;
+    };
+
     std::vector<Entry> entries;
     QHash<QString, int> index;
+    QHash<QString, Placement> placement;
     QJsonDocument m_template;
+
+    // The pages and sections the sidebar shows, which are next-layer's own and
+    // not the engine's categories: tools/settings_layout.py writes them from
+    // tools/settings-layout-map.json. An entry without a placement keeps the
+    // engine's category, so a setting added to the engine tomorrow still appears
+    // -- in the engine's grouping -- instead of vanishing.
+    void loadLayout()
+    {
+        QFile file(QStringLiteral(":/next-layer/settings-layout.json"));
+        if (!file.open(QIODevice::ReadOnly))
+            return;
+        const QJsonObject root = QJsonDocument::fromJson(file.readAll()).object();
+        const QJsonObject tabs = root.value(QStringLiteral("tabs")).toObject();
+
+        static const QStringList tabOrder{ QStringLiteral("process"),
+                                           QStringLiteral("filament"),
+                                           QStringLiteral("printer") };
+
+        for (const QString& tabKey : tabOrder) {
+            const int tabIndex = int(tabOrder.indexOf(tabKey));
+            const QJsonArray pages = tabs.value(tabKey).toArray();
+            for (int pageIndex = 0; pageIndex < pages.size(); ++pageIndex) {
+                const QJsonObject page = pages.at(pageIndex).toObject();
+                const QJsonArray sections = page.value(QStringLiteral("sections")).toArray();
+                for (int sectionIndex = 0; sectionIndex < sections.size(); ++sectionIndex) {
+                    const QJsonObject section = sections.at(sectionIndex).toObject();
+                    const QJsonArray settings = section.value(QStringLiteral("settings")).toArray();
+                    for (int position = 0; position < settings.size(); ++position) {
+                        Placement target;
+                        target.pageKey = page.value(QStringLiteral("key")).toString();
+                        target.pageTitle = page.value(QStringLiteral("title")).toString();
+                        target.sectionKey = target.pageKey + QLatin1Char('/')
+                                            + QString::number(sectionIndex);
+                        target.sectionTitle = section.value(QStringLiteral("title")).toString();
+                        target.pageOrder = tabIndex * 100 + pageIndex;
+                        target.sectionOrder = sectionIndex;
+                        target.position = position;
+                        placement.insert(settings.at(position).toString(), target);
+                    }
+                }
+            }
+        }
+    }
 
     Impl()
     {
+        loadLayout();
+
         for (const ConfigItemDef& def : get_defs_fdm().defs()) {
             const auto* location = std::get_if<FDMConfigLocation>(&def.location);
             if (location == nullptr)
@@ -719,10 +779,24 @@ struct SettingsModel::Impl
             entry.guiType = guiTypeName(def.gui_type);
             entry.groupKey = QString::number(entry.group);
             entry.groupTitle = QString::fromStdString(ConfigItemDef::translate_option_group(def.option_group));
+            entry.engineSubtabTitle = entry.subtabTitle;
+            entry.engineGroupTitle = entry.groupTitle;
             if (def.option_group == ConfigItemDef::OptionGroup::Print_Supports_OrganicSupports)
                 entry.groupTitle = QStringLiteral("Tree supports");
             entry.multiline = def.multiline;
             entry.fullWidth = def.full_width;
+
+            const auto target = placement.constFind(entry.name);
+            if (target != placement.constEnd()) {
+                entry.subtabKey = target->pageKey;
+                entry.subtabTitle = target->pageTitle;
+                entry.groupKey = target->sectionKey;
+                entry.groupTitle = target->sectionTitle;
+                entry.sortCategory = target->pageOrder;
+                entry.group = target->sectionOrder;
+                entry.sortPosition = target->position;
+            }
+
             entries.push_back(std::move(entry));
         }
 
@@ -731,6 +805,9 @@ struct SettingsModel::Impl
                 return lhs.sortCategory < rhs.sortCategory;
             if (lhs.group != rhs.group)
                 return lhs.group < rhs.group;
+            if (lhs.sortPosition >= 0 && rhs.sortPosition >= 0
+                && lhs.sortPosition != rhs.sortPosition)
+                return lhs.sortPosition < rhs.sortPosition;
             if (lhs.def->order != rhs.def->order)
                 return lhs.def->order < rhs.def->order;
             return lhs.def->name < rhs.def->name;
@@ -1333,6 +1410,37 @@ QString SettingsModel::tabDump() const
 
     lines.append(QStringLiteral("total: %1 settings").arg(total));
     return lines.join(QLatin1Char('\n'));
+}
+
+// Every setting the sidebar exposes, in the order the sidebar shows it, with
+// the page and section it currently lands in. tools/settings_layout.py reads
+// this to build the layout table: the app is the authority on what it shows,
+// so the table cannot drift from the model by parsing the engine instead.
+// What the sidebar shows, in the order it shows it: the page and section the
+// setting lands in, and the engine's own page and section titles beside them.
+// tools/settings_layout.py matches on the engine's titles, because the layout it
+// writes is what replaces them -- reading the displayed titles back would be
+// circular, and a regenerated table could never be checked against the old one.
+QString SettingsModel::settingsJson() const
+{
+    QJsonArray out;
+
+    for (const Impl::Entry& entry : m_impl->entries) {
+        QJsonObject row;
+        row.insert(QStringLiteral("tab"), entry.tabKey);
+        row.insert(QStringLiteral("subtab"), entry.subtabKey);
+        row.insert(QStringLiteral("subtabTitle"), entry.subtabTitle);
+        row.insert(QStringLiteral("group"), entry.groupKey);
+        row.insert(QStringLiteral("groupTitle"), entry.groupTitle);
+        row.insert(QStringLiteral("engineSubtabTitle"), entry.engineSubtabTitle);
+        row.insert(QStringLiteral("engineGroupTitle"), entry.engineGroupTitle);
+        row.insert(QStringLiteral("name"), entry.name);
+        row.insert(QStringLiteral("label"), entry.label);
+        row.insert(QStringLiteral("type"), entry.type);
+        out.append(row);
+    }
+
+    return QString::fromUtf8(QJsonDocument(out).toJson(QJsonDocument::Indented));
 }
 
 QString SettingsModel::configJson() const

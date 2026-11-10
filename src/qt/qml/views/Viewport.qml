@@ -312,9 +312,9 @@ Item {
     // Distance that frames the whole build plate, which is the framing the app
     // opens in and what the "fit plate" button restores.
     //
-    // The plate's chrome: the icon column off the right edge, the name and its pencil
-    // above the back edge. It lives in the plate's own plane, so it is not a
-    // screen-space overlay that can be clamped; the fit has to carry it instead.
+    // The plate's chrome: the icon column off the right edge, the name above the
+    // back edge. It lives in the plate's own plane, so it is not a screen-space
+    // overlay that can be clamped; the fit has to carry it instead.
     // Framed on the bed alone, both land outside the viewport and the plate's own
     // actions become unreachable. The name is measured the same way the decal
     // measures it, from its length, because the fit is computed above the per-plate
@@ -331,7 +331,7 @@ Item {
             longest = Math.max(longest, label.length)
         }
         const aspect = Math.max(1.2, Math.min(6, longest * 0.55))
-        return plateChrome.nameHeight * aspect * 1.3 + plateChrome.gapLeft + plateChrome.pencilSize
+        return plateChrome.nameHeight * aspect * 1.3 + plateChrome.gapLeft
     }
     readonly property real bedRadius: {
         const halfWidth = root.bedSize.x / 2 + root.plateApronRight
@@ -800,6 +800,7 @@ Item {
                     required property var modelData
 
                     visible: root.mode !== "preview" && !otherPlate.modelData.active
+                             && !root.paintActive
                     position: Qt.vector3d(otherPlate.modelData.x, otherPlate.modelData.y, 0)
 
                     // A plate you are not on is context, not content: its fill
@@ -825,7 +826,7 @@ Item {
                     }
 
                     Model {
-                        visible: root.showGrid
+                        visible: root.showGrid && !root.paintActive
                         source: "#Rectangle"
                         position: Qt.vector3d(root.bedCentre.x, root.bedCentre.y, 0.02)
                         scale: Qt.vector3d(root.bedSize.x / 100, root.bedSize.y / 100, 1.0)
@@ -853,13 +854,13 @@ Item {
             // sides, bevel and all. The top is parked 0.03 mm below the bed plane
             // (the engine's GROUND_Z) so a model resting on z = 0 cannot z-fight it.
             //
-            // It goes away while a paint brush is armed, together with the artwork,
-            // the origin axes and the plate's own chrome. The reference does the
-            // same (`is_bed_visible` is false while a painting gizmo runs, so only
-            // the plate list and its grid are left): a textured bed under a part
-            // being painted is visual noise, and its chrome is furniture you cannot
-            // press while the pointer paints. The grid stays, because it is what
-            // still tells you which way is which.
+            // Nothing of the bed survives a paint brush: not this mesh, not the
+            // slab below it, not the artwork, the grid, the origin axes or the
+            // plate's chrome. A part being painted is shown alone on the
+            // background, so every edge on screen belongs to the part and a dab
+            // aimed at a facet cannot be misread as a dab on the plate. The
+            // reference dims the bed instead; this is the stronger version of the
+            // same intent and the one the viewport was asked for.
             Model {
                 visible: Host.bedPlateLoaded && root.showBedPlate && !root.paintActive
                 geometry: bedPlateGeometry
@@ -883,7 +884,7 @@ Item {
             // The top face has to end below the bed plane, or it covers the grid
             // that is drawn just above z = 0.
             Model {
-                visible: !Host.bedPlateLoaded && root.showBedPlate
+                visible: !Host.bedPlateLoaded && root.showBedPlate && !root.paintActive
                 source: "#Cube"
                 position: Qt.vector3d(root.bedCentre.x + root.plateShift.x,
                                       root.bedCentre.y + root.plateShift.y, -2.03)
@@ -905,24 +906,6 @@ Item {
                 materials: PrincipledMaterial {
                     baseColor: Colors.viewportPlate
                     lighting: PrincipledMaterial.NoLighting
-                }
-            }
-
-            // The bare plate a paint brush sees. The reference leaves the plate list
-            // and its grid up while a painting gizmo runs and takes the textured bed
-            // away; this is that plane, and the grid needs it: its distance field is
-            // drawn over an opaque surface and the lines do not appear without one.
-            Model {
-                visible: root.paintActive && root.showBedPlate
-                source: "#Rectangle"
-                position: Qt.vector3d(root.bedCentre.x + root.plateShift.x,
-                                      root.bedCentre.y + root.plateShift.y, -0.01)
-                scale: Qt.vector3d(root.bedSize.x / 100, root.bedSize.y / 100, 1.0)
-
-                materials: PrincipledMaterial {
-                    baseColor: Colors.viewportPlate
-                    lighting: PrincipledMaterial.NoLighting
-                    cullMode: Material.NoCulling
                 }
             }
 
@@ -964,7 +947,7 @@ Item {
             // with the plate rather than staying after it: a grid hanging over the
             // background with no bed under it reads as lines escaping the plate.
             Model {
-                visible: root.showGrid
+                visible: root.showGrid && !root.paintActive
                 source: "#Rectangle"
                 position: Qt.vector3d(root.bedCentre.x + root.plateShift.x,
                                       root.bedCentre.y + root.plateShift.y, 0.02)
@@ -1078,7 +1061,7 @@ Item {
                 }
             }
 
-            // The plate's own chrome -- name, pencil, action column, plate number --
+            // The plate's own chrome -- name, action column, plate number --
             // as quads in the bed plane instead of decals in the 2D scene. The look
             // is unchanged (each quad carries the texture of the very item the 2D
             // delegate lays out, and lands on the same rectangle), but the model now
@@ -1108,16 +1091,6 @@ Item {
                                                          + chromePlate.rects.name.width : 0
                         y1: chromePlate.rects !== null ? chromePlate.rects.name.y
                                                          + chromePlate.rects.name.height : 0
-                    }
-
-                    BedQuad {
-                        sourceItem: chromePlate.source !== null ? chromePlate.source.pencil : null
-                        x0: chromePlate.rects !== null ? chromePlate.rects.pencil.x : 0
-                        y0: chromePlate.rects !== null ? chromePlate.rects.pencil.y : 0
-                        x1: chromePlate.rects !== null ? chromePlate.rects.pencil.x
-                                                         + chromePlate.rects.pencil.width : 0
-                        y1: chromePlate.rects !== null ? chromePlate.rects.pencil.y
-                                                         + chromePlate.rects.pencil.height : 0
                     }
 
                     BedQuad {
@@ -1484,7 +1457,8 @@ Item {
         focus: true
         hoverEnabled: true
         acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
-        cursorShape: root.measureActive || root.paintActive || root.layOnFaceActive
+        cursorShape: root.measureActive || root.layOnFaceActive
+                     || (root.paintActive && !input.paintOrbiting)
                    ? Qt.CrossCursor
                    : input.dragging ? Qt.ClosedHandCursor
                    : (root.moveEnabled || (root.dragSelectedEnabled && plateDocument.selectedCount > 0))
@@ -1505,6 +1479,16 @@ Item {
         property var gizmoStart: null
         property vector3d gizmoDelta: Qt.vector3d(0, 0, 0)
         property bool banding: false
+        /// A left-drag that started while a brush was armed but did not land on the
+        /// part being painted: it orbits instead of painting. Painting takes the
+        /// left button, so without this the camera is frozen for as long as a
+        /// brush is armed, which is the one moment you need it most.
+        property bool paintOrbiting: false
+        /// How far a selected volume has already been moved by the drag in
+        /// progress. A volume follows the pointer live -- placing one by feel is
+        /// the whole point -- while an object is only previewed and committed on
+        /// release.
+        property vector3d volumeMoved: Qt.vector3d(0, 0, 0)
         /// Where the last dab landed, on screen and on the mesh. A drag paints
         /// again once the pointer leaves that facet or travels far enough: a
         /// repaint on every mouse report reserialises the whole selector and
@@ -1526,11 +1510,23 @@ Item {
             input.pressY = mouse.y
             input.panning = mouse.button === Qt.RightButton || mouse.button === Qt.MiddleButton
             input.dragging = false
+            input.paintOrbiting = false
 
             if (mouse.button !== Qt.LeftButton || root.measureActive || !session.hasModel)
                 return
 
             if (root.paintActive) {
+                // Ctrl is the reference's escape hatch: held down, the brush is
+                // out of the way and the camera takes the drag wherever it
+                // starts. Otherwise the brush paints only what it lands on, and a
+                // press on the background orbits, so a stroke and a look around
+                // are the same gesture separated by what is under the pointer.
+                const onModel = (mouse.modifiers & Qt.ControlModifier) === 0
+                                && root.hitAt(mouse.x, mouse.y).w > 0
+                                && plateScene.pickedId === root.paintObjectId
+                input.paintOrbiting = !onModel
+                if (!onModel)
+                    return
                 input.dragging = true
                 input.paintX = mouse.x
                 input.paintY = mouse.y
@@ -1588,11 +1584,17 @@ Item {
             if (hit.w > 0) {
                 root.selected = true
                 const id = plateScene.pickedId
+                const volume = plateScene.pickedVolume
                 const additive = (mouse.modifiers & (Qt.ShiftModifier | Qt.ControlModifier)) !== 0
-                if (additive)
+                if (additive) {
                     plateDocument.selectObject(id, true)
-                else if (!plateDocument.isSelected(id))
-                    plateDocument.selectObject(id)
+                } else if (volume > 0) {
+                    plateDocument.selectVolume(id, volume)
+                } else {
+                    if (!plateDocument.isSelected(id))
+                        plateDocument.selectObject(id)
+                    plateDocument.clearVolumeSelection()
+                }
                 if (!plateDocument.isSelected(id))
                     return
                 if (!root.moveEnabled && !root.dragSelectedEnabled)
@@ -1600,6 +1602,7 @@ Item {
                 input.dragging = true
                 input.dragPlaneZ = hit.z
                 input.dragStart = root.planePoint(mouse.x, mouse.y, hit.z)
+                input.volumeMoved = Qt.vector3d(0, 0, 0)
             } else {
                 root.selected = false
                 plateDocument.selectObject(0)
@@ -1656,12 +1659,17 @@ Item {
             // wherever the pointer stopped, which is not what a stroke means.
             if (root.paintActive) {
                 input.dragging = false
+                input.paintOrbiting = false
                 return
             }
 
             if (input.dragging) {
                 const point = root.planePoint(mouse.x, mouse.y, input.dragPlaneZ)
                 input.dragging = false
+                if (plateDocument.selectedVolume > 0) {
+                    input.volumeMoved = Qt.vector3d(0, 0, 0)
+                    return
+                }
                 if (point === null || input.dragStart === null) {
                     root.dragOffset = Qt.vector3d(0, 0, 0)
                     return
@@ -1704,7 +1712,8 @@ Item {
                 return
             }
 
-            if (root.paintActive && !input.panning) {
+            if (root.paintActive && !input.panning && !input.paintOrbiting
+                    && (!input.pressed || input.dragging)) {
                 root.updateBrushRing(mouse.x, mouse.y)
                 if (input.pressed) {
                     // Dabs are spaced half a brush apart, the way a paint program
@@ -1756,13 +1765,20 @@ Item {
                     const point = plateScene.gizmoAxisPoint(input.gizmoAxis, ray[0], ray[1])
                     const delta = root.vSub(point, input.gizmoStart)
                     if (Math.abs(delta.x) + Math.abs(delta.y) + Math.abs(delta.z) > 0.0005) {
-                        // Preview only: committing here ran an undo step and a plate
-                        // rebuild for every mouse report, which is what made dragging
-                        // a handle crawl on a busy plate. The move lands on release.
-                        input.gizmoDelta = root.vAdd(input.gizmoDelta, delta)
-                        root.dragOffset = Qt.vector3d(input.gizmoDelta.x,
-                                                      input.gizmoDelta.y,
-                                                      input.gizmoDelta.z)
+                        // An object is previewed and committed on release:
+                        // committing here ran an undo step and a plate rebuild for
+                        // every mouse report, which is what made a handle crawl on
+                        // a busy plate. A volume is small, so it follows the handle
+                        // live -- and its undo step coalesces, because every report
+                        // pushes the same key.
+                        if (plateDocument.selectedVolume > 0) {
+                            plateDocument.moveSelection(delta.x, delta.y, delta.z)
+                        } else {
+                            input.gizmoDelta = root.vAdd(input.gizmoDelta, delta)
+                            root.dragOffset = Qt.vector3d(input.gizmoDelta.x,
+                                                          input.gizmoDelta.y,
+                                                          input.gizmoDelta.z)
+                        }
                         input.gizmoStart = point
                     }
                 }
@@ -1778,9 +1794,17 @@ Item {
 
             if (input.dragging) {
                 const point = root.planePoint(mouse.x, mouse.y, input.dragPlaneZ)
-                if (point !== null && input.dragStart !== null)
-                    root.dragOffset = Qt.vector3d(point.x - input.dragStart.x,
-                                                  point.y - input.dragStart.y, 0)
+                if (point !== null && input.dragStart !== null) {
+                    const dx = point.x - input.dragStart.x
+                    const dy = point.y - input.dragStart.y
+                    if (plateDocument.selectedVolume > 0) {
+                        plateDocument.moveSelection(dx - input.volumeMoved.x,
+                                                    dy - input.volumeMoved.y, 0)
+                        input.volumeMoved = Qt.vector3d(dx, dy, 0)
+                    } else {
+                        root.dragOffset = Qt.vector3d(dx, dy, 0)
+                    }
+                }
                 return
             }
 
@@ -1842,7 +1866,7 @@ Item {
     // camera tilts, so they are drawn here as decals: a rectangle in printer
     // coordinates, its four corners projected through the camera, and a projective
     // matrix that maps the item onto the resulting quad. The constants, in mm:
-    // 16 for an icon, 9 for the pencil, 3 of gap to the left, 3 from the top and 5
+    // 16 for an icon, 9 for the name, 3 of gap to the left, 3 from the top and 5
     // between icons.
     Item {
         id: plateChrome
@@ -1858,7 +1882,6 @@ Item {
             Math.min((root.bedMax.y - root.bedMin.y) / 200,
                      (root.bedMax.x - root.bedMin.x) * 0.2 / 22))
         readonly property real iconSize: 16 * plateChrome.iconScale
-        readonly property real pencilSize: 15 * plateChrome.iconScale
         readonly property real nameHeight: 9 * plateChrome.iconScale
         readonly property real gapLeft: 3 * plateChrome.iconScale
         readonly property real gapTop: 6 * plateChrome.iconScale
@@ -2005,7 +2028,7 @@ Item {
                 }
 
                 // The plate's name sits above the back edge, off the bed, in the
-                // 9 mm name height; the pencil follows it on the same row. The
+                // 9 mm name height, and is the control that renames it. The
                 // decal's local box takes the name's own aspect so the text is not
                 // stretched by the projection: a square box on a 40 x 16 mm quad
                 // would shear the glyphs.
@@ -2016,36 +2039,25 @@ Item {
                 readonly property real nameWidth: plateChrome.nameHeight * plateItem.nameAspect * 1.3
                 readonly property real nameLocalHeight: 100 / plateItem.nameAspect
                 readonly property real nameTop: root.bedMax.y + plateChrome.gapTop
-                // The name and its pencil sit above the plate's back edge, starting at
-                // its left corner and running rightwards: a caption on the plate, with
-                // the space to its right left free for the action column.
+                // The name sits above the plate's back edge, starting at its left
+                // corner and running rightwards: a caption on the plate, with the
+                // space to its right left free for the action column.
                 readonly property real nameLeft: root.bedMin.x + plateChrome.gapLeft
                 readonly property var nameMatrix: plateItem.decal(
                     plateItem.nameLeft, plateItem.nameTop,
                     plateItem.nameLeft + plateItem.nameWidth,
                     plateItem.nameTop + plateChrome.nameHeight,
                     100, plateItem.nameLocalHeight)
-                readonly property var pencilMatrix: plateItem.decal(
-                    plateItem.nameLeft + plateItem.nameWidth + plateChrome.gapLeft,
-                    plateItem.nameTop + (plateChrome.nameHeight - plateChrome.pencilSize) / 2,
-                    plateItem.nameLeft + plateItem.nameWidth + plateChrome.gapLeft
-                        + plateChrome.pencilSize,
-                    plateItem.nameTop + (plateChrome.nameHeight + plateChrome.pencilSize) / 2,
-                    100, 100)
-                // The row's clickable quad, inflated around the name and the pencil.
-                // Projected into the plate's plane at a shallow camera angle the name
-                // is a strip a few pixels tall, and clicking text that small is a
-                // game of pin the pixel; the label is decoration and this is the
-                // target.
+                // The name's clickable quad, inflated around the text. Projected into
+                // the plate's plane at a shallow camera angle the name is a strip a
+                // few pixels tall, and clicking text that small is a game of pin the
+                // pixel; the glyphs are decoration and this is the target.
                 readonly property real hitPad: plateChrome.nameHeight * 0.6
                 readonly property var rowHitMatrix: plateItem.decal(
                     plateItem.nameLeft - plateItem.hitPad,
-                    plateItem.nameTop
-                        + (plateChrome.nameHeight - plateChrome.pencilSize) / 2 - plateItem.hitPad,
-                    plateItem.nameLeft + plateItem.nameWidth + plateChrome.gapLeft
-                        + plateChrome.pencilSize + plateItem.hitPad,
-                    plateItem.nameTop + (plateChrome.nameHeight + plateChrome.pencilSize) / 2
-                        + plateItem.hitPad,
+                    plateItem.nameTop - plateItem.hitPad,
+                    plateItem.nameLeft + plateItem.nameWidth + plateItem.hitPad,
+                    plateItem.nameTop + plateChrome.nameHeight + plateItem.hitPad,
                     100, 100)
 
                 // Measures the name at a fixed reference size so the decal can take its
@@ -2076,12 +2088,6 @@ Item {
                                                         plateItem.plateY + plateItem.nameTop,
                                                         plateItem.nameWidth,
                                                         plateChrome.nameHeight)
-                readonly property rect pencilRect: Qt.rect(
-                    plateItem.plateX + plateItem.nameLeft + plateItem.nameWidth
-                        + plateChrome.gapLeft,
-                    plateItem.plateY + plateItem.nameTop
-                        + (plateChrome.nameHeight - plateChrome.pencilSize) / 2,
-                    plateChrome.pencilSize, plateChrome.pencilSize)
                 readonly property rect numberRect: Qt.rect(
                     plateItem.plateX + root.bedMax.x - plateChrome.iconSize
                         - plateChrome.gapLeft * 2,
@@ -2101,10 +2107,9 @@ Item {
                     return rects
                 }
 
-                // The label row is one target: name and pencil in a single inflated
-                // quad that carries the hover state, the tooltip and the click. The
-                // name and pencil below it are decoration, so the click does not
-                // depend on hitting a glyph.
+                // The name is the target, in one inflated quad that carries the
+                // hover state, the tooltip and the click. The glyphs below it are
+                // decoration, so the click does not depend on hitting a letter.
                 Item {
                     id: nameRow
 
@@ -2162,29 +2167,6 @@ Item {
                             font.family: Type.family
                             font.pixelSize: parent.height * 0.72
                             font.bold: plateItem.current
-                            color: plateItem.current ? Colors.accent : Colors.textTertiary
-                        }
-                    }
-                }
-
-                // The pencil, right after the name on the same row.
-                Item {
-                    id: pencilContent
-
-                    x: -20000
-                    width: 300
-                    height: 300
-
-                    Item {
-                        width: 100
-                        height: 100
-                        transformOrigin: Item.TopLeft
-                        scale: 3
-
-                        Icon {
-                            anchors.centerIn: parent
-                            name: plateItem.locked ? "lock" : "edit"
-                            size: 76
                             color: plateItem.current ? Colors.accent : Colors.textTertiary
                         }
                     }
@@ -2391,13 +2373,11 @@ Item {
                 readonly property QtObject chromeEntry: QtObject {
                     readonly property var source: ({
                         name: nameContent,
-                        pencil: pencilContent,
                         number: plateDocument.plateCount > 1 ? numberContent : null,
                         actions: plateItem.actionContents
                     })
                     readonly property var rects: ({
                         name: plateItem.nameRect,
-                        pencil: plateItem.pencilRect,
                         number: plateItem.numberRect,
                         actions: plateItem.actionRects
                     })

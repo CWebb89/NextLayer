@@ -10,8 +10,12 @@ import "../theme"
 // a dark window -- the one piece of chrome in the app that did not match. It also
 // centres itself on its parent, so a long hint slid half way off the window.
 //
-// This one is placed over its target, clamped inside the overlay, and wraps.
-Popup {
+// It is drawn in the window's overlay rather than opened as a popup window: a
+// popup that sits over a control swallows the press meant for it, so hovering a
+// settings row and then clicking the field under the hint did nothing until the
+// hint was dismissed. An item that is not enabled takes no input, so the press
+// goes to the control beneath it, which is what a tooltip is for.
+Item {
     id: root
 
     property Item target: null
@@ -24,9 +28,9 @@ Popup {
     parent: Overlay.overlay
     width: Math.min(root.maxWidth, tipLabel.implicitWidth + Metrics.md * 2)
     height: tipLabel.implicitHeight + Metrics.sm * 2
-    padding: 0
-    closePolicy: Popup.NoAutoClose
+    enabled: false
     visible: false
+    z: 1e6
 
     function place() {
         if (root.target === null)
@@ -44,21 +48,25 @@ Popup {
                             point.y + root.target.height + Metrics.sm)
     }
 
-    contentItem: Text {
+    Rectangle {
+        anchors.fill: parent
+        radius: Metrics.radiusSmall
+        color: Colors.surfaceContainerHighest
+        border.width: Metrics.borderWidth
+        border.color: Colors.edgeStrong
+    }
+
+    Text {
         id: tipLabel
+
+        x: Metrics.md
+        y: Metrics.sm
         width: root.width - Metrics.md * 2
         text: root.text
         wrapMode: Text.WordWrap
         font.family: Type.family
         font.pixelSize: Type.sizeCaption
         color: Colors.textPrimary
-    }
-
-    background: Rectangle {
-        radius: Metrics.radiusSmall
-        color: Colors.surfaceContainerHighest
-        border.width: Metrics.borderWidth
-        border.color: Colors.edgeStrong
     }
 
     Timer {
@@ -68,7 +76,7 @@ Popup {
             if (!root.shown || root.text.length === 0 || root.target === null)
                 return
             root.place()
-            root.open()
+            root.visible = true
         }
     }
 
@@ -77,7 +85,9 @@ Popup {
             showTimer.restart()
         } else {
             showTimer.stop()
-            root.close()
+            root.visible = false
         }
     }
+
+    onVisibleChanged: if (!root.visible) showTimer.stop()
 }

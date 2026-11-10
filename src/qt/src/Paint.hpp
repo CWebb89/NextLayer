@@ -8,6 +8,8 @@
 
 #include <QColor>
 
+#include <memory>
+
 namespace next_layer {
 
 enum class PaintKind
@@ -55,15 +57,65 @@ struct Brush
 Slic3r::Domain::TriangleSelector::TriangleStateType paintState(PaintKind kind, PaintMode mode,
                                                                int tool = 2);
 
-/// Paints every facet within the brush of `centre` (mesh coordinates) and returns
-/// how many triangle pieces changed state. `camera` is the eye in the same mesh
-/// coordinates: the circle brush is projected from it, so what is painted is what
-/// the view can see. `worldRotation` is the object's rotation into printer
-/// coordinates, which is what tells the engine which way is down when the brush
-/// is restricted to overhangs -- a mesh is stored Y-up and the object carries the
-/// rotation that stands it up. The data is the engine's own triangle-splitting
-/// representation, so what is stored here is exactly what the slicer reads from a
-/// project file.
+/// One object's paint state, kept selected-side up.
+///
+/// The engine's TriangleSelector *is* the split representation: building one
+/// from a mesh and deserialising the stored bitstream costs a pass over every
+/// facet and re-splits every painted triangle. That cost was paid three times
+/// per brush dab -- once to paint, once to serialise back, once more to draw
+/// the overlay -- which is why painting a large part crawled. A session keeps
+/// the selector alive between dabs, so a dab costs the brush's own work and
+/// nothing else; the plate's stored data is still written back after every dab,
+/// because the slicer, undo and the project file all read it.
+class PaintSession
+{
+public:
+    using MeshPtr = std::shared_ptr<const Slic3r::Domain::TriangleMesh>;
+    using TriangleSplittingData = Slic3r::Domain::TriangleSelector::TriangleSplittingData;
+
+    PaintSession(MeshPtr mesh, const TriangleSplittingData& data);
+    ~PaintSession();
+    PaintSession(const PaintSession&) = delete;
+    PaintSession& operator=(const PaintSession&) = delete;
+
+    /// The mesh this session was built from. A session is only usable while the
+    /// object still has this exact mesh: a cut, a split or an undo hands the
+    /// object a different one, and painting into the old triangles would write
+    /// paint onto geometry that no longer exists.
+    const MeshPtr& mesh() const { return m_mesh; }
+
+    /// Paints every facet within the brush of `centre` (mesh coordinates) and
+    /// returns how many triangle pieces changed state. `camera` is the eye in the
+    /// same mesh coordinates: the circle brush is projected from it, so what is
+    /// painted is what the view can see. `worldRotation` is the object's rotation
+    /// into printer coordinates, which is what tells the engine which way is down
+    /// when the brush is restricted to overhangs -- a mesh is stored Y-up and the
+    /// object carries the rotation that stands it up.
+    int dab(const Slic3r::Domain::Vec3f& centre, const Slic3r::Domain::Vec3f& camera,
+            const Brush& brush, PaintKind kind, PaintMode mode, int tool = 2,
+            int facetHint = -1,
+            const Slic3r::Domain::Transform3d& worldRotation
+                = Slic3r::Domain::Transform3d::Identity());
+
+    /// The current state in the engine's own serialised form, which is what a
+    /// project file, undo and the slicer read.
+    TriangleSplittingData data() const;
+
+    /// The painted triangles of a kind, as an indexed triangle set in mesh
+    /// coordinates, with one colour per state.
+    Slic3r::Domain::indexed_triangle_set_with_color painted(PaintKind kind) const;
+
+    bool empty() const;
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
+    MeshPtr m_mesh;
+};
+
+/// A single dab with no session behind it: builds one, paints, serialises, and
+/// throws the selector away. Used where a stroke is not involved -- the headless
+/// harnesses -- and by everything that needs the plain function.
 int paintSphere(const Slic3r::Domain::TriangleMesh& mesh,
                 Slic3r::Domain::TriangleSelector::TriangleSplittingData& data,
                 const Slic3r::Domain::Vec3f& centre,

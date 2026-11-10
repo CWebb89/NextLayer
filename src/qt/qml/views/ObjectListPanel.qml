@@ -331,6 +331,21 @@ Rectangle {
                                                      : modelData.type === "modifier" ? "#e0a83a"
                                                      : modelData.type === "blocker" ? "#9a5ce8"
                                                      : "#54c96a"
+                        readonly property bool selected:
+                            plateDocument.selectedVolume === modelData.id
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: Metrics.radiusSmall
+                            color: volumeRow.selected
+                                   ? Colors.alpha(Colors.accent, 0.16) : "transparent"
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: plateDocument.selectVolume(row.modelData.id,
+                                                                  volumeRow.modelData.id)
+                        }
 
                         Rectangle {
                             anchors.verticalCenter: parent.verticalCenter
