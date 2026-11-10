@@ -119,13 +119,31 @@ Item {
     }
 
     function addMeasurePoint(x, y) {
-        const hit = root.hitAt(x, y)
-        if (hit.w <= 0)
+        const point = root.measureHit(x, y)
+        if (point === null)
             return
-        const printer = [hit.x, hit.y, hit.z]
         if (root.measurePoints.length >= 2)
             root.measurePoints = []
-        root.measurePoints = root.measurePoints.concat([printer])
+        root.measurePoints = root.measurePoints.concat([point])
+    }
+
+    // A point on the object under the cursor, or failing that the point on the bed
+    // beneath it. The reference slicers measure across the plate as well as across a
+    // part -- checking whether something fits is the usual reason to reach for this
+    // -- so a click that misses every mesh lands on z=0 instead of doing nothing.
+    // Off the plate is not a measurement: the ray hits the plane there too, but the
+    // number it would give is about nothing.
+    function measureHit(x, y) {
+        const hit = root.hitAt(x, y)
+        if (hit.w > 0)
+            return [hit.x, hit.y, hit.z]
+        const bed = root.bedPoint(x, y)
+        if (bed === null)
+            return null
+        if (bed.x < root.bedMin.x || bed.x > root.bedMax.x
+                || bed.y < root.bedMin.y || bed.y > root.bedMax.y)
+            return null
+        return [bed.x, bed.y, 0]
     }
 
     function segmentRotation(from, to) {
@@ -1330,7 +1348,7 @@ Item {
                 text: root.measureComplete
                       ? "distance " + root.measureDistance.toFixed(2) + " mm"
                       : root.measurePoints.length === 0
-                        ? "measure: click two points"
+                        ? "measure: click two points, on the model or on the bed"
                         : "measure: click the second point"
                 font.family: Type.family
                 font.pixelSize: Type.sizeCaption

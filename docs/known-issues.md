@@ -120,12 +120,13 @@ complete inventory, this is the part you need before you start a print.
   colour schemes.
 - Printer selection is one flat searchable list, not a vendor → machine →
   variant tree.
-- **Measure only measures on a model.** Clicking twice on the bed places no
-  point and reports nothing: the tool needs a mesh hit, where OrcaSlicer measures
-  between bed points as well. Found in the 2026-11-10 audit
-  (`docs/audit-2026-11-10.md`), not yet fixed.
-- **The object list and per-object settings stay open over the preview**, covering
-  the toolpath you switched there to look at.
+- **The object list and per-object settings stay open over the preview** unless you
+  collapse them: both can be stowed into a square chip on the viewport (the
+  `unfold_less` button in each header) and brought back with a click. They do not
+  close by themselves when the mode changes.
+- A collapsed chip keeps its place only for the session, not across launches.
+- The home screen's Recently opened list records opens made through the app, not a
+  model handed to it on the command line.
 - The camera view keys `1`–`7` only work while the viewport itself has focus, so
   they stop working after clicking any button. `F`, `R` and `O` work everywhere.
 - There is no recent-files list in the File menu, and no on-screen card for the

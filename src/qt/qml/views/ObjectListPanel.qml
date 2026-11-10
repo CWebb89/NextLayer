@@ -18,6 +18,9 @@ Rectangle {
     readonly property int selectedId: plateDocument.selectedId
 
     signal closeRequested()
+    /// The list stowed into its chip rather than closed: the same hide, but it leaves
+    /// a square behind that brings it back with one click.
+    signal collapseRequested()
     /// A right-click on a row: the panel says which object and where in window
     /// coordinates, because the menu is a window overlay, not a child here.
     signal contextRequested(int objectId, real x, real y)
@@ -56,6 +59,13 @@ Rectangle {
         }
 
         Item { width: parent.width - 200; height: 1 }
+
+        ToolButton {
+            icon: "unfold_less"
+            label: "Collapse"
+            hint: "Collapse the object list to a chip you can drag anywhere"
+            onClicked: root.collapseRequested()
+        }
 
         ToolButton {
             icon: "close"

@@ -36,6 +36,9 @@ Popup {
     property string statusText: ""
 
     signal paintRequested(int objectId, string kind, real radius, string mode, int tool)
+    /// The dialog stowed into its chip: the panel itself goes away, the chip brings
+    /// it back, and the drag position is kept so it reopens where it was put.
+    signal collapseRequested()
 
     /// A settings surface for one thing: an object, or -- when volumeId is set --
     /// one modifier volume inside it. The engine keeps the two in different
@@ -123,8 +126,16 @@ Popup {
 
     width: Math.min(720, parent.width - Metrics.xl * 2)
     height: Math.min(680, parent.height - Metrics.xl * 2)
-    x: Math.round((parent.width - width) / 2)
-    y: Math.round((parent.height - height) / 2)
+    /// Where the dialog has been dragged to, as an offset from its centred home. The
+    /// position is a binding over these rather than an assignment to x: a popup that
+    /// is written to directly loses its binding and never re-centres again, and this
+    /// keeps the dialog inside the window when that window is resized.
+    property real offsetX: 0
+    property real offsetY: 0
+    x: Math.max(-(width - Metrics.xl), Math.min(parent.width - Metrics.xl,
+                                               Math.round((parent.width - width) / 2) + offsetX))
+    y: Math.max(0, Math.min(parent.height - Metrics.xl,
+                            Math.round((parent.height - height) / 2) + offsetY))
     modal: false
     dim: false
     padding: 0
@@ -140,6 +151,41 @@ Popup {
     contentItem: Item {
         implicitWidth: dialogBody.implicitWidth
         implicitHeight: dialogBody.implicitHeight
+
+        // The dialog had no way to be moved: this strip drags it, the way a window's
+        // title bar does, so a settings panel can be pushed off the part it is
+        // covering. Anchored over the header rather than laid out in it, because a
+        // layout child with fillHeight took the whole dialog. The header's own
+        // controls are declared after it and stay on top.
+        MouseArea {
+            id: headerDrag
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            height: Metrics.rowHeight + Metrics.md * 2
+            cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+            acceptedButtons: Qt.LeftButton
+
+            property real pressSceneX: 0
+            property real pressSceneY: 0
+            property real pressOffsetX: 0
+            property real pressOffsetY: 0
+
+            onPressed: (event) => {
+                const scene = mapToItem(root.parent, event.x, event.y)
+                pressSceneX = scene.x
+                pressSceneY = scene.y
+                pressOffsetX = root.offsetX
+                pressOffsetY = root.offsetY
+            }
+            onPositionChanged: (event) => {
+                if (!pressed)
+                    return
+                const scene = mapToItem(root.parent, event.x, event.y)
+                root.offsetX = pressOffsetX + scene.x - pressSceneX
+                root.offsetY = pressOffsetY + scene.y - pressSceneY
+            }
+        }
 
         ColumnLayout {
             id: dialogBody
@@ -167,6 +213,13 @@ Popup {
                     font.family: Type.family
                     font.pixelSize: Type.sizeCaption
                     color: Colors.textMuted
+                }
+
+                ToolButton {
+                    icon: "unfold_less"
+                    label: "Collapse"
+                    hint: "Collapse to a chip, then drag that chip anywhere"
+                    onClicked: root.collapseRequested()
                 }
 
                 ToolButton {

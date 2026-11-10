@@ -19,6 +19,7 @@ Window {
 
     property string mode: toolpath.loaded ? root.previewMode : root.modelMode
     readonly property string deviceMode: "device"
+    readonly property string homeMode: "home"
     property bool panelOnLeft: false
     property real panelWidth: Metrics.settingsWidth
     readonly property real minPanelWidth: 320
@@ -28,6 +29,11 @@ Window {
     property string lastModelPath: ""
     property string lastModelFolder: ""
     property bool objectListVisible: false
+    /// Panels stowed into a chip: the panel is gone, a square over the viewport
+    /// stands for it, and the square can be dragged where it is out of the way.
+    property bool objectListChipVisible: false
+    property bool objectPanelChipVisible: false
+    property int objectPanelChipObject: 0
 
     readonly property bool hasModel: session.hasModel
 
@@ -332,6 +338,7 @@ Window {
         case "saveProjectAs": saveProjectDialog.open(); break
         case "saveProject3mf": saveProject3mfDialog.open(); break
         case "newPlate": root.newPlate(); break
+        case "home": root.mode = root.homeMode; break
         case "about": aboutDialog.open(); break
         case "quit": Qt.quit(); break
         case "slice": footer.startSlice(); break
@@ -357,7 +364,7 @@ Window {
         case "selectAll": plateDocument.selectAll(); break
         case "isolate": plateDocument.isolateSelection(); break
         case "showAll": plateDocument.showAll(); break
-        case "objects": root.objectListVisible = !root.objectListVisible; break
+        case "objects": root.showObjectList(!root.objectListVisible); break
         case "arrange": root.runAction("arrange"); break
         case "orient": root.runAction("orient"); break
         case "face": root.runTool("face"); break
@@ -456,10 +463,54 @@ Window {
         }
         return list
     }
+    /// The recently opened list behind the home screen: paths, names and the time
+    /// they were opened, newest first. Kept as one JSON string because that is what
+    /// the settings store holds without surprises, and ten is as far back as anyone
+    /// scrolls before reaching for the file picker instead.
+    Settings {
+        id: homeSettings
+        category: "home"
+        property string recentJson: "[]"
+    }
+
+    readonly property var recentFiles: {
+        try {
+            const parsed = JSON.parse(homeSettings.recentJson)
+            return Array.isArray(parsed) ? parsed : []
+        } catch (error) {
+            return []
+        }
+    }
+
     property int activePlate: 0
 
     function openModel(path) {
         root.addModels([path])
+    }
+
+    function noteRecent(path, kind) {
+        const name = path.split("/").pop()
+        const kept = root.recentFiles.filter(entry => entry.path !== path)
+        kept.unshift({ path: path, name: name, kind: kind, when: new Date().toISOString() })
+        homeSettings.recentJson = JSON.stringify(kept.slice(0, 10))
+    }
+
+    function clearRecent() {
+        homeSettings.recentJson = "[]"
+        root.setStatus("recently opened cleared")
+    }
+
+    /// A card on the home screen: a project opens as a project, anything else is
+    /// handed to the model loader, which knows the pre-sliced formats too.
+    function openRecent(path) {
+        if (path.slice(-9) === ".nextproj") {
+            if (root.openProject(path))
+                return
+        } else if (root.openNewModel(path)) {
+            root.noteRecent(path, "model")
+            return
+        }
+        root.setStatus("could not open " + path.split("/").pop())
     }
 
     function addModels(paths) {
@@ -487,6 +538,8 @@ Window {
                 // A model that lands somewhere the camera is not looking is a model
                 // the user has to hunt for: frame what was just added, once.
                 viewport.frameContent()
+                for (let i = 0; i < models.length; ++i)
+                    root.noteRecent(models[i], "model")
                 root.setStatus(added === 1 ? "added 1 model" : "added " + added + " models")
             } else if (session.error.length > 0) {
                 root.setStatus(session.error)
@@ -504,8 +557,10 @@ Window {
             root.openPreSliced(path)
             return
         }
-        if (session.open(path))
+        if (session.open(path)) {
             root.mode = root.modelMode
+            root.noteRecent(path, "model")
+        }
     }
 
     /// A print somebody already sliced — from a download, or one of this app's own
@@ -621,6 +676,14 @@ Window {
         statusTimer.restart()
     }
 
+    /// The object list and its chip are one control with two faces: showing either
+    /// hides the other, so a keyboard toggle while the chip is up cannot leave both.
+    function showObjectList(visible) {
+        root.objectListVisible = visible
+        if (visible)
+            root.objectListChipVisible = false
+    }
+
     function clearObject() {
         session.clear()
         toolpath.clear()
@@ -638,6 +701,7 @@ Window {
         }
         root.projectPath = path
         root.setStatus("saved " + path.split("/").pop())
+        root.noteRecent(path, "project")
         return true
     }
 
@@ -667,6 +731,7 @@ Window {
         viewport.selected = false
         viewport.resetView()
         root.setStatus("opened " + path.split("/").pop())
+        root.noteRecent(path, "project")
         return true
     }
 
@@ -699,7 +764,7 @@ Window {
             root.setStatus(label.length > 0 ? "redid " + label.toLowerCase() : "nothing to redo")
             break
         }
-        case "objects": root.objectListVisible = !root.objectListVisible; break
+        case "objects": root.showObjectList(!root.objectListVisible); break
         case "delete": plateDocument.removeSelection(); break
         case "duplicate": plateDocument.duplicateSelection(); break
         case "centre": plateDocument.centreSelection(); break
@@ -1077,6 +1142,30 @@ Window {
             }
         }
 
+        // The home screen, over the plate rather than instead of it: the viewport,
+        // the rails and the settings panel are still there underneath, so leaving
+        // home is a mode change and nothing has to be rebuilt.
+        HomeView {
+            id: homeView
+            anchors.top: header.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            z: 8
+            visible: root.mode === root.homeMode
+            version: root.appVersion
+            recent: root.recentFiles
+
+            onNewProjectRequested: {
+                root.newPlate()
+                root.mode = root.modelMode
+            }
+            onOpenProjectRequested: openProjectDialog.open()
+            onOpenModelRequested: openDialog.open()
+            onRecentRequested: (path) => root.openRecent(path)
+            onClearRecentRequested: root.clearRecent()
+        }
+
         Welcome {
             id: welcome
             anchors.fill: parent
@@ -1358,11 +1447,45 @@ Window {
                ? toolRail.x + toolRail.width + Metrics.sm
                : settingsPanel.x - width
             width: Metrics.drawerWidth
-            onCloseRequested: root.objectListVisible = false
+            onCloseRequested: root.showObjectList(false)
+            onCollapseRequested: {
+                root.objectListChipVisible = true
+                root.objectListVisible = false
+            }
             onContextRequested: (objectId, x, y) => root.openObjectMenu(objectId, x, y)
             onVolumeSettingsRequested: (objectId, volumeId) => {
                 objectPanel.openFor(objectId)
                 objectPanel.volumeId = volumeId
+            }
+        }
+
+        // The two stowed panels, as squares. They sit over the viewport by default --
+        // which is the point, since what a chip reveals is the thing the panel was
+        // covering -- and drag anywhere in the window after that.
+        FloatingChip {
+            id: objectListChip
+            z: 6
+            visible: root.objectListChipVisible
+            icon: "list"
+            hint: "Objects, collapsed — click to reopen, drag to move"
+            x: Math.max(0, viewport.x + viewport.width - width - Metrics.md)
+            y: viewportToolbar.y + viewportToolbar.height + Metrics.sm
+            onRestoreRequested: root.showObjectList(true)
+        }
+
+        FloatingChip {
+            id: objectPanelChip
+            z: 6
+            visible: root.objectPanelChipVisible
+            icon: "tune"
+            hint: "This object's settings, collapsed — click to reopen, drag to move"
+            x: Math.max(0, viewport.x + viewport.width - width - Metrics.md
+                          - (root.objectListChipVisible ? objectListChip.width + Metrics.sm : 0))
+            y: viewportToolbar.y + viewportToolbar.height + Metrics.sm
+            onRestoreRequested: {
+                root.objectPanelChipVisible = false
+                if (root.objectPanelChipObject > 0)
+                    objectPanel.openFor(root.objectPanelChipObject)
             }
         }
 
@@ -1778,6 +1901,12 @@ Window {
                               ? (kind === "tool" ? "colour" : kind === "seam" ? "seam" : "support")
                               : ""
         }
+        onCollapseRequested: {
+            root.objectPanelChipObject = objectPanel.objectId
+            objectPanel.close()
+            root.objectPanelChipVisible = true
+        }
+        onOpened: root.objectPanelChipVisible = false
     }
 
     // The Add menu, dropped from the toolbar's Add button: a shape as a new object,
@@ -2004,6 +2133,7 @@ Window {
 
         property var entries: [
             { id: "newPlate", label: "New plate", keys: "Ctrl+N" },
+            { id: "home", label: "Home", keys: "" },
             { id: "open", label: "Add model…", keys: "Ctrl+O" },
             { id: "openProject", label: "Open project…", keys: "Ctrl+Shift+O" },
             { id: "saveProject", label: "Save project", keys: "Ctrl+S" },
@@ -2496,6 +2626,10 @@ Window {
             viewport.orthographic = startupOrthographic
         root.title = "NextLayer · " + session.displayName()
         if (setupFlow.firstRun()) {
+            // A new install lands on the home screen, with the welcome over it: the
+            // welcome explains, and dismissing it leaves somewhere to start rather
+            // than an empty plate with no document open.
+            root.mode = root.homeMode
             if (!welcome.seen)
                 welcome.open()
             else

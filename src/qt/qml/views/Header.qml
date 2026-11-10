@@ -200,6 +200,13 @@ Item {
 
             Button {
                 height: parent.height
+                text: "Home"
+                primary: root.mode === "home"
+                onClicked: root.modeRequested("home")
+            }
+
+            Button {
+                height: parent.height
                 text: "Model"
                 primary: root.mode === "model"
                 onClicked: root.modeRequested("model")
