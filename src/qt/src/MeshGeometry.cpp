@@ -5,6 +5,7 @@
 
 #include <Slic3r/Domain/TriangleMesh.hpp>
 
+#include <array>
 #include <cmath>
 
 MeshGeometry::MeshGeometry(QQuick3DObject* parent)
@@ -17,6 +18,8 @@ void MeshGeometry::setMesh(const Slic3r::Domain::TriangleMesh& mesh)
     const indexed_triangle_set& its = mesh.its;
     if (its.vertices.empty() || its.indices.empty()) {
         clear();
+        m_positions.clear();
+        update();
         return;
     }
 
@@ -80,6 +83,55 @@ void MeshGeometry::setMesh(const Slic3r::Domain::TriangleMesh& mesh)
     emit boundsChanged();
 }
 
+void MeshGeometry::setRing(const QVector3D& centre, const QVector3D& normal, float radius,
+                            float thickness)
+{
+    const int segments = 64;
+    const int floats_per_vertex = 6;
+    QVector3D up = QVector3D::crossProduct(normal, QVector3D(0.0f, 0.0f, 1.0f));
+    if (up.lengthSquared() < 1e-4f)
+        up = QVector3D::crossProduct(normal, QVector3D(1.0f, 0.0f, 0.0f));
+    up.normalize();
+    const QVector3D right = QVector3D::crossProduct(normal, up).normalized();
+    const QVector3D lift = normal.normalized() * 0.06f;
+    const float inner = qMax(radius - thickness, radius * 0.5f);
+
+    const auto point_at = [&](float angle, float distance) {
+        return centre + lift + right * (std::cos(angle) * distance)
+                        + up * (std::sin(angle) * distance);
+    };
+
+    QVector<float> vertices;
+    vertices.reserve(segments * 6 * floats_per_vertex);
+    for (int segment = 0; segment < segments; ++segment) {
+        const float a0 = float(segment) / float(segments) * 2.0f * float(M_PI);
+        const float a1 = float(segment + 1) / float(segments) * 2.0f * float(M_PI);
+        const std::array<QVector3D, 4> quad = {point_at(a0, inner), point_at(a0, radius),
+                                               point_at(a1, radius), point_at(a1, inner)};
+        for (const int corner : {0, 1, 2, 0, 2, 3}) {
+            const QVector3D& position = quad[size_t(corner)];
+            vertices.append(position.x());
+            vertices.append(position.y());
+            vertices.append(position.z());
+            vertices.append(normal.x());
+            vertices.append(normal.y());
+            vertices.append(normal.z());
+        }
+    }
+
+    clear();
+    m_positions.clear();
+    const QByteArray vertex_data(reinterpret_cast<const char*>(vertices.constData()),
+                                 vertices.size() * int(sizeof(float)));
+    setVertexData(vertex_data);
+    setStride(floats_per_vertex * int(sizeof(float)));
+    addAttribute(QQuick3DGeometry::Attribute::PositionSemantic, 0, QQuick3DGeometry::Attribute::F32Type);
+    addAttribute(QQuick3DGeometry::Attribute::NormalSemantic, 3 * int(sizeof(float)), QQuick3DGeometry::Attribute::F32Type);
+    setPrimitiveType(QQuick3DGeometry::PrimitiveType::Triangles);
+    setBounds(centre - QVector3D(radius, radius, radius), centre + QVector3D(radius, radius, radius));
+    update();
+}
+
 void MeshGeometry::setColoredMesh(const Slic3r::Domain::TriangleMesh& mesh,
                                   const QVector<QVector4D>& colors)
 {
@@ -87,6 +139,7 @@ void MeshGeometry::setColoredMesh(const Slic3r::Domain::TriangleMesh& mesh,
     const int faceCount = int(its.indices.size());
     if (its.vertices.empty() || faceCount == 0 || colors.size() < faceCount) {
         clear();
+        update();
         return;
     }
 

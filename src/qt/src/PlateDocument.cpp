@@ -2569,8 +2569,45 @@ void PlateDocument::clearLayerHeights(int id)
     changed();
 }
 
+void PlateDocument::setBrushRadius(double radius)
+{
+    const float clamped = float(qBound(0.5, radius, 50.0));
+    if (qFuzzyCompare(clamped, m_brush.radius))
+        return;
+    m_brush.radius = clamped;
+    emit brushChanged();
+}
+
+void PlateDocument::setBrushShape(int shape)
+{
+    const next_layer::BrushShape wanted =
+        shape == 1 ? next_layer::BrushShape::Sphere : next_layer::BrushShape::Circle;
+    if (wanted == m_brush.shape)
+        return;
+    m_brush.shape = wanted;
+    emit brushChanged();
+}
+
+void PlateDocument::setBrushOverhangOnly(bool enabled)
+{
+    if (enabled == m_brush.overhangOnly)
+        return;
+    m_brush.overhangOnly = enabled;
+    emit brushChanged();
+}
+
+void PlateDocument::setBrushHighlightAngle(double degrees)
+{
+    const float clamped = float(qBound(0.0, degrees, 90.0));
+    if (qFuzzyCompare(clamped, m_brush.highlightAngleDeg))
+        return;
+    m_brush.highlightAngleDeg = clamped;
+    emit brushChanged();
+}
+
 int PlateDocument::paintObject(int id, const QString& kind, const QVector3D& worldPoint,
-                               double radius, bool erase, int extruder, int facetHint)
+                               const QVector3D& cameraPoint, const QString& mode,
+                               int extruder, int facetHint)
 {
     Object* object = find(id);
     if (object == nullptr || object->mesh == nullptr)
@@ -2586,15 +2623,28 @@ int PlateDocument::paintObject(int id, const QString& kind, const QVector3D& wor
     const Transform3d inverse = object->trafo.get_matrix().inverse();
     const Vec3d local = inverse * Vec3d(worldPoint.x(), worldPoint.y(), worldPoint.z());
     const Vec3f centre(local.x(), local.y(), local.z());
+    const Vec3d eye = inverse * Vec3d(cameraPoint.x(), cameraPoint.y(), cameraPoint.z());
+    const Vec3f camera(eye.x(), eye.y(), eye.z());
 
     Slic3r::Domain::TriangleSelector::TriangleSplittingData& data =
         paintKind == next_layer::PaintKind::Seam ? object->seamPaint
       : paintKind == next_layer::PaintKind::Tool ? object->toolPaint
                                                           : object->supportPaint;
 
-    const int changedFacets = next_layer::paintSphere(*object->mesh, data, centre,
-                                                      float(radius), paintKind, erase, extruder,
-                                                      facetHint);
+    const next_layer::PaintMode paintMode =
+        mode == QLatin1String("erase") ? next_layer::PaintMode::Erase
+      : mode == QLatin1String("block") ? next_layer::PaintMode::Block
+                                      : next_layer::PaintMode::Enforce;
+
+    // Overhang painting is judged in printer coordinates, so the engine needs the
+    // object's rotation with the translation taken out: a mesh is stored Y-up and
+    // the object is the thing that stands it up.
+    Transform3d rotation = object->trafo.get_matrix();
+    rotation.translation().setZero();
+
+    const int changedFacets = next_layer::paintSphere(*object->mesh, data, centre, camera,
+                                                      m_brush, paintKind, paintMode, extruder,
+                                                      facetHint, rotation);
     if (changedFacets == 0)
         return 0;
 

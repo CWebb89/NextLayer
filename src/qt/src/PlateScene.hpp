@@ -36,6 +36,10 @@ class PlateScene : public QObject
     Q_PROPERTY(QQuick3DGeometry* selectionGeometry READ selectionGeometry NOTIFY geometryChanged)
     Q_PROPERTY(bool hasSelection READ hasSelection NOTIFY geometryChanged)
     Q_PROPERTY(QQuick3DGeometry* paintGeometry READ paintGeometry NOTIFY geometryChanged)
+    /// The brush footprint ring, rebuilt on every pointer move while painting.
+    Q_PROPERTY(QQuick3DGeometry* brushRingGeometry READ brushRingGeometry NOTIFY geometryChanged)
+    /// The normal of the facet the last pick hit, so the ring can lie on it.
+    Q_PROPERTY(QVector3D pickedNormal READ pickedNormal NOTIFY pickedIdChanged)
     Q_PROPERTY(QQuick3DGeometry* volumeGeometry READ volumeGeometry NOTIFY geometryChanged)
     Q_PROPERTY(bool hasVolumes READ hasVolumes NOTIFY geometryChanged)
     Q_PROPERTY(QQuick3DGeometry* bedMarkerGeometry READ bedMarkerGeometry NOTIFY geometryChanged)
@@ -72,6 +76,17 @@ public:
     bool hasSelection() const;
     int pickedId() const { return m_pickedId; }
     int pickedFacet() const { return m_pickedFacet; }
+    /// The outward normal of the facet the last pick hit, in printer coordinates.
+    /// The paint brush draws its ring in that plane, so the circle lies on the
+    /// surface the brush will paint rather than floating in front of it.
+    QVector3D pickedNormal() const { return m_pickedNormal; }
+
+    /// The ring under the pointer while painting: the brush's footprint, drawn
+    /// where the paint will land. Empty geometry when the pointer is off the part.
+    QQuick3DGeometry* brushRingGeometry() const;
+    Q_INVOKABLE void setBrushRing(const QVector3D& centre, const QVector3D& normal,
+                                  float radius);
+    Q_INVOKABLE void clearBrushRing();
 
     Q_INVOKABLE QVector4D pick(const QVector3D& origin, const QVector3D& direction);
 
@@ -104,6 +119,8 @@ private:
     MeshGeometry* m_hover;
     MeshGeometry* m_selection;
     MeshGeometry* m_paint;
+    MeshGeometry* m_brushRing;
+    QVector3D m_pickedNormal;
     MeshGeometry* m_volumes;
     MeshGeometry* m_plateMarkers;
     MeshGeometry* m_gizmo;

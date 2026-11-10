@@ -688,7 +688,7 @@ else if test (count $foreign_placed) -lt 3
     __bad "foreign project: the save printed no placement measurement: "(tail -n 1 /tmp/nl-check-foreign-export.out)
 else if test $foreign_placed[2] -lt 1
     __bad "foreign project: came back with $foreign_placed[2] object(s) after a save"
-else if test (math "$foreign_placed[3] > 0.01") -eq 1
+else if awk -v off=$foreign_placed[3] 'BEGIN { exit !(off > 0.01) }'
     __bad "foreign project: saving it moved its objects by $foreign_placed[3] mm"
 else if not string match -q -- '*kept 3 setting(s)*' $foreign_back
     __bad 'foreign project: the kept settings did not come back out of the file that was written'

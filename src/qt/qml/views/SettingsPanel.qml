@@ -602,6 +602,7 @@ Item {
             width: 158
             visible: !root.filtering
             elideMode: Text.ElideRight
+            popupWidth: 250
             choices: root.subtabChoices()
             currentValue: root.activeSubtab
             onSelected: (value) => root.selectSubtab(String(value))

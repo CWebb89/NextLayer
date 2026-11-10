@@ -775,6 +775,7 @@ int runSliceFeaturesSelftest(const QString& model,
         return 1;
     }
 
+    document.setBrushRadius(1.5);
     const auto mesh = document.object(id)->mesh;
     const Slic3r::Domain::Transform3d trafo = document.object(id)->trafo.get_matrix();
     int enforcers = 0;
@@ -786,9 +787,12 @@ int runSliceFeaturesSelftest(const QString& model,
         const Vec3d normal = (trafo.linear() * (b - a).cross(c - a)).normalized();
         const Vec3d centre3 = trafo * ((a + b + c) / 3.0);
         if (normal.z() < -0.9 && centre3.z() > 1.0) {
+            const Vec3d eye = centre3 + normal * 100.0;
             enforcers += document.paintObject(id, QStringLiteral("supports"),
                                               QVector3D(centre3.x(), centre3.y(), centre3.z()),
-                                              1.5, false, 2, static_cast<int>(facet));
+                                              QVector3D(eye.x(), eye.y(), eye.z()),
+                                              QStringLiteral("enforce"), 2,
+                                              static_cast<int>(facet));
         }
     }
     if (enforcers == 0) {
@@ -1043,6 +1047,7 @@ int runMultiToolSelftest(const QString& configPath, const QString& dataDir)
     // Paint the top of the box with tool 2: every upward-facing facet. A tool
     // changer prints that in the second material, so the G-code has to change
     // tools and the colour has to be the second one.
+    document.setBrushRadius(30.0);
     const auto mesh = document.object(id)->mesh;
     const Slic3r::Domain::Transform3d trafo = document.object(id)->trafo.get_matrix();
     int painted = 0;
@@ -1054,9 +1059,12 @@ int runMultiToolSelftest(const QString& configPath, const QString& dataDir)
         const Vec3d normal = (trafo.linear() * (b - a).cross(c - a)).normalized();
         const Vec3d centre3 = trafo * ((a + b + c) / 3.0);
         if (normal.z() > 0.9) {
+            const Vec3d eye = centre3 + normal * 100.0;
             painted += document.paintObject(id, QStringLiteral("tool"),
                                             QVector3D(centre3.x(), centre3.y(), centre3.z()),
-                                            30.0, false, 2, static_cast<int>(facet));
+                                            QVector3D(eye.x(), eye.y(), eye.z()),
+                                            QStringLiteral("enforce"), 2,
+                                            static_cast<int>(facet));
         }
     }
     if (painted == 0) {
@@ -1676,6 +1684,7 @@ int runProjectSelftest(const QString& model, const QString& configPath, const QS
     document.setPosition(second, QVector3D(document.object(first)->position().x() + 40.0,
                                            document.object(first)->position().y(), 0.0));
     document.setRotation(second, QVector3D(0.0, 0.0, 30.0));
+    document.setBrushRadius(1.5);
 
     const auto mesh = document.object(first)->mesh;
     const Slic3r::Domain::Transform3d trafo = document.object(first)->trafo.get_matrix();
@@ -1688,9 +1697,11 @@ int runProjectSelftest(const QString& model, const QString& configPath, const QS
         const Vec3d normal = (trafo.linear() * (b - a).cross(c - a)).normalized();
         const Vec3d centre = trafo * ((a + b + c) / 3.0);
         if (normal.z() < -0.9 && centre.z() > 1.0) {
+            const Vec3d eye = centre + normal * 100.0;
             painted += document.paintObject(first, QStringLiteral("supports"),
-                                            QVector3D(centre.x(), centre.y(), centre.z()), 1.5,
-                                            false, 2, int(facet));
+                                            QVector3D(centre.x(), centre.y(), centre.z()),
+                                            QVector3D(eye.x(), eye.y(), eye.z()),
+                                            QStringLiteral("enforce"), 2, int(facet));
         }
     }
     // Tool paint on the object's own top face: a point in the air would paint
@@ -1703,8 +1714,13 @@ int runProjectSelftest(const QString& model, const QString& configPath, const QS
         if ((trafo.linear() * (b - a).cross(c - a)).normalized().z() < 0.9)
             continue;
         const Vec3d hit = trafo * ((a + b + c) / 3.0);
+        const Vec3d faceNormal = (trafo.linear() * (b - a).cross(c - a)).normalized();
+        const Vec3d eye = hit + faceNormal * 100.0;
+        document.setBrushRadius(6.0);
         document.paintObject(first, QStringLiteral("tool"),
-                             QVector3D(hit.x(), hit.y(), hit.z()), 6.0, false, 2, int(facet));
+                             QVector3D(hit.x(), hit.y(), hit.z()),
+                             QVector3D(eye.x(), eye.y(), eye.z()), QStringLiteral("enforce"),
+                             2, int(facet));
         break;
     }
     document.setToolColours(QVariantList{QStringLiteral("#e8583c"), QStringLiteral("#3c8ce8")});
@@ -1901,6 +1917,7 @@ int runThreeMfExportSelftest(const QString& model, const QString& configPath,
                                          (minY + maxY) * 0.5, 0.0f));
     document.setPosition(second, QVector3D((minX + maxX) * 0.5 + 20.0,
                                           (minY + maxY) * 0.5, 0.0f));
+    document.setBrushRadius(1.5);
 
     const auto mesh = document.object(first)->mesh;
     const Slic3r::Domain::Transform3d trafo = document.object(first)->trafo.get_matrix();
@@ -1912,10 +1929,13 @@ int runThreeMfExportSelftest(const QString& model, const QString& configPath,
         const Vec3d c = mesh->its.vertices[face[2]].cast<double>();
         const Vec3d normal = (trafo.linear() * (b - a).cross(c - a)).normalized();
         const Vec3d centre = trafo * ((a + b + c) / 3.0);
-        if (normal.z() < -0.9 && centre.z() > 1.0)
+        if (normal.z() < -0.9 && centre.z() > 1.0) {
+            const Vec3d eye = centre + normal * 100.0;
             painted += document.paintObject(first, QStringLiteral("supports"),
-                                            QVector3D(centre.x(), centre.y(), centre.z()), 1.5,
-                                            false, 2, int(facet));
+                                            QVector3D(centre.x(), centre.y(), centre.z()),
+                                            QVector3D(eye.x(), eye.y(), eye.z()),
+                                            QStringLiteral("enforce"), 2, int(facet));
+        }
     }
 
 

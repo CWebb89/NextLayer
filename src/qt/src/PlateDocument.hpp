@@ -70,6 +70,18 @@ class PlateDocument : public QObject
     Q_PROPERTY(QVariantList toolColours READ toolColours NOTIFY toolsChanged)
     Q_PROPERTY(int toolCount READ toolCount NOTIFY toolsChanged)
 
+    /// The paint brush. These belong to the document rather than travelling with
+    /// every dab: they are the settings of the gizmo, not of a stroke, and the
+    /// reference keeps them on the gizmo the same way. Shape is 0 for circle and
+    /// 1 for sphere; the angle is the reference's own "highlight overhangs"
+    /// threshold in degrees.
+    Q_PROPERTY(double brushRadius READ brushRadius WRITE setBrushRadius NOTIFY brushChanged)
+    Q_PROPERTY(int brushShape READ brushShape WRITE setBrushShape NOTIFY brushChanged)
+    Q_PROPERTY(bool brushOverhangOnly READ brushOverhangOnly WRITE setBrushOverhangOnly
+               NOTIFY brushChanged)
+    Q_PROPERTY(double brushHighlightAngle READ brushHighlightAngle
+               WRITE setBrushHighlightAngle NOTIFY brushChanged)
+
 public:
     using MeshPtr = std::shared_ptr<const Slic3r::Domain::TriangleMesh>;
     using VolumeType = Slic3r::Domain::ModelVolumeType;
@@ -152,6 +164,15 @@ public:
     /// per tool, and painting a facet with tool N prints it in that colour.
     QVariantList toolColours() const;
     int toolCount() const { return int(m_toolColours.size()); }
+
+    double brushRadius() const { return double(m_brush.radius); }
+    void setBrushRadius(double radius);
+    int brushShape() const { return m_brush.shape == next_layer::BrushShape::Sphere ? 1 : 0; }
+    void setBrushShape(int shape);
+    bool brushOverhangOnly() const { return m_brush.overhangOnly; }
+    void setBrushOverhangOnly(bool enabled);
+    double brushHighlightAngle() const { return double(m_brush.highlightAngleDeg); }
+    void setBrushHighlightAngle(double degrees);
     Q_INVOKABLE void setToolColours(const QVariantList& colours);
     Q_INVOKABLE QColor toolColour(int tool) const;
 
@@ -309,9 +330,11 @@ public:
     /// layer height profile is a list of absolute heights: outside the edited band
     /// the profile has to restate it, and zero is not a height.
     void setBaseLayerHeight(double height) { m_baseLayerHeight = height > 0.0 ? height : 0.2; }
+    /// `mode` is "enforce", "block" or "erase". The size and shape come from the
+    /// brush properties above.
     Q_INVOKABLE int paintObject(int id, const QString& kind, const QVector3D& worldPoint,
-                                double radius, bool erase, int extruder = 2,
-                                int facetHint = -1);
+                                const QVector3D& cameraPoint, const QString& mode,
+                                int extruder = 2, int facetHint = -1);
     Q_INVOKABLE void clearPaint(int id, const QString& kind);
     /// The tool an object prints with. A tool changer keeps one setting per
     /// region -- perimeter, infill, solid infill, support -- and the object as a
@@ -438,6 +461,7 @@ signals:
     void undoChanged();
     void geometryChanged();
     void plateChanged();
+    void brushChanged();
     void printSetupChanged();
     void projectPathChanged();
     void modifiedChanged();
@@ -508,6 +532,7 @@ private:
     QString m_projectPath;
     bool m_modified = false;
     QVector<QColor> m_toolColours;
+    next_layer::Brush m_brush;
     std::vector<LayerGcode> m_layerGcodes;
     std::vector<InLayerMark> m_inLayerMarks;
     double m_baseLayerHeight = 0.2;

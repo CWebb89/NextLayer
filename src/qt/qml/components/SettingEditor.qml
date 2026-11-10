@@ -424,6 +424,8 @@ Item {
         anchors.fill: parent
         visible: !root.gui && root.kind === "String" && !root.isMultiline
         text: root.value === undefined || root.value === null ? "" : String(root.value)
+        placeholderText: "not set"
+        placeholderTextColor: Colors.textMuted
         font.family: Type.family
         font.pixelSize: Type.sizeSmall
         color: Colors.textPrimary

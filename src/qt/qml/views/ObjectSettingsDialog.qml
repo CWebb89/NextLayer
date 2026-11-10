@@ -21,14 +21,21 @@ Popup {
 
     property int objectId: 0
     property string paintKind: "supports"
+    /// What a dab writes: "enforce", "block" or "erase". The reference gives a
+    /// brush all three -- a seam can be blocked and a support region excluded --
+    /// so erasing is a mode of the brush rather than a toggle beside it.
+    property string paintMode: "enforce"
     property real brushRadius: 4.0
-    property bool erasing: false
+    /// 0 circle, 1 sphere, the reference's two brush shapes.
+    property int brushShape: 0
+    property bool overhangOnly: false
+    property real highlightAngle: 30
     property bool settingsTab: true
     property bool painting: false
     property int paintTool: 2
     property string statusText: ""
 
-    signal paintRequested(int objectId, string kind, real radius, bool erase, int tool)
+    signal paintRequested(int objectId, string kind, real radius, string mode, int tool)
 
     /// A settings surface for one thing: an object, or -- when volumeId is set --
     /// one modifier volume inside it. The engine keeps the two in different
@@ -89,8 +96,23 @@ Popup {
 
     function togglePainting() {
         root.painting = !root.painting
+        root.pushPaint()
+    }
+
+    /// The one way paint settings reach the viewport. Every control in the paint
+    /// block calls this, because the viewport holds its own copy of them: changing
+    /// the kind here and not there is how "seam" used to paint support, and how the
+    /// brush slider appeared to do nothing at all.
+    function pushPaint() {
+        // The document paints with its own copy of the brush, so the panel writes
+        // it before telling the viewport anything: a slider that only moved the
+        // ring would be a size setting that does not size the paint.
+        plateDocument.brushRadius = root.brushRadius
+        plateDocument.brushShape = root.brushShape
+        plateDocument.brushOverhangOnly = root.overhangOnly
+        plateDocument.brushHighlightAngle = root.highlightAngle
         root.paintRequested(root.painting ? root.objectId : 0, root.paintKind,
-                            root.brushRadius, root.erasing, root.paintTool)
+                            root.brushRadius, root.paintMode, root.paintTool)
     }
 
     function labelsForKind(kind) {
@@ -469,6 +491,15 @@ Popup {
 
                 Divider { Layout.fillWidth: true }
 
+                // Wrapped in its own column so the viewport's brush bar and this
+                // panel can share one control set: the panel is the full surface,
+                // and while a brush is armed the same settings are repeated in a
+                // small bar over the bed, out of the way of the part.
+                ColumnLayout {
+                    id: paintSection
+                    Layout.fillWidth: true
+                    spacing: 0
+
                 Text {
                     text: "Painting"
                     font.family: Type.family
@@ -477,6 +508,10 @@ Popup {
                     color: Colors.textPrimary
                 }
 
+                // The control set is the reference's, in its order and with its
+                // names: a kind, a tool type, a brush size, the mode the brush
+                // writes, an overhang restriction for supports, and the filaments
+                // a colour dab can choose between.
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: Metrics.sm
@@ -484,35 +519,79 @@ Popup {
                     Button {
                         text: "Support"
                         primary: root.paintKind === "supports"
-                        onClicked: root.paintKind = "supports"
+                        onClicked: {
+                            root.paintKind = "supports"
+                            root.paintMode = "enforce"
+                            root.pushPaint()
+                        }
                     }
                     Button {
                         text: "Seam"
                         primary: root.paintKind === "seam"
-                        onClicked: root.paintKind = "seam"
+                        onClicked: {
+                            root.paintKind = "seam"
+                            root.paintMode = "enforce"
+                            root.pushPaint()
+                        }
                     }
                     Button {
                         text: "Colour"
                         primary: root.paintKind === "tool"
-                        onClicked: root.paintKind = "tool"
+                        onClicked: {
+                            root.paintKind = "tool"
+                            root.paintMode = "enforce"
+                            root.pushPaint()
+                        }
                     }
 
                     Item { Layout.fillWidth: true }
 
                     Text {
-                        text: "Brush"
+                        text: "Tool type"
                         font.family: Type.family
                         font.pixelSize: Type.sizeCaption
                         color: Colors.textMuted
                     }
+                    Button {
+                        text: "Circle"
+                        primary: root.brushShape === 0
+                        onClicked: {
+                            root.brushShape = 0
+                            root.pushPaint()
+                        }
+                    }
+                    Button {
+                        text: "Sphere"
+                        primary: root.brushShape === 1
+                        onClicked: {
+                            root.brushShape = 1
+                            root.pushPaint()
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Metrics.sm
+
+                    Text {
+                        text: "Brush size"
+                        font.family: Type.family
+                        font.pixelSize: Type.sizeCaption
+                        color: Colors.textMuted
+                        Layout.preferredWidth: 76
+                    }
 
                     Slider {
-                        Layout.preferredWidth: 160
+                        Layout.preferredWidth: 200
                         from: 0.5
                         to: 20
                         step: 0.5
                         value: root.brushRadius
-                        onMoved: (value) => root.brushRadius = value
+                        onMoved: (value) => {
+                            root.brushRadius = value
+                            root.pushPaint()
+                        }
                     }
 
                     Text {
@@ -522,11 +601,122 @@ Popup {
                         color: Colors.textSecondary
                         Layout.preferredWidth: 60
                     }
+
+                    Item { Layout.fillWidth: true }
+
+                    Text {
+                        // The count is a Qt-side query, so it has no change signal
+                        // of its own: reading the refresh token is what makes the
+                        // label follow the brush.
+                        text: root.refreshVersion >= 0 ? root.labelsForKind(root.paintKind) : ""
+                        font.family: Type.family
+                        font.pixelSize: Type.sizeCaption
+                        color: Colors.textMuted
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Metrics.sm
+
+                    Button {
+                        text: root.paintKind === "seam" ? "Enforce seam"
+                              : root.paintKind === "tool" ? "Paint" : "Enforce"
+                        primary: root.paintMode === "enforce"
+                        onClicked: {
+                            root.paintMode = "enforce"
+                            root.pushPaint()
+                        }
+                    }
+                    Button {
+                        // The colour gizmo has no blocking state: a facet belongs
+                        // to one tool or to none.
+                        visible: root.paintKind !== "tool"
+                        text: root.paintKind === "seam" ? "Block seam" : "Block"
+                        primary: root.paintMode === "block"
+                        onClicked: {
+                            root.paintMode = "block"
+                            root.pushPaint()
+                        }
+                    }
+                    Button {
+                        text: "Erase"
+                        primary: root.paintMode === "erase"
+                        onClicked: {
+                            root.paintMode = "erase"
+                            root.pushPaint()
+                        }
+                    }
+
+                    Item { Layout.fillWidth: true }
+
+                    CheckBox {
+                        // Supports only: the reference restricts a support dab to
+                        // facets the printer will actually need support under, and
+                        // the angle is the same threshold the settings use.
+                        visible: root.paintKind === "supports"
+                        text: "On highlighted overhangs only"
+                        checked: root.overhangOnly
+                        onToggled: {
+                            root.overhangOnly = checked
+                            root.pushPaint()
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Metrics.sm
+                    visible: root.paintKind === "supports"
+
+                    Text {
+                        text: "Highlight overhangs"
+                        font.family: Type.family
+                        font.pixelSize: Type.sizeCaption
+                        color: Colors.textMuted
+                        Layout.preferredWidth: 130
+                    }
+
+                    Slider {
+                        Layout.preferredWidth: 200
+                        from: 0
+                        to: 90
+                        step: 1
+                        value: root.highlightAngle
+                        onMoved: (value) => {
+                            root.highlightAngle = value
+                            root.pushPaint()
+                        }
+                    }
+
+                    Text {
+                        text: Math.round(root.highlightAngle) + "°"
+                        font.family: Type.family
+                        font.pixelSize: Type.sizeCaption
+                        color: Colors.textSecondary
+                        Layout.preferredWidth: 40
+                    }
+
+                    Item { Layout.fillWidth: true }
                 }
 
                 // One swatch per tool of the changer: a tool changer prints each
                 // painted region with the tool that was assigned to it, so the swatch
                 // is the colour that will come out.
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Metrics.sm
+                    visible: root.paintKind === "tool"
+
+                    Text {
+                        text: "Filaments"
+                        font.family: Type.family
+                        font.pixelSize: Type.sizeCaption
+                        color: Colors.textMuted
+                        Layout.preferredWidth: 76
+                    }
+                }
+
                 Flow {
                     Layout.fillWidth: true
                     spacing: Metrics.xs
@@ -562,9 +752,7 @@ Popup {
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
                                     root.paintTool = swatch.index + 1
-                                    if (root.painting)
-                                        root.paintRequested(root.objectId, "tool",
-                                                            root.brushRadius, root.erasing)
+                                    root.pushPaint()
                                 }
                             }
                         }
@@ -576,20 +764,13 @@ Popup {
                     spacing: Metrics.sm
 
                     Button {
-                        text: "Start painting"
+                        text: root.painting ? "Done" : "Start painting"
                         primary: !root.painting
                         onClicked: root.togglePainting()
                     }
 
                     Button {
-                        text: root.erasing ? "Erase" : "Paint"
-                        onClicked: root.erasing = !root.erasing
-                    }
-
-                    Button {
-                        text: root.paintKind === "tool" ? "Clear colour paint"
-                                                         : root.paintKind === "seam" ? "Clear seam paint"
-                                                                                     : "Clear support paint"
+                        text: "Erase all"
                         onClicked: {
                             plateDocument.clearPaint(root.objectId, root.paintKind)
                             root.refresh()
@@ -597,13 +778,7 @@ Popup {
                     }
 
                     Item { Layout.fillWidth: true }
-
-                    Text {
-                        text: root.labelsForKind(root.paintKind)
-                        font.family: Type.family
-                        font.pixelSize: Type.sizeCaption
-                        color: Colors.textMuted
-                    }
+                }
                 }
             }
 

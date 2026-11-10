@@ -92,6 +92,7 @@ PlateScene::PlateScene(PlateDocument* document, QObject* parent)
     , m_hover(new MeshGeometry(nullptr))
     , m_selection(new MeshGeometry(nullptr))
     , m_paint(new MeshGeometry(nullptr))
+    , m_brushRing(new MeshGeometry(nullptr))
     , m_volumes(new MeshGeometry(nullptr))
     , m_plateMarkers(new MeshGeometry(nullptr))
     , m_gizmo(new MeshGeometry(nullptr))
@@ -101,6 +102,7 @@ PlateScene::PlateScene(PlateDocument* document, QObject* parent)
     m_hover->setParent(this);
     m_selection->setParent(this);
     m_paint->setParent(this);
+    m_brushRing->setParent(this);
     m_volumes->setParent(this);
     m_plateMarkers->setParent(this);
     m_gizmo->setParent(this);
@@ -222,6 +224,21 @@ QQuick3DGeometry* PlateScene::selectionGeometry() const
 QQuick3DGeometry* PlateScene::paintGeometry() const
 {
     return m_paint;
+}
+
+QQuick3DGeometry* PlateScene::brushRingGeometry() const
+{
+    return m_brushRing;
+}
+
+void PlateScene::setBrushRing(const QVector3D& centre, const QVector3D& normal, float radius)
+{
+    m_brushRing->setRing(centre, normal, radius, qMax(radius * 0.08f, 0.25f));
+}
+
+void PlateScene::clearBrushRing()
+{
+    m_brushRing->setMesh(Slic3r::Domain::TriangleMesh());
 }
 
 QQuick3DGeometry* PlateScene::volumeGeometry() const
@@ -504,34 +521,55 @@ void PlateScene::rebuild()
 
     rebuildGizmo();
 
-    // The painted facets of the selected object, in the object's own frame with one
-    // colour per paint kind: support enforcers and blockers, seam, and each
-    // multi-material state.
+    // The painted facets of every visible object, in each object's own frame with
+    // one colour per paint kind: support enforcers and blockers, seam, and each
+    // multi-material state. Every object, not just the selected one — paint is a
+    // property of the part, and the reference keeps it on screen when the object
+    // is deselected. Losing the overlay on a click on empty bed made painting look
+    // like it had not taken at all.
     TriangleMesh painted;
     QVector<QVector4D> paintedColors;
-    const int selected = m_document->selectedId();
-    const PlateDocument::Object* object =
-        selected > 0 ? m_document->object(selected) : nullptr;
-    if (object != nullptr && object->mesh != nullptr && object->visible) {
+    for (const int paintedId : m_document->ids()) {
+        const PlateDocument::Object* object = m_document->object(paintedId);
+        if (object == nullptr || object->mesh == nullptr || !object->visible)
+            continue;
+        TriangleMesh objectPaint;
+        QVector<QVector4D> objectColors;
+        const auto append = [&objectPaint, &objectColors](
+                                const Slic3r::Domain::indexed_triangle_set_with_color& colored,
+                                auto colorFor) {
+            for (size_t index = 0; index < colored.indices.size(); ++index) {
+                const auto& face = colored.indices[index];
+                const int base = int(objectPaint.its.vertices.size());
+                objectPaint.its.vertices.push_back(colored.vertices[face[0]]);
+                objectPaint.its.vertices.push_back(colored.vertices[face[1]]);
+                objectPaint.its.vertices.push_back(colored.vertices[face[2]]);
+                objectPaint.its.indices.push_back(Index3{base, base + 1, base + 2});
+                const uint8_t state = index < colored.colors.size() ? colored.colors[index] : 0;
+                objectColors.append(colorFor(state));
+            }
+        };
+        // The selector hands back every leaf it holds, painted or not, so the
+        // unpainted ones have to be dropped here: a colour with zero alpha is how
+        // MeshGeometry::setColoredMesh is told to skip a triangle. Without this the
+        // overlay colours the whole part and a single dab reads as a whole painted
+        // model.
         const auto addPaint = [&](const Slic3r::Domain::TriangleSelector::TriangleSplittingData& data,
                                   next_layer::PaintKind kind, const QVector4D& paintColor,
                                   const QVector4D& eraseColor) {
             if (next_layer::paintIsEmpty(data))
                 return;
-            const Slic3r::Domain::indexed_triangle_set_with_color colored =
-                next_layer::paintedTriangles(*object->mesh, data, kind);
-            for (size_t index = 0; index < colored.indices.size(); ++index) {
-                const auto& face = colored.indices[index];
-                const int base = int(painted.its.vertices.size());
-                painted.its.vertices.push_back(colored.vertices[face[0]]);
-                painted.its.vertices.push_back(colored.vertices[face[1]]);
-                painted.its.vertices.push_back(colored.vertices[face[2]]);
-                painted.its.indices.push_back(Index3{base, base + 1, base + 2});
-                const uint8_t state = index < colored.colors.size() ? colored.colors[index] : 0;
-                const bool blocker =
-                    state == uint8_t(Slic3r::Domain::TriangleSelector::TriangleStateType::BLOCKER);
-                paintedColors.append(blocker ? eraseColor : paintColor);
-            }
+            const bool supports = kind == next_layer::PaintKind::Supports;
+            append(next_layer::paintedTriangles(*object->mesh, data, kind),
+                   [&paintColor, &eraseColor, supports](uint8_t state) {
+                       if (state == uint8_t(Slic3r::Domain::TriangleSelector::TriangleStateType::NONE))
+                           return QVector4D(0.0f, 0.0f, 0.0f, 0.0f);
+                       if (!supports)
+                           return paintColor;
+                       return state == uint8_t(
+                                  Slic3r::Domain::TriangleSelector::TriangleStateType::BLOCKER)
+                                  ? eraseColor : paintColor;
+                   });
         };
 
         addPaint(object->supportPaint, next_layer::PaintKind::Supports,
@@ -540,29 +578,29 @@ void PlateScene::rebuild()
                  QVector4D(0.85f, 0.20f, 0.85f, 1.0f), QVector4D(0.85f, 0.20f, 0.85f, 1.0f));
         // Tool paint is the one kind whose colour per facet is meaningful: each
         // tool has its own colour, so the overlay reads as the printed result.
-        const auto addToolPaint = [&]() {
-            if (next_layer::paintIsEmpty(object->toolPaint))
-                return;
-            const Slic3r::Domain::indexed_triangle_set_with_color colored =
-                next_layer::paintedTriangles(*object->mesh, object->toolPaint,
-                                             next_layer::PaintKind::Tool);
-            for (size_t index = 0; index < colored.indices.size(); ++index) {
-                const auto& face = colored.indices[index];
-                const int base = int(painted.its.vertices.size());
-                painted.its.vertices.push_back(colored.vertices[face[0]]);
-                painted.its.vertices.push_back(colored.vertices[face[1]]);
-                painted.its.vertices.push_back(colored.vertices[face[2]]);
-                painted.its.indices.push_back(Index3{base, base + 1, base + 2});
-                const int tool = index < colored.colors.size() ? int(colored.colors[index]) : 1;
-                const QColor colour = m_document->toolColour(tool);
-                paintedColors.append(QVector4D(float(colour.redF()), float(colour.greenF()),
-                                               float(colour.blueF()), 1.0f));
-            }
-        };
-        addToolPaint();
+        if (!next_layer::paintIsEmpty(object->toolPaint)) {
+            const auto colorForTool = [this](uint8_t state) {
+                if (state == uint8_t(Slic3r::Domain::TriangleSelector::TriangleStateType::NONE))
+                    return QVector4D(0.0f, 0.0f, 0.0f, 0.0f);
+                const QColor colour = m_document->toolColour(int(state));
+                return QVector4D(float(colour.redF()), float(colour.greenF()),
+                                 float(colour.blueF()), 1.0f);
+            };
+            append(next_layer::paintedTriangles(*object->mesh, object->toolPaint,
+                                                next_layer::PaintKind::Tool),
+                   colorForTool);
+        }
 
-        if (!painted.its.indices.empty())
-            painted.transform(object->trafo.get_matrix());
+        if (objectPaint.its.indices.empty())
+            continue;
+        objectPaint.transform(object->trafo.get_matrix());
+        const int offset = int(painted.its.vertices.size());
+        for (const Vec3f& vertex : objectPaint.its.vertices)
+            painted.its.vertices.push_back(vertex);
+        for (const auto& face : objectPaint.its.indices)
+            painted.its.indices.push_back(Index3{face[0] + offset, face[1] + offset,
+                                                 face[2] + offset});
+        paintedColors += objectColors;
     }
     m_paint->setColoredMesh(painted, paintedColors);
 
@@ -580,6 +618,7 @@ QVector4D PlateScene::pick(const QVector3D& origin, const QVector3D& direction)
 
     double nearest = std::numeric_limits<double>::max();
     QVector3D hit;
+    QVector3D normal(0.0f, 0.0f, 1.0f);
     int picked = 0;
     int pickedFacet = -1;
 
@@ -628,6 +667,11 @@ QVector4D PlateScene::pick(const QVector3D& origin, const QVector3D& direction)
             hit = toVector(worldHit);
             picked = id;
             pickedFacet = bestFacet;
+            const Index3& face = mesh.its.indices[size_t(bestFacet)];
+            const Vec3d a = mesh.its.vertices[face[0]].cast<double>();
+            const Vec3d b = mesh.its.vertices[face[1]].cast<double>();
+            const Vec3d c = mesh.its.vertices[face[2]].cast<double>();
+            normal = toVector((matrix.linear() * (b - a).cross(c - a)).normalized());
         }
     }
 
@@ -637,6 +681,7 @@ QVector4D PlateScene::pick(const QVector3D& origin, const QVector3D& direction)
     if (picked != m_pickedId || pickedFacet != m_pickedFacet) {
         m_pickedId = picked;
         m_pickedFacet = pickedFacet;
+        m_pickedNormal = normal;
         emit pickedIdChanged();
     }
     return QVector4D(hit.x(), hit.y(), hit.z(), static_cast<float>(nearest));

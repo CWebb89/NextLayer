@@ -192,6 +192,7 @@ Card {
                     }
 
                     Text {
+                        id: legendName
                         Layout.alignment: Qt.AlignVCenter
                         Layout.fillWidth: true
                         Layout.minimumWidth: 56
@@ -205,7 +206,7 @@ Card {
 
                     Text {
                         Layout.alignment: Qt.AlignVCenter
-                        Layout.preferredWidth: 66
+                        Layout.preferredWidth: 58
                         horizontalAlignment: Text.AlignRight
                         visible: !root.rangeMode
                         text: root.clock(Number(legendRow.modelData.seconds))
@@ -216,7 +217,7 @@ Card {
 
                     Text {
                         Layout.alignment: Qt.AlignVCenter
-                        Layout.preferredWidth: 48
+                        Layout.preferredWidth: 44
                         horizontalAlignment: Text.AlignRight
                         visible: !root.rangeMode
                         text: Number(legendRow.modelData.percent).toFixed(1) + "%"
@@ -260,6 +261,12 @@ Card {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: toolpath.setFeatureVisible(legendRow.modelData.name,
                                                           legendRow.modelData.visible === false)
+                }
+
+                Tooltip {
+                    target: legendRow
+                    text: String(legendRow.modelData.name)
+                    shown: legendMouse.containsMouse && legendName.truncated
                 }
             }
         }

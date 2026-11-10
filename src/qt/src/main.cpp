@@ -536,7 +536,13 @@ QString bedStlForPrinter(const QString& model)
 
 QString bedAssetResource(const QString& printerModel)
 {
-    if (printerModel.compare(QStringLiteral("Voron 2.4 350"), Qt::CaseInsensitive) == 0)
+    // The Voron bundle is a custom one, so its `printer_model` is the placeholder the
+    // bundle generator wrote (`NL_voron-2-4-350-0-4-nozzle-copy_MODEL`) rather than a
+    // vendor string. Matching the exact name therefore never fired and the Voron bed
+    // fell through to the plain slab; both spellings have to resolve to the asset.
+    const QString model = printerModel.toLower();
+    if (model.startsWith(QStringLiteral("voron 2.4 350"))
+        || model.startsWith(QStringLiteral("nl_voron-2-4-350")))
         return QStringLiteral(":/next-layer/bed/voron24_350_plate.stl");
 
     const QString stl = bedStlForPrinter(printerModel);
@@ -600,9 +606,15 @@ QVector3D bedExtent(const QVector<QPointF>& bed, bool maximum)
     return QVector3D(float(x), float(y), 0.0f);
 }
 
-// A `bed_model` mesh is authored around its own origin with its top face on
-// z = 0; the plate works in printer coordinates with the bed starting at
-// (0, 0). Centre the plate on the bed and keep its top on the bed plane.
+// A `bed_model` mesh is authored around its own origin, in printer coordinates,
+// with its top face on z = 0 -- so the mesh origin goes to the bed's centre and
+// nothing else is re-centred. PrusaSlicer and Orca place it exactly this way
+// (`Bed3D::update_model_offset`: `shift = build volume centre`, no bounding box
+// in sight). Centring the mesh's *bounds* instead shifts a plate whose silhouette
+// is not symmetric about the origin: the Voron 350 plate is a 355 x 355 body with
+// a cable notch reaching 10 mm further out at the front, so its bounds centre sits
+// 5 mm behind the origin and the whole plate lands 5 mm back -- a strip of plate
+// with no grid on it behind the bed.
 bool loadPlateGeometry(MeshGeometry& geometry, const QString& path, const QVector2D& bedCentre)
 {
     const auto mesh = Slic3r::Biz::load_stl(path.toStdString());
@@ -612,15 +624,10 @@ bool loadPlateGeometry(MeshGeometry& geometry, const QString& path, const QVecto
     }
 
     Slic3r::Domain::TriangleMesh plate = *mesh;
-    Slic3r::Domain::Vec3f low = plate.its.vertices.front();
     Slic3r::Domain::Vec3f high = plate.its.vertices.front();
-    for (const Slic3r::Domain::Vec3f& vertex : plate.its.vertices) {
-        low = low.cwiseMin(vertex);
+    for (const Slic3r::Domain::Vec3f& vertex : plate.its.vertices)
         high = high.cwiseMax(vertex);
-    }
-    plate.translate(Slic3r::Domain::Vec3f(bedCentre.x() - (low.x() + high.x()) * 0.5f,
-                                          bedCentre.y() - (low.y() + high.y()) * 0.5f,
-                                          -high.z()));
+    plate.translate(Slic3r::Domain::Vec3f(bedCentre.x(), bedCentre.y(), -high.z()));
     geometry.setMesh(plate);
     return true;
 }
@@ -1962,9 +1969,13 @@ int main(int argc, char* argv[])
                 const Slic3r::Domain::Vec3d hit = trafo * ((a + b + c) / 3.0);
                 if (normal.z() > -0.9 || hit.z() < 1.0)
                     continue;
+                const Slic3r::Domain::Vec3d eye = hit + normal * 100.0;
+                document->setBrushRadius(radius);
                 painted += document->paintObject(id, QStringLiteral("supports"),
-                                                 QVector3D(hit.x(), hit.y(), hit.z()), radius,
-                                                 false, 2, static_cast<int>(facet));
+                                                 QVector3D(hit.x(), hit.y(), hit.z()),
+                                                 QVector3D(eye.x(), eye.y(), eye.z()),
+                                                 QStringLiteral("enforce"), 2,
+                                                 static_cast<int>(facet));
             }
             document->selectObject(id);
         }

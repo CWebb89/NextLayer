@@ -822,8 +822,6 @@ Window {
             viewport.paintActive = !already
             viewport.paintObjectId = objectId
             viewport.paintKind = kind
-            viewport.paintRadius = objectPanel.brushRadius
-            viewport.paintErase = objectPanel.erasing
             root.activeTool = viewport.paintActive ? id : ""
             const label = kind === "tool" ? "tool " + objectPanel.paintTool
                                          : kind === "seam" ? "seam" : "support"
@@ -833,6 +831,20 @@ Window {
                            : "")
             objectPanel.openFor(objectId)
             objectPanel.settingsTab = false
+            // The panel is the paint surface: it has to open on the kind the rail
+            // just armed and agree about whether the brush is on, or its "Start
+            // painting" button becomes a second switch that turns painting off.
+            objectPanel.paintKind = kind
+            objectPanel.painting = viewport.paintActive
+            // The panel is the one writer of the brush, including the document's
+            // copy of it, so arming from the rail has to go through it rather than
+            // setting the viewport's fields directly.
+            objectPanel.pushPaint()
+            // A 700-pixel settings dialog over the part is the last thing a brush
+            // needs: while painting, the viewport's own bar carries the controls and
+            // the panel steps aside. "More" on the bar brings it back.
+            if (viewport.paintActive)
+                objectPanel.close()
             return
         }
         if (id === "layers") {
@@ -1146,7 +1158,10 @@ Window {
                 root.setStatus("laid face " + facet + " on the bed")
             }
             onPainted: (objectId, facets) => {
-                root.setStatus("painted " + facets + " facet(s)")
+                root.setStatus(facets > 0 ? "painted " + facets + " facet(s)"
+                                          : "erased paint")
+                if (objectPanel.objectId === objectId)
+                    objectPanel.refresh()
             }
             onBandSelected: (count) => {
                 root.setStatus(count === 1 ? "selected 1 object"
@@ -1154,6 +1169,28 @@ Window {
             }
             onPlateSelected: (index) => root.switchPlate(index)
             onPlateRemoveRequested: (index) => root.removePlate(index)
+
+            // The brush bar and the object panel edit the same settings. The bar is
+            // what is on screen while painting, so it leads and the panel follows:
+            // its fields are updated here rather than the bar reaching for it.
+            onPaintSettingsChanged: (kind, mode, radius) => {
+                objectPanel.paintKind = kind
+                objectPanel.paintMode = mode
+                objectPanel.brushRadius = radius
+            }
+            onPaintFinished: () => {
+                viewport.paintActive = false
+                root.activeTool = ""
+                root.setStatus("")
+                if (viewport.paintObjectId > 0) {
+                    objectPanel.painting = false
+                    objectPanel.openFor(viewport.paintObjectId)
+                }
+            }
+            onPaintMoreRequested: {
+                if (viewport.paintObjectId > 0)
+                    objectPanel.openFor(viewport.paintObjectId)
+            }
 
             onPlateAddRequested: root.addPlate()
             onPlateLockToggled: (index) => root.togglePlateLock(index)
@@ -1691,12 +1728,12 @@ Window {
     ObjectSettingsDialog {
         id: objectPanel
 
-        onPaintRequested: (objectId, kind, radius, erase, tool) => {
+        onPaintRequested: (objectId, kind, radius, mode, tool) => {
             viewport.paintActive = objectId > 0
             viewport.paintObjectId = objectId
             viewport.paintKind = kind.length > 0 ? kind : "supports"
             viewport.paintRadius = radius
-            viewport.paintErase = erase
+            viewport.paintMode = mode
             viewport.paintTool = tool
             root.activeTool = objectId > 0
                               ? (kind === "tool" ? "colour" : kind === "seam" ? "seam" : "support")

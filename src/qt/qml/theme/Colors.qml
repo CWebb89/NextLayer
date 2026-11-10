@@ -96,8 +96,8 @@ QtObject {
     // the plate a fixed step below its background; this steps the theme's own
     // background toward black by the same proportion, so the plate stays the
     // darkest large surface in the scene on any palette.
-    readonly property color viewportPlate: mix(viewportBackground, "#000000", 0.38)
-    readonly property color viewportPlateSide: mix(viewportBackground, "#000000", 0.62)
+    readonly property color viewportPlate: mix(viewportBackground, Qt.rgba(0, 0, 0, 1), 0.38)
+    readonly property color viewportPlateSide: mix(viewportBackground, Qt.rgba(0, 0, 0, 1), 0.62)
     readonly property color viewportGrid: mix(viewportPlate, surfaceVariantText, 0.42)
 
     readonly property color tempCool: primary

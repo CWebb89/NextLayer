@@ -4,6 +4,7 @@
 import QtQuick
 import QtQuick3D
 import QtQuick.Controls
+import QtQuick.Layouts
 import NextLayer 1.0
 import "../theme"
 import "../components"
@@ -16,6 +17,13 @@ Item {
     signal contextRequested(int objectId, real x, real y)
     signal placedOnFace(int objectId, int facet)
     signal painted(int objectId, int facets)
+    /// The brush bar edits the same settings the object panel does; the owner owns
+    /// both, so it is told rather than the viewport reaching for the popup.
+    signal paintSettingsChanged(string kind, string mode, real radius)
+    /// The bar's Done: the stroke is over and the panel comes back.
+    signal paintFinished()
+    /// The bar's More: open the full control surface without ending the stroke.
+    signal paintMoreRequested()
     /// A click on a plate's number badge. The owner does the plate switch: it also
     /// reframes the camera and swaps the loaded G-code, which the viewport cannot
     /// do on its own.
@@ -65,7 +73,11 @@ Item {
     property int paintObjectId: 0
     property string paintKind: "supports"
     property real paintRadius: 4.0
-    property bool paintErase: false
+    /// "enforce", "block" or "erase": what a dab writes. Blockers are the
+    /// reference's own mode -- a support blocker excludes supports, a seam
+    /// blocker keeps the seam away -- so it is a mode of the brush, not a
+    /// separate kind.
+    property string paintMode: "enforce"
     property int paintTool: 2
     property bool selected: false
     /// What the pointer is over: the cursor is a hand only on a model, and an
@@ -135,7 +147,11 @@ Item {
                              cross.z / sin * Math.sin(angle / 2))
     }
 
-    readonly property real minZoom: 0.15
+    // How close the camera may come: `fittedDistance` times this is the distance
+    // to the pivot, and at 0.03 a 350 mm bed frames about 22 mm of the world -- a
+    // nozzle's worth of detail on a benchy. It used to stop at 0.15, which framed
+    // 100 mm: a whole part filled the window and no feature inside it could.
+    readonly property real minZoom: 0.03
     // The camera fits the model, not the plate, so a small model needs a wide
     // zoom-out range before the whole bed is in frame. The camera pulls back
     // well past the plate, and so does this.
@@ -188,9 +204,9 @@ Item {
     readonly property vector3d bedSize: Qt.vector3d(root.bedMax.x - root.bedMin.x,
                                                      root.bedMax.y - root.bedMin.y, 0)
 
-    // The filled bed is hidden and only the grid left when the camera drops below
-    // the plate (`Bed3D::render_system` only draws the plate when `!bottom`), so a
-    // view from underneath reads as a wireframe rather than a black wall.
+    // The bed itself is drawn from underneath as well, so a view from below shows
+    // the plate rather than a hole. Only the artwork rides the top face, and it
+    // leaves with the angle that would show its back.
     readonly property bool lookingFromBelow: root.pitch > 0
 
     // The plate mesh's own underside when the printer ships one, else the slab.
@@ -211,12 +227,16 @@ Item {
         return root.boundingRadius / (root.fillFraction * Math.tan(span / 2))
     }
 
-    // Frames the plate exactly as the perspective camera does at the same
-    // distance. The renderer rejects a magnification that is not positive, so
-    // the first layout pass (no viewport size yet) must not reach it.
+    // Qt Quick 3D's OrthographicCamera magnification is pixels per world unit,
+    // not a size: measured on Qt 6.12 by projecting a 10 mm cube through one
+    // (mag 80 put it at 800 px in a 1080 px frame). So the value that frames the
+    // same slab of the world as the perspective camera is the viewport's own
+    // height over the height that camera sees at the focus plane. Both axes take
+    // the same number, or the image is stretched by the aspect ratio.
     readonly property real orthographicMagnification: {
-        const value = 2 * root.fittedDistance * root.zoom
-                    * Math.tan(root.fieldOfView * Math.PI / 360)
+        const pixels = Math.max(1, view.height)
+        const visible = 2 * root.cameraDistance * Math.tan(root.fieldOfView * Math.PI / 360)
+        const value = visible > 0 ? pixels / visible : 1
         return value > 0 && isFinite(value) ? value : 1
     }
 
@@ -326,12 +346,34 @@ Item {
         const hit = root.hitAt(x, y)
         if (hit.w <= 0 || plateScene.pickedId !== root.paintObjectId)
             return
+        // The brush is a circle on screen, so the painter needs the eye. The
+        // camera lives in the scene's Y-up frame; every point handed to the
+        // document is in printer coordinates, Z-up.
+        const eye = perspectiveCamera.scenePosition
         const painted = plateDocument.paintObject(root.paintObjectId, root.paintKind,
                                                   Qt.vector3d(hit.x, hit.y, hit.z),
-                                                  root.paintRadius, root.paintErase,
-                                                  root.paintTool, plateScene.pickedFacet)
+                                                  Qt.vector3d(eye.x, -eye.z, eye.y),
+                                                  root.paintMode, root.paintTool,
+                                                  plateScene.pickedFacet)
         if (painted > 0)
             root.painted(root.paintObjectId, painted)
+        root.updateBrushRing(x, y)
+    }
+
+    // The brush footprint follows the pointer even before the button goes down:
+    // aiming at a facet is a separate act from committing paint to it.
+    function updateBrushRing(x, y) {
+        if (!root.paintActive || root.paintObjectId <= 0) {
+            plateScene.clearBrushRing()
+            return
+        }
+        const hit = root.hitAt(x, y)
+        if (hit.w <= 0 || plateScene.pickedId !== root.paintObjectId) {
+            plateScene.clearBrushRing()
+            return
+        }
+        plateScene.setBrushRing(Qt.vector3d(hit.x, hit.y, hit.z),
+                                plateScene.pickedNormal, root.paintRadius)
     }
 
     function fitPlate() {
@@ -512,34 +554,32 @@ Item {
             backgroundMode: SceneEnvironment.Color
             antialiasingMode: SceneEnvironment.MSAA
             antialiasingQuality: SceneEnvironment.High
-            // Contact shading is what makes a printed part read as an object on a
-            // bed rather than a flat cut-out: the corner where a post meets the
-            // plate, and the shadow a shelf throws onto it.
-            aoEnabled: true
-            aoStrength: 100
-            aoDistance: 25
-            aoSoftness: 50
-            aoDither: true
+            // No screen-space occlusion, and no shadow map either: the reference
+            // slicers shade with lights alone. SSAO was doing two things nobody
+            // asked for -- smearing a soft dark blot across the bed and the empty
+            // background behind it as the camera turned, and darkening every
+            // recess inside a part until the toolpath read as if it were in its
+            // own shadow. Shape is carried by the light rig below.
+            aoEnabled: false
         }
 
-        // A key light above and behind the viewer, a dimmer fill from the lower
-        // right, both fixed to the camera so no face falls into a dead shadow, plus
-        // ambient. The key light casts: on a slicer bed the cast shadow is the only
-        // cue that says how far an overhang reaches, which is why a flat
-        // two-light rig is not enough here.
+        // The rig: one key light fixed in the world, so a face keeps its brightness
+        // as the camera orbits, plus that light's ambient term. A camera-fixed key
+        // would rotate with the view and make the shading lie about the geometry.
+        //
+        // There is no second light and no occlusion pass. Every addition here has
+        // produced an artefact on the bed rather than detail on the part: a
+        // camera-fixed fill draws a hard diagonal band across the plate wherever a
+        // part stands on it (it survives `castsShadow: false`, and it does not appear
+        // in a single headless frame), Qt's shadow map shadows a part with itself and
+        // put the whole bed in shadow at a grazing angle, and SSAO smeared a dark
+        // blot that followed the camera. Orca and PrusaSlicer shade with light alone.
         Node {
             id: orbit
             position: root.vAdd(root.focusPoint, root.panOffset)
             eulerRotation: Qt.vector3d(root.pitch, root.yaw, 0)
 
-            // Fill only: a dim light fixed to the camera, so no face of a part
-            // ever falls into dead black. The key light is in the scene below --
-            // camera-fixed light cannot cast a shadow you can see, because it
-            // always falls away from the viewer.
-            DirectionalLight {
-                rotation: root.lightRotation(Qt.vector3d(0.6985074, 0.1397015, 0.6985074))
-                brightness: 0.16
-            }
+            // The camera sits on the orbit node and nothing else lives here now.
 
             PerspectiveCamera {
                 id: perspectiveCamera
@@ -553,26 +593,26 @@ Item {
                 id: orthoCamera
                 position: Qt.vector3d(0, 0, root.cameraDistance)
                 verticalMagnification: root.orthographicMagnification
+                horizontalMagnification: root.orthographicMagnification
                 clipNear: root.clipNear
                 clipFar: root.clipFar
             }
         }
 
         // The key light: fixed in the world, 52 degrees up and a third of a turn
-        // around, so a part throws its shadow onto the bed where the viewer can
-        // read it. This is the light that makes an overhang look like an overhang.
+        // around, so every face of a part reads at a different brightness and the
+        // form of an overhang is legible without a shadow to outline it. The
+        // ambient carries most of the value on purpose: the reference slicers draw
+        // their toolpaths in a narrow band (Orca's own capture measures p10/p90
+        // luminance 0.64) and a key-dominant rig put ours at 0.56 with black
+        // pockets wherever a face turned away.
         DirectionalLight {
             id: keyLight
             eulerRotation: Qt.vector3d(-52, -34, 0)
             color: "#fff4e6"
-            brightness: 0.72
-            ambientColor: Qt.rgba(0.30, 0.31, 0.33, 1)
-            castsShadow: true
-            shadowFactor: 75
-            shadowMapQuality: Light.ShadowMapQualityVeryHigh
-            shadowBias: 0
-            shadowMapFar: 900
-            softShadowQuality: Light.PCF16
+            castsShadow: false
+            brightness: 0.38
+            ambientColor: Qt.rgba(0.56, 0.57, 0.59, 1)
         }
 
         Node {
@@ -676,6 +716,25 @@ Item {
                 }
             }
 
+            // The brush's footprint on the surface under the pointer: a ring in
+            // the plane of the facet the paint will land on, so the size setting
+            // has a visible meaning. The reference draws the same thing, and
+            // without it a brush slider is a number and nothing else.
+            Model {
+                objectName: "brushRingNode"
+                geometry: plateScene.brushRingGeometry
+                visible: root.paintActive && root.mode !== "preview"
+
+                materials: PrincipledMaterial {
+                    lighting: PrincipledMaterial.NoLighting
+                    baseColor: Colors.accent
+                    opacity: 0.85
+                    alphaMode: PrincipledMaterial.Blend
+                    cullMode: Material.NoCulling
+                    depthDrawMode: Material.AlwaysDepthDraw
+                }
+            }
+
             // Modifier, negative and support volumes of every object, drawn
             // translucent over the model so what they do to the slice is visible
             // before slicing: red subtracts, amber modifies, purple blocks support,
@@ -742,6 +801,7 @@ Item {
                                                             : Colors.viewportPlate)
                             roughness: 0.9
                             metalness: 0.0
+                            specularAmount: 0.0
                             lighting: PrincipledMaterial.NoLighting
                         }
                     }
@@ -774,17 +834,29 @@ Item {
             // which is what makes the bed read as an object from underneath:
             // sides, bevel and all. The top is parked 0.03 mm below the bed plane
             // (the engine's GROUND_Z) so a model resting on z = 0 cannot z-fight it.
+            //
+            // It goes away while a paint brush is armed, together with the artwork,
+            // the origin axes and the plate's own chrome. The reference does the
+            // same (`is_bed_visible` is false while a painting gizmo runs, so only
+            // the plate list and its grid are left): a textured bed under a part
+            // being painted is visual noise, and its chrome is furniture you cannot
+            // press while the pointer paints. The grid stays, because it is what
+            // still tells you which way is which.
             Model {
-                visible: Host.bedPlateLoaded && root.showBedPlate && !root.lookingFromBelow
+                visible: Host.bedPlateLoaded && root.showBedPlate && !root.paintActive
                 geometry: bedPlateGeometry
                 position: Qt.vector3d(root.plateShift.x, root.plateShift.y, -0.03)
 
-                // Shaded, not flat: a bed the light cannot touch takes no cast
-                // shadow, and a part on it floats instead of sitting.
+                // Unlit, and that is the point: a shaded bed is not one colour.
+                // This mesh is a solid with a bevelled rim, so the top face and the
+                // rim catch different amounts of the key light, and that rim band --
+                // following the plate's rounded corners -- reads as a second colour
+                // behind a curved edge whenever the camera is low. The reference bed
+                // is one flat tone from every angle (measured on its own capture: 52
+                // to 56 on the top, 52 to 53 on the rim), so this is unlit too.
                 materials: PrincipledMaterial {
                     baseColor: Colors.viewportPlate
-                    roughness: 0.95
-                    metalness: 0.0
+                    lighting: PrincipledMaterial.NoLighting
                     cullMode: Material.NoCulling
                 }
             }
@@ -793,7 +865,7 @@ Item {
             // The top face has to end below the bed plane, or it covers the grid
             // that is drawn just above z = 0.
             Model {
-                visible: !Host.bedPlateLoaded && root.showBedPlate && !root.lookingFromBelow
+                visible: !Host.bedPlateLoaded && root.showBedPlate
                 source: "#Cube"
                 position: Qt.vector3d(root.bedCentre.x + root.plateShift.x,
                                       root.bedCentre.y + root.plateShift.y, -2.03)
@@ -801,13 +873,12 @@ Item {
 
                 materials: PrincipledMaterial {
                     baseColor: Colors.viewportPlateSide
-                    roughness: 0.95
-                    metalness: 0.0
+                    lighting: PrincipledMaterial.NoLighting
                 }
             }
 
             Model {
-                visible: !Host.bedPlateLoaded && root.showBedPlate && !root.lookingFromBelow
+                visible: !Host.bedPlateLoaded && root.showBedPlate && !root.paintActive
                 source: "#Cube"
                 position: Qt.vector3d(root.bedCentre.x + root.plateShift.x,
                                       root.bedCentre.y + root.plateShift.y, -0.18)
@@ -815,18 +886,65 @@ Item {
 
                 materials: PrincipledMaterial {
                     baseColor: Colors.viewportPlate
-                    roughness: 0.95
-                    metalness: 0.0
+                    lighting: PrincipledMaterial.NoLighting
                 }
             }
 
-            // The plate's artwork is deliberately not drawn: the Voron plate is a
-            // solid colour with a grid, and a stretched logo plus a radial vignette
-            // read as blotches on the bed.
+            // The bare plate a paint brush sees. The reference leaves the plate list
+            // and its grid up while a painting gizmo runs and takes the textured bed
+            // away; this is that plane, and the grid needs it: its distance field is
+            // drawn over an opaque surface and the lines do not appear without one.
+            Model {
+                visible: root.paintActive && root.showBedPlate
+                source: "#Rectangle"
+                position: Qt.vector3d(root.bedCentre.x + root.plateShift.x,
+                                      root.bedCentre.y + root.plateShift.y, -0.01)
+                scale: Qt.vector3d(root.bedSize.x / 100, root.bedSize.y / 100, 1.0)
+
+                materials: PrincipledMaterial {
+                    baseColor: Colors.viewportPlate
+                    lighting: PrincipledMaterial.NoLighting
+                    cullMode: Material.NoCulling
+                }
+            }
+
+            // The bed texture, the way the reference draws it: an unlit quad across
+            // the printable area carrying the artwork, drawn over the plate mesh
+            // rather than baked into it. `depthBias` lifts it off the plate's own top face -- the
+            // two are 10 um apart and would z-fight at a grazing angle -- and it is
+            // unlit because a shaded decal tints itself with the camera angle.
+            //
+            // The PNG is the Voron bundle's `voron_logo.svg`, rendered at 2048 px and
+            // placed on a square canvas with a margin; the SVG draws its artwork flush
+            // into a corner of its own viewBox, which maps to a plate edge and gets
+            // clipped by the rim. Regenerate it with:
+            //   rsvg-convert -w 2048 -h 2048 voron24_350_logo.svg -o /tmp/logo.png
+            //   magick -size 2048x2048 xc:none \( /tmp/logo.png -trim +repage -resize 620x \)
+            //          -gravity southeast -geometry +150+150 -composite voron24_350_bed.png
+            Model {
+                visible: Host.bedPlateLoaded && root.showBedPlate && !root.lookingFromBelow
+                         && !root.paintActive
+                source: "#Rectangle"
+                depthBias: -64
+                position: Qt.vector3d(root.bedCentre.x + root.plateShift.x,
+                                      root.bedCentre.y + root.plateShift.y, -0.02)
+                scale: Qt.vector3d(root.bedSize.x / 100, root.bedSize.y / 100, 1.0)
+
+                materials: PrincipledMaterial {
+                    lighting: PrincipledMaterial.NoLighting
+                    baseColor: "#ffffff"
+                    alphaMode: PrincipledMaterial.Blend
+                    baseColorMap: Texture {
+                        source: "qrc:/next-layer/bed/voron24_350_bed.png"
+                    }
+                }
+            }
 
             // The bed grid: 10 mm hairlines, every fifth heavier, drawn over the
             // plate. The shader keeps each line one pixel wide however far the
-            // camera zooms, where the old quad mesh thickened into bands.
+            // camera zooms, where the old quad mesh thickened into bands. It goes
+            // with the plate rather than staying after it: a grid hanging over the
+            // background with no bed under it reads as lines escaping the plate.
             Model {
                 visible: root.showGrid
                 source: "#Rectangle"
@@ -854,6 +972,7 @@ Item {
             // coordinates and printer Z-up, like everything else in the scene.
             Node {
                 id: originAxes
+                visible: !root.paintActive
                 position: Qt.vector3d(root.plateShift.x, root.plateShift.y, 0)
 
                 readonly property real axisLength: 24
@@ -941,6 +1060,224 @@ Item {
                 }
             }
 
+            // The plate's own chrome -- name, pencil, action column, plate number --
+            // as quads in the bed plane instead of decals in the 2D scene. The look
+            // is unchanged (each quad carries the texture of the very item the 2D
+            // delegate lays out, and lands on the same rectangle), but the model now
+            // stands in front of it: a part on the plate hides the buttons it
+            // covers, which is the one thing a 2D composited overlay cannot do.
+            Repeater3D {
+                objectName: "plateChromeNode"
+
+                model: plateDocument.plates
+
+                delegate: Node {
+                    id: chromePlate
+
+                    required property int index
+
+                    readonly property var entry: plateChrome.contents[index] ?? null
+                    readonly property var rects: chromePlate.entry !== null ? chromePlate.entry.rects : null
+                    readonly property var source: chromePlate.entry !== null ? chromePlate.entry.source : null
+
+                    visible: root.mode !== "preview" && !root.paintActive
+
+                    BedQuad {
+                        sourceItem: chromePlate.source !== null ? chromePlate.source.name : null
+                        x0: chromePlate.rects !== null ? chromePlate.rects.name.x : 0
+                        y0: chromePlate.rects !== null ? chromePlate.rects.name.y : 0
+                        x1: chromePlate.rects !== null ? chromePlate.rects.name.x
+                                                         + chromePlate.rects.name.width : 0
+                        y1: chromePlate.rects !== null ? chromePlate.rects.name.y
+                                                         + chromePlate.rects.name.height : 0
+                    }
+
+                    BedQuad {
+                        sourceItem: chromePlate.source !== null ? chromePlate.source.pencil : null
+                        x0: chromePlate.rects !== null ? chromePlate.rects.pencil.x : 0
+                        y0: chromePlate.rects !== null ? chromePlate.rects.pencil.y : 0
+                        x1: chromePlate.rects !== null ? chromePlate.rects.pencil.x
+                                                         + chromePlate.rects.pencil.width : 0
+                        y1: chromePlate.rects !== null ? chromePlate.rects.pencil.y
+                                                         + chromePlate.rects.pencil.height : 0
+                    }
+
+                    BedQuad {
+                        sourceItem: chromePlate.source !== null ? chromePlate.source.number : null
+                        x0: chromePlate.rects !== null ? chromePlate.rects.number.x : 0
+                        y0: chromePlate.rects !== null ? chromePlate.rects.number.y : 0
+                        x1: chromePlate.rects !== null ? chromePlate.rects.number.x
+                                                         + chromePlate.rects.number.width : 0
+                        y1: chromePlate.rects !== null ? chromePlate.rects.number.y
+                                                         + chromePlate.rects.number.height : 0
+                    }
+
+                    Repeater3D {
+                        model: 6
+
+                        delegate: BedQuad {
+                            required property int index
+
+                            readonly property var rect:
+                                chromePlate.rects !== null && index < chromePlate.rects.actions.length
+                                    ? chromePlate.rects.actions[index] : null
+
+                            sourceItem: chromePlate.source !== null
+                                        && index < chromePlate.source.actions.length
+                                        ? chromePlate.source.actions[index] : null
+                            x0: rect !== null ? rect.x : 0
+                            y0: rect !== null ? rect.y : 0
+                            x1: rect !== null ? rect.x + rect.width : 0
+                            y1: rect !== null ? rect.y + rect.height : 0
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+
+    // The brush bar. While a brush is armed the object panel is shut (it is 700
+    // pixels of settings, and it sits over the part) and these five controls take
+    // its place: the kind, the brush size, what the brush writes, the overhang
+    // restriction, and the way out. It is a bar over the bed, not a popup, so it
+    // cannot end up in front of what is being painted.
+    Rectangle {
+        id: brushBar
+        objectName: "brushBar"
+        // Above the viewport's own MouseArea, which fills the whole item and would
+        // otherwise take the bar's clicks as brush strokes.
+        z: 100
+        visible: root.paintActive && root.mode !== "preview"
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: Metrics.controlHeight * 2 + Metrics.lg
+        width: barRow.implicitWidth + Metrics.lg * 2
+        height: barRow.implicitHeight + Metrics.sm * 2
+        radius: Metrics.radiusMedium
+        color: Colors.alpha(Colors.surfaceContainerLow, 0.94)
+        border.width: Metrics.borderWidth
+        border.color: Colors.outlineVariant
+
+        RowLayout {
+            id: barRow
+            anchors.centerIn: parent
+            spacing: Metrics.sm
+
+            Button {
+                text: "Support"
+                primary: root.paintKind === "supports"
+                onClicked: {
+                    root.paintKind = "supports"
+                    root.paintMode = "enforce"
+                    root.paintSettingsChanged(root.paintKind, root.paintMode, root.paintRadius)
+                }
+            }
+            Button {
+                text: "Seam"
+                primary: root.paintKind === "seam"
+                onClicked: {
+                    root.paintKind = "seam"
+                    root.paintMode = "enforce"
+                    root.paintSettingsChanged(root.paintKind, root.paintMode, root.paintRadius)
+                }
+            }
+            Button {
+                text: "Colour"
+                primary: root.paintKind === "tool"
+                onClicked: {
+                    root.paintKind = "tool"
+                    root.paintMode = "enforce"
+                    root.paintSettingsChanged(root.paintKind, root.paintMode, root.paintRadius)
+                }
+            }
+
+            Rectangle {
+                width: Metrics.borderWidth
+                Layout.preferredHeight: Metrics.controlHeight * 0.6
+                color: Colors.outlineVariant
+            }
+
+            Text {
+                text: "Brush size"
+                font.family: Type.family
+                font.pixelSize: Type.sizeCaption
+                color: Colors.textMuted
+            }
+
+            Slider {
+                Layout.preferredWidth: 130
+                from: 0.5
+                to: 20
+                step: 0.5
+                value: root.paintRadius
+                onMoved: (value) => {
+                    root.paintRadius = value
+                    plateDocument.brushRadius = value
+                    root.paintSettingsChanged(root.paintKind, root.paintMode, value)
+                }
+            }
+
+            Text {
+                text: root.paintRadius.toFixed(1) + " mm"
+                font.family: Type.family
+                font.pixelSize: Type.sizeCaption
+                color: Colors.textSecondary
+                Layout.preferredWidth: 56
+            }
+
+            Rectangle {
+                width: Metrics.borderWidth
+                Layout.preferredHeight: Metrics.controlHeight * 0.6
+                color: Colors.outlineVariant
+            }
+
+            Button {
+                text: root.paintKind === "seam" ? "Enforce seam"
+                      : root.paintKind === "tool" ? "Paint" : "Enforce"
+                primary: root.paintMode === "enforce"
+                onClicked: {
+                    root.paintMode = "enforce"
+                    root.paintSettingsChanged(root.paintKind, root.paintMode, root.paintRadius)
+                }
+            }
+            Button {
+                visible: root.paintKind !== "tool"
+                text: root.paintKind === "seam" ? "Block seam" : "Block"
+                primary: root.paintMode === "block"
+                onClicked: {
+                    root.paintMode = "block"
+                    root.paintSettingsChanged(root.paintKind, root.paintMode, root.paintRadius)
+                }
+            }
+            Button {
+                text: "Erase"
+                primary: root.paintMode === "erase"
+                onClicked: {
+                    root.paintMode = "erase"
+                    root.paintSettingsChanged(root.paintKind, root.paintMode, root.paintRadius)
+                }
+            }
+
+            CheckBox {
+                visible: root.paintKind === "supports"
+                text: "Overhangs only"
+                checked: plateDocument.brushOverhangOnly
+                onToggled: plateDocument.brushOverhangOnly = checked
+            }
+
+            Item { Layout.preferredWidth: Metrics.xs }
+
+            Button {
+                text: "More"
+                onClicked: root.paintMoreRequested()
+            }
+
+            Button {
+                text: "Done"
+                primary: true
+                onClicked: root.paintFinished()
+            }
         }
     }
 
@@ -1150,8 +1487,18 @@ Item {
         property var gizmoStart: null
         property vector3d gizmoDelta: Qt.vector3d(0, 0, 0)
         property bool banding: false
+        /// Where the last dab landed, on screen and on the mesh. A drag paints
+        /// again once the pointer leaves that facet or travels far enough: a
+        /// repaint on every mouse report reserialises the whole selector and
+        /// rebuilds the overlay for a dab that would land on the same triangles.
+        property real paintX: 0
+        property real paintY: 0
+        property int paintFacet: -1
 
-        onExited: root.hoveringObject = false
+        onExited: {
+            root.hoveringObject = false
+            plateScene.clearBrushRing()
+        }
 
         onPressed: (mouse) => {
             input.forceActiveFocus()
@@ -1167,7 +1514,12 @@ Item {
 
             if (root.paintActive) {
                 input.dragging = true
+                input.paintX = mouse.x
+                input.paintY = mouse.y
+                input.paintFacet = -1
                 root.paintStroke(mouse.x, mouse.y)
+                input.paintFacet = plateScene.pickedFacet
+                root.updateBrushRing(mouse.x, mouse.y)
                 return
             }
 
@@ -1281,8 +1633,11 @@ Item {
                     plateDocument.moveSelection(moved.x, moved.y, moved.z)
             }
 
-            if (root.paintActive && input.pressed) {
-                root.paintStroke(mouse.x, mouse.y)
+            // A stroke ended: the press painted, the moves painted, and the release
+            // is only the end of it. Painting here as well would put a second dab
+            // wherever the pointer stopped, which is not what a stroke means.
+            if (root.paintActive) {
+                input.dragging = false
                 return
             }
 
@@ -1328,6 +1683,35 @@ Item {
             if (input.banding) {
                 band.endX = mouse.x
                 band.endY = mouse.y
+                return
+            }
+
+            if (root.paintActive && !input.panning) {
+                root.updateBrushRing(mouse.x, mouse.y)
+                if (input.pressed) {
+                    // Dabs are spaced half a brush apart, the way a paint program
+                    // lays down a stroke, and a fast drag is filled in between the
+                    // two points it jumped over rather than leaving a dotted line.
+                    // Each dab costs a selector round trip, so the fill is capped.
+                    const spacing = Math.max(2.0, root.paintRadius
+                                                   / Math.max(root.mmPerPixel, 0.0001) * 0.5)
+                    const travelled = Math.abs(mouse.x - input.paintX)
+                                    + Math.abs(mouse.y - input.paintY)
+                    const facet = plateScene.pickedFacet
+                    if (travelled >= spacing || (facet >= 0 && facet !== input.paintFacet)) {
+                        const steps = Math.min(4, Math.max(1, Math.round(travelled / spacing)))
+                        const fromX = input.paintX
+                        const fromY = input.paintY
+                        for (let step = 1; step <= steps; ++step) {
+                            const t = step / steps
+                            root.paintStroke(fromX + (mouse.x - fromX) * t,
+                                             fromY + (mouse.y - fromY) * t)
+                        }
+                        input.paintX = mouse.x
+                        input.paintY = mouse.y
+                        input.paintFacet = plateScene.pickedFacet
+                    }
+                }
                 return
             }
 
@@ -1463,22 +1847,47 @@ Item {
         readonly property real gapY: 5 * plateChrome.iconScale
         readonly property real decalLift: 0.25
 
+        // Where a plate-plane point lands in the 2D scene. The chrome itself is
+        // drawn as quads in the 3D scene (see `BedQuad`), because only a quad in
+        // the scene is depth tested against the model -- an item in the 2D scene is
+        // composited over it. What is left here is where to *click*: a hit area has
+        // to be a 2D item, so it keeps the projective transform.
+        //
         // `mapFrom3DScene` is a method, not a property, so the binding reads every
         // input the camera moves through -- without that it runs once and the chrome
         // never follows the view. A point behind the camera projects to nonsense
-        // rather than a wrong pixel, so an absurd magnitude means "do not draw".
+        // rather than to a wrong pixel: the projective terms of the transform blow up
+        // as the plane approaches the eye, which is what smeared the chrome across the
+        // model once the camera zoomed into the plate. Depth is tested first so the
+        // quad is dropped instead.
         function project(printerX, printerY) {
-            const key = [root.yaw, root.pitch, root.zoom, root.orthographic,
-                         root.panOffset, root.dragOffset, view.width, view.height]
-            if (key.length === 0)
-                return Qt.vector3d(0, 0, 0)
-            return view.mapFrom3DScene(Qt.vector3d(printerX, plateChrome.decalLift, -printerY))
+            const world = Qt.vector3d(printerX, plateChrome.decalLift, -printerY)
+            const eye = (root.orthographic ? orthoCamera : perspectiveCamera).scenePosition
+            const forward = root.vNormal(root.vSub(root.vAdd(root.focusPoint, root.panOffset), eye))
+            if (root.vDot(root.vSub(world, eye), forward) < root.clipNear * 2)
+                return null
+            return view.mapFrom3DScene(world)
         }
 
+        // A decal more than half a viewport outside the frame is not clickable and
+        // not worth a matrix: past that its projective terms are far enough from the
+        // eye that the quad they describe is not the one on screen.
         function projectable(point) {
-            return isFinite(point.x) && isFinite(point.y)
-                && Math.abs(point.x) < root.width * 4 + 2000
-                && Math.abs(point.y) < root.height * 4 + 2000
+            return point !== null && isFinite(point.x) && isFinite(point.y)
+                && Math.abs(point.x - plateChrome.width / 2) < plateChrome.width
+                && Math.abs(point.y - plateChrome.height / 2) < plateChrome.height
+        }
+
+        // The rendered chrome, per plate, for the 3D quads. A repeater cannot read
+        // another repeater's delegates, so each delegate publishes its own items and
+        // rectangles here and the 3D tree indexes them. Reassigning the array is what
+        // notifies the quads: a JS array mutated in place sends no change signal.
+        property var contents: []
+
+        function register(index, entry) {
+            const next = contents.slice()
+            next[index] = entry
+            contents = next
         }
 
         /// The projective matrix that carries a `width` x `height` item onto the quad
@@ -1640,6 +2049,40 @@ Item {
                     root.bedMax.x - plateChrome.gapLeft * 2,
                     root.bedMin.y + plateChrome.gapLeft * 2 + plateChrome.iconSize, 100, 100)
 
+                // The same furniture in printer coordinates, which is what the 3D
+                // quads are placed with. The matrices above project it; these say
+                // where it lives on the bed.
+                readonly property real plateX: plateItem.modelData.x ?? 0
+                readonly property real plateY: plateItem.modelData.y ?? 0
+                readonly property rect nameRect: Qt.rect(plateItem.plateX + plateItem.nameLeft,
+                                                        plateItem.plateY + plateItem.nameTop,
+                                                        plateItem.nameWidth,
+                                                        plateChrome.nameHeight)
+                readonly property rect pencilRect: Qt.rect(
+                    plateItem.plateX + plateItem.nameLeft + plateItem.nameWidth
+                        + plateChrome.gapLeft,
+                    plateItem.plateY + plateItem.nameTop
+                        + (plateChrome.nameHeight - plateChrome.pencilSize) / 2,
+                    plateChrome.pencilSize, plateChrome.pencilSize)
+                readonly property rect numberRect: Qt.rect(
+                    plateItem.plateX + root.bedMax.x - plateChrome.iconSize
+                        - plateChrome.gapLeft * 2,
+                    plateItem.plateY + root.bedMin.y + plateChrome.gapLeft * 2,
+                    plateChrome.iconSize, plateChrome.iconSize)
+                // `icon_scale_factor()` again: the column hangs from the back-right
+                // corner, one icon plus a gap per slot.
+                readonly property var actionRects: {
+                    const right = root.bedMax.x + plateChrome.gapLeft + plateChrome.iconSize
+                    const base = root.bedMax.y - plateChrome.gapTop
+                    const step = plateChrome.iconSize + plateChrome.gapY
+                    const rects = []
+                    for (let slot = 0; slot < plateItem.actions.length; ++slot)
+                        rects.push(Qt.rect(plateItem.plateX + right - plateChrome.iconSize,
+                                           plateItem.plateY + base - (slot + 1) * step,
+                                           plateChrome.iconSize, plateChrome.iconSize))
+                    return rects
+                }
+
                 // The label row is one target: name and pencil in a single inflated
                 // quad that carries the hover state, the tooltip and the click. The
                 // name and pencil below it are decoration, so the click does not
@@ -1673,51 +2116,59 @@ Item {
                     }
                 }
 
-                // Name, above the back edge: the plate name is rendered into a
-                // texture and laid on the plate's plane; this is the same decal,
-                // drawn as text.
+                // The name, laid out for the quad's texture rather than drawn on
+                // screen. It is laid out at three times the decal's own size and
+                // parked outside the window: a 100-pixel layout sampled onto a quad
+                // at close zoom reads as a smear, and an item parked on the screen
+                // would be painted twice.
                 Item {
-                    id: nameDecal
+                    id: nameContent
 
-                    visible: plateItem.nameMatrix !== null
-                    width: 100
-                    height: plateItem.nameLocalHeight
-                    x: 0
-                    y: 0
-                    transformOrigin: Item.TopLeft
-                    transform: Matrix4x4 { matrix: plateItem.nameMatrix ?? Qt.matrix4x4() }
+                    x: -20000
+                    width: 300
+                    height: 300 / plateItem.nameAspect
 
-                    Text {
-                        anchors.fill: parent
-                        anchors.margins: parent.height * 0.04
-                        text: plateItem.modelData.name
-                        verticalAlignment: Text.AlignVCenter
-                        horizontalAlignment: Text.AlignLeft
-                        elide: Text.ElideRight
-                        font.family: Type.family
-                        font.pixelSize: parent.height * 0.72
-                        font.bold: plateItem.current
-                        color: plateItem.current ? Colors.accent : Colors.textTertiary
+                    Item {
+                        width: 100
+                        height: plateItem.nameLocalHeight
+                        transformOrigin: Item.TopLeft
+                        scale: 3
+
+                        Text {
+                            anchors.fill: parent
+                            anchors.margins: parent.height * 0.04
+                            text: plateItem.modelData.name
+                            verticalAlignment: Text.AlignVCenter
+                            horizontalAlignment: Text.AlignLeft
+                            elide: Text.ElideRight
+                            font.family: Type.family
+                            font.pixelSize: parent.height * 0.72
+                            font.bold: plateItem.current
+                            color: plateItem.current ? Colors.accent : Colors.textTertiary
+                        }
                     }
                 }
 
                 // The pencil, right after the name on the same row.
                 Item {
-                    id: pencilDecal
+                    id: pencilContent
 
-                    visible: plateItem.pencilMatrix !== null
-                    width: 100
-                    height: 100
-                    x: 0
-                    y: 0
-                    transformOrigin: Item.TopLeft
-                    transform: Matrix4x4 { matrix: plateItem.pencilMatrix ?? Qt.matrix4x4() }
+                    x: -20000
+                    width: 300
+                    height: 300
 
-                    Icon {
-                        anchors.centerIn: parent
-                        name: plateItem.locked ? "lock" : "edit"
-                        size: 76
-                        color: plateItem.current ? Colors.accent : Colors.textTertiary
+                    Item {
+                        width: 100
+                        height: 100
+                        transformOrigin: Item.TopLeft
+                        scale: 3
+
+                        Icon {
+                            anchors.centerIn: parent
+                            name: plateItem.locked ? "lock" : "edit"
+                            size: 76
+                            color: plateItem.current ? Colors.accent : Colors.textTertiary
+                        }
                     }
                 }
 
@@ -1752,81 +2203,109 @@ Item {
                             actionDecal.buttonRight,
                             actionDecal.buttonTop + plateChrome.iconSize, 100, 100)
 
-                        visible: actionDecal.matrix !== null
-                        width: 100
-                        height: 100
-                        x: 0
-                        y: 0
-                        transformOrigin: Item.TopLeft
-                        transform: Matrix4x4 { matrix: actionDecal.matrix ?? Qt.matrix4x4() }
+                        // The click target, in the plate's plane and nothing else:
+                        // the button the pointer lands on is this quad, and what it
+                        // looks like is the one below it, drawn by the 3D scene.
+                        Item {
+                            id: actionHit
 
-                        Rectangle {
-                            anchors.fill: parent
-                            anchors.margins: 3
-                            radius: 16
-                            color: !actionDecal.modelData.enabled
-                                   ? Colors.alpha(Colors.viewportBackground, 0.55)
-                                   : actionMouse.containsMouse
-                                     ? Colors.alpha(Colors.accent, 0.30)
-                                     : Colors.alpha(Colors.surfaceContainerHighest, 0.82)
-                            border.width: actionDecal.modelData.slot === 3 && plateItem.locked ? 4 : 1
-                            border.color: actionDecal.modelData.slot === 3 && plateItem.locked
-                                          ? Colors.accent : Colors.alpha(Colors.edge, 0.9)
-                        }
+                            visible: actionDecal.matrix !== null
+                            width: 100
+                            height: 100
+                            x: 0
+                            y: 0
+                            transformOrigin: Item.TopLeft
+                            transform: Matrix4x4 { matrix: actionDecal.matrix ?? Qt.matrix4x4() }
 
-                        Icon {
-                            anchors.centerIn: parent
-                            name: actionDecal.modelData.icon
-                            size: 66
-                            filled: actionDecal.modelData.slot === 3 && plateItem.locked
-                            color: !actionDecal.modelData.enabled
-                                   ? Colors.alpha(Colors.textSecondary, 0.4)
-                                 : actionDecal.modelData.danger && actionMouse.containsMouse
-                                   ? Colors.error
-                                 : actionDecal.modelData.slot === 3 && plateItem.locked
-                                   ? Colors.accent
-                                 : Colors.textPrimary
-                        }
-
-                        MouseArea {
-                            id: actionMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            enabled: actionDecal.modelData.enabled
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                const action = actionDecal.modelData.action
-                                if (action === "remove")
-                                    root.plateRemoveRequested(plateItem.index)
-                                else if (action === "orient" || action === "arrange")
-                                    root.actionRequested(action)
-                                else if (action === "lock")
-                                    root.plateLockToggled(plateItem.index)
-                                else if (action === "menu") {
-                                    const at = plateChrome.project(
-                                        plateItem.modelData.x + root.bedMax.x + plateChrome.gapLeft
-                                            + plateChrome.iconSize,
-                                        plateItem.modelData.y + actionDecal.buttonTop)
-                                    root.plateMenuRequested(plateItem.index,
-                                                            Math.round(at.x), Math.round(at.y))
+                            MouseArea {
+                                id: actionMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                enabled: actionDecal.modelData.enabled
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    const action = actionDecal.modelData.action
+                                    if (action === "remove")
+                                        root.plateRemoveRequested(plateItem.index)
+                                    else if (action === "orient" || action === "arrange")
+                                        root.actionRequested(action)
+                                    else if (action === "lock")
+                                        root.plateLockToggled(plateItem.index)
+                                    else if (action === "menu") {
+                                        const at = plateChrome.project(
+                                            plateItem.modelData.x + root.bedMax.x
+                                                + plateChrome.gapLeft + plateChrome.iconSize,
+                                            plateItem.modelData.y + actionDecal.buttonTop)
+                                        if (at !== null)
+                                            root.plateMenuRequested(plateItem.index,
+                                                                    Math.round(at.x),
+                                                                    Math.round(at.y))
+                                    }
+                                    else if (action === "add")
+                                        root.plateAddRequested()
                                 }
-                                else if (action === "add")
-                                    root.plateAddRequested()
+                            }
+
+                            Tooltip {
+                                target: actionHit
+                                text: actionDecal.modelData.hint
+                                shown: actionMouse.containsMouse
+                                delay: 500
                             }
                         }
 
-                        Tooltip {
-                            target: actionDecal
-                            text: actionDecal.modelData.hint
-                            shown: actionMouse.containsMouse
-                            delay: 500
+                        Item {
+                            id: actionContent
+
+                            x: -20000
+                            width: 300
+                            height: 300
+
+                            Item {
+                                width: 100
+                                height: 100
+                                transformOrigin: Item.TopLeft
+                                scale: 3
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    anchors.margins: 3
+                                    radius: 16
+                                    color: !actionDecal.modelData.enabled
+                                           ? Colors.alpha(Colors.viewportBackground, 0.55)
+                                           : actionMouse.containsMouse
+                                             ? Colors.alpha(Colors.accent, 0.30)
+                                             : Colors.alpha(Colors.surfaceContainerHighest, 0.82)
+                                    border.width: actionDecal.modelData.slot === 3 && plateItem.locked
+                                                  ? 4 : 1
+                                    border.color: actionDecal.modelData.slot === 3 && plateItem.locked
+                                                  ? Colors.accent : Colors.alpha(Colors.edge, 0.9)
+                                }
+
+                                Icon {
+                                    anchors.centerIn: parent
+                                    name: actionDecal.modelData.icon
+                                    size: 66
+                                    filled: actionDecal.modelData.slot === 3 && plateItem.locked
+                                    color: !actionDecal.modelData.enabled
+                                           ? Colors.alpha(Colors.textSecondary, 0.4)
+                                         : actionDecal.modelData.danger && actionMouse.containsMouse
+                                           ? Colors.error
+                                         : actionDecal.modelData.slot === 3 && plateItem.locked
+                                           ? Colors.accent
+                                         : Colors.textPrimary
+                                }
+                            }
                         }
+
+                        Component.onCompleted:
+                            plateItem.registerAction(actionDecal.modelData.slot, actionContent)
                     }
                 }
 
                 // The number, on the bed at the front-right corner.
                 Item {
-                    id: numberDecal
+                    id: numberHit
 
                     visible: plateDocument.plateCount > 1 && plateItem.numberMatrix !== null
                     width: 100
@@ -1836,25 +2315,6 @@ Item {
                     transformOrigin: Item.TopLeft
                     transform: Matrix4x4 { matrix: plateItem.numberMatrix ?? Qt.matrix4x4() }
 
-                    Rectangle {
-                        anchors.fill: parent
-                        anchors.margins: 8
-                        radius: 18
-                        color: plateItem.current ? Colors.alpha(Colors.accent, 0.9)
-                                                 : Colors.alpha(Colors.surfaceContainer, 0.85)
-                        border.width: plateItem.current ? 0 : 4
-                        border.color: Colors.alpha(Colors.outlineVariant, 0.9)
-                    }
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: String(plateItem.index + 1)
-                        font.family: Type.family
-                        font.pixelSize: 62
-                        font.bold: true
-                        color: plateItem.current ? Colors.viewportBackground : Colors.textSecondary
-                    }
-
                     MouseArea {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
@@ -1862,7 +2322,7 @@ Item {
                     }
 
                     Tooltip {
-                        target: numberDecal
+                        target: numberHit
                         text: plateItem.modelData.count > 0
                               ? plateItem.modelData.name + " \u2014 "
                                 + plateItem.modelData.count + " object(s)"
@@ -1872,6 +2332,68 @@ Item {
                     }
                     HoverHandler { id: numberHover }
                 }
+
+                Item {
+                    id: numberContent
+
+                    x: -20000
+                    width: 300
+                    height: 300
+
+                    Item {
+                        width: 100
+                        height: 100
+                        transformOrigin: Item.TopLeft
+                        scale: 3
+
+                        Rectangle {
+                            anchors.fill: parent
+                            anchors.margins: 8
+                            radius: 18
+                            color: plateItem.current ? Colors.alpha(Colors.accent, 0.9)
+                                                     : Colors.alpha(Colors.surfaceContainer, 0.85)
+                            border.width: plateItem.current ? 0 : 4
+                            border.color: Colors.alpha(Colors.outlineVariant, 0.9)
+                        }
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: String(plateItem.index + 1)
+                            font.family: Type.family
+                            font.pixelSize: 62
+                            font.bold: true
+                            color: plateItem.current ? Colors.viewportBackground
+                                                     : Colors.textSecondary
+                        }
+                    }
+                }
+
+                // What the 3D quads draw, and where: published rather than reached
+                // for, because a repeater cannot see another repeater's delegates.
+                readonly property QtObject chromeEntry: QtObject {
+                    readonly property var source: ({
+                        name: nameContent,
+                        pencil: pencilContent,
+                        number: plateDocument.plateCount > 1 ? numberContent : null,
+                        actions: plateItem.actionContents
+                    })
+                    readonly property var rects: ({
+                        name: plateItem.nameRect,
+                        pencil: plateItem.pencilRect,
+                        number: plateItem.numberRect,
+                        actions: plateItem.actionRects
+                    })
+                }
+
+                property var actionContents: []
+
+                function registerAction(slot, item) {
+                    const next = actionContents.slice()
+                    next[slot] = item
+                    actionContents = next
+                }
+
+                Component.onCompleted: plateChrome.register(plateItem.index, plateItem.chromeEntry)
             }
         }
     }

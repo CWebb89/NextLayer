@@ -138,11 +138,11 @@ Popup {
                 contentHeight: form.implicitHeight
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
-                ScrollBar.vertical: ThemedScrollBar {}
+                ScrollBar.vertical: ThemedScrollBar { id: scrollBar }
 
                 ColumnLayout {
                     id: form
-                    width: parent.width
+                    width: parent.width - (scrollBar.visible ? scrollBar.width : 0)
                     spacing: Metrics.md
 
                     // A layout inside a flickable does not shrink to fit: one long

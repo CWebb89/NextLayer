@@ -181,6 +181,12 @@ Rectangle {
             TapHandler {
                 acceptedModifiers: Qt.NoModifier
                 onTapped: plateDocument.selectObject(row.modelData.id)
+                onDoubleTapped: {
+                    nameField.text = row.modelData.name
+                    nameField.visible = true
+                    nameField.forceActiveFocus()
+                    nameField.selectAll()
+                }
             }
             TapHandler {
                 acceptedModifiers: Qt.ControlModifier
@@ -260,17 +266,6 @@ Rectangle {
                         font.pixelSize: Type.sizeSmall
                         font.bold: row.modelData.selected
                         color: row.modelData.selected ? Colors.accent : Colors.textPrimary
-
-                        MouseArea {
-                            anchors.fill: parent
-                            acceptedButtons: Qt.LeftButton
-                            onDoubleClicked: {
-                                nameField.text = row.modelData.name
-                                nameField.visible = true
-                                nameField.forceActiveFocus()
-                                nameField.selectAll()
-                            }
-                        }
                     }
 
                     TextInput {
@@ -375,6 +370,16 @@ Rectangle {
                                                                   volumeRow.modelData.id)
                         }
                     }
+                }
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.RightButton
+                onClicked: (mouse) => {
+                    const point = row.mapToItem(null, mouse.x, mouse.y)
+                    root.contextRequested(row.modelData.id, point.x, point.y)
+                    plateDocument.selectObject(row.modelData.id)
                 }
             }
         }

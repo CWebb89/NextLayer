@@ -38,6 +38,11 @@ void countGcode(const QString& path, GcodeCounts& counts)
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
         return;
 
+    constexpr char filamentUsedPrefix[] = "; total filament used [g] = ";
+    constexpr char estimatedTimePrefix[] = "; estimated printing time (normal mode) = ";
+    constexpr qsizetype filamentUsedLength = qsizetype(sizeof(filamentUsedPrefix) - 1);
+    constexpr qsizetype estimatedTimeLength = qsizetype(sizeof(estimatedTimePrefix) - 1);
+
     while (!file.atEnd()) {
         const QByteArray line = file.readLine();
         if (line.startsWith(";LAYER_CHANGE")) {
@@ -46,12 +51,12 @@ void countGcode(const QString& path, GcodeCounts& counts)
         }
         // The engine writes its own statistics into the file; taking them from
         // there rather than recomputing keeps the footer honest.
-        if (line.startsWith("; total filament used [g] = ")) {
-            counts.grams = line.mid(27).trimmed().toDouble();
+        if (line.startsWith(filamentUsedPrefix)) {
+            counts.grams = line.mid(filamentUsedLength).trimmed().toDouble();
             continue;
         }
-        if (line.startsWith("; estimated printing time (normal mode) = ")) {
-            counts.time = QString::fromUtf8(line.mid(40).trimmed());
+        if (line.startsWith(estimatedTimePrefix)) {
+            counts.time = QString::fromUtf8(line.mid(estimatedTimeLength).trimmed());
             continue;
         }
         if (!line.startsWith("G1 "))

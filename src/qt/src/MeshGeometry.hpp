@@ -34,6 +34,12 @@ public:
     void setColoredMesh(const Slic3r::Domain::TriangleMesh& mesh,
                         const QVector<QVector4D>& colors);
 
+    /// A flat annulus in the plane perpendicular to a normal, for the brush
+    /// cursor. Drawn with no lighting, so the shading of the surface under it does
+    /// not change its apparent thickness.
+    void setRing(const QVector3D& centre, const QVector3D& normal, float radius,
+                 float thickness);
+
     QVector3D boundsMin() const { return m_min; }
     QVector3D boundsMax() const { return m_max; }
 

@@ -39,6 +39,42 @@ namespace {
 constexpr double kReferenceFovY = 30.0;
 constexpr int kSupersample = 2;
 
+// The toolpath shading. `segments.vs` computes `color * (ambient + diffuse*N.L
+// + specular)` per vertex from a small light array, and the engine's defaults
+// reference both lights to the *eye* -- so a face's brightness follows the
+// camera, and orbiting the part redraws its shading as if a shadow were sweeping
+// across it. Nothing casts that shadow: there is no shadow map in this pass, only
+// a light pinned to the view.
+//
+// These are the same two lights with the same intensities, referenced to the
+// world instead: the shading is fixed in the model, so a face keeps its value
+// from every angle, the way the model view's own rig does.
+Slic3r::App::Scene::Lights toolpathLights()
+{
+    using Slic3r::App::Scene::LightReferenceSystem;
+
+    Slic3r::App::Scene::Light key;
+    key.system = LightReferenceSystem::World;
+    key.direction = Slic3r::Domain::Vec3f(-0.30f, 0.22f, -0.93f);
+    key.ambient = 0.45f;
+    key.diffuse = 0.48f;
+    key.specular = 0.05f;
+    key.shininess = 20.0f;
+    key.shadows = false;
+
+    Slic3r::App::Scene::Light fill;
+    fill.system = LightReferenceSystem::World;
+    fill.direction = Slic3r::Domain::Vec3f(0.62f, 0.30f, -0.72f);
+    fill.ambient = 0.0f;
+    fill.diffuse = 0.18f;
+    fill.specular = 0.0f;
+    fill.shininess = 0.001f;
+    fill.shadows = false;
+
+    return { key, fill };
+}
+
+
 using Slic3r::App::libvgcode::ViewType;
 using Slic3r::Biz::libpgcode::OptionType;
 
@@ -199,6 +235,9 @@ bool GcodeView::Impl::ensureInitialized()
     m_viewer = std::make_unique<libvgcode::FdmViewer>();
     m_viewer->init(*m_device, *m_scene, *m_factory);
     m_viewer->set_scene(*m_scene);
+    Slic3r::App::Scene::Lighting lighting;
+    lighting.lights = toolpathLights();
+    m_scene->set_lights(lighting);
     m_commands = m_device->create_command_buffer();
     return true;
 }

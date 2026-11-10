@@ -24,7 +24,7 @@ Popup {
     property string flavour: "klipper"
     property real applyValue: 0
 
-    width: Math.min(880, (parent ? parent.width : 1280) - 140)
+    width: Math.min(940, (parent ? parent.width : 1280) - 140)
     height: Math.min(620, (parent ? parent.height : 800) - 110)
     modal: true
     focus: true
@@ -109,6 +109,7 @@ Popup {
 
             ColumnLayout {
                 Layout.preferredWidth: 300
+                Layout.minimumWidth: 300
                 Layout.fillHeight: true
                 spacing: 0
 
@@ -243,7 +244,8 @@ Popup {
                                 spacing: Metrics.sm
 
                                 Text {
-                                    Layout.preferredWidth: 230
+                                    Layout.preferredWidth: 260
+                                    Layout.fillWidth: true
                                     text: paramRow.modelData.label
                                     elide: Text.ElideRight
                                     font.family: Type.family
@@ -314,7 +316,8 @@ Popup {
                             spacing: Metrics.sm
 
                             Text {
-                                Layout.preferredWidth: 230
+                                Layout.preferredWidth: 260
+                                Layout.fillWidth: true
                                 text: "Apply to " + (root.selected ? root.selected.apply : "")
                                 elide: Text.ElideRight
                                 font.family: Type.family
