@@ -106,7 +106,7 @@ target_compile_definitions(next-layer-qt PRIVATE
     NEXT_LAYER_QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"
     NEXT_LAYER_APP_RESOURCES="${CMAKE_CURRENT_SOURCE_DIR}/resources"
     NEXT_LAYER_RESOURCES_DIR="${CMAKE_SOURCE_DIR}/resources"
-    NEXT_LAYER_VERSION="0.1.1"
+    NEXT_LAYER_VERSION="0.1.2"
     NEXT_LAYER_TAGLINE="a slicer for tool changers"
 )
 
