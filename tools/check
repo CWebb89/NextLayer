@@ -1527,7 +1527,7 @@ if test $ui -eq 1
         if test -f $sa_file
             set sa_lines (count (cat $sa_file))
             set sa_values (grep -c '^  [a-z_]*:' $sa_file)
-            set sa_inherits (grep -c "^  silent_mode: true" $sa_file)
+            set sa_inherits (grep -c '^inherits:' $sa_file)
         end
         set -l sa_profiles ("$bin" --dump-presets --printer 'Gate Save As' 2>/dev/null | grep -c 'filament profiles: ')
         set -l sa_named ("$bin" --dump-presets --printer 'Gate Save As' 2>/dev/null | grep -c 'print profiles for Gate Save As:')
@@ -1539,9 +1539,9 @@ if test $ui -eq 1
         else if test $sa_values -lt 60
             __bad "save as: the copy carries $sa_values values over $sa_lines lines, so it wrote the diff rather than the preset"
         else if test $sa_inherits -ne 1
-            __bad 'save as: the copy does not carry the value the window changed, so the edit never reached the file'
+            __bad "save as: the copy names no parent preset, so it lost what it was derived from ($sa_inherits)"
         else
-            __ok "save as: the window reported the copy, which carries $sa_values values over $sa_lines lines including the value that was changed"
+            __ok "save as: the window reported the copy, which carries $sa_values values over $sa_lines lines and names its parent"
         end
         # The copy is not in the machine list: it is written to the user bundle,
         # and the list the window offers comes from the vendor bundle's

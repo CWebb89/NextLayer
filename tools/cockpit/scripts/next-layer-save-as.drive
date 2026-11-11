@@ -1,22 +1,21 @@
 # Copy the current machine under a new name through the printer settings window and
 # assert that the window says it saved. What the copy is worth is asserted outside
-# the window: tools/check deletes the preset this writes, diffs it against its
-# parent and resolves its print profiles headlessly.
+# the window: tools/check deletes the preset this writes, counts the values it
+# carries and resolves its profiles headlessly.
 #
 #   cockpit start next-layer --model oracle/models/cube_20.stl \
 #       --arg=--preset-dialog --arg=printer
 #   cockpit run tools/cockpit/scripts/next-layer-save-as.drive
 #
-# The name field and the "Supports stealth mode" toggle are at fixed places in the
-# 1920x1080 window, read off a capture: field (1250,190), toggle (1509,778). The
-# toggle is the edit -- Save is enabled only while a value differs from the preset,
-# and a copy that reports "nothing has been changed" is precisely the bug this
-# proves gone. The parent has silent_mode false, so the copy must carry true.
+# Nothing is edited before Save as, on purpose: "nothing has been changed, so there
+# is nothing to save" is the report this proves gone, and it came from a copy that
+# wrote only the diff. The name field is at a fixed place in the 1920x1080 window,
+# (1250,190), read off a capture; Ctrl+A clears whatever the field already held.
 assert-text "Printer settings"
 shot /tmp/cockpit-saveas-0-window.png
 click 1250 190
+key A --modifier ctrl
 type "Gate Save As"
-click 1509 778
 click-text "Save as"
 find-text "saved Gate Save As"
 shot /tmp/cockpit-saveas-1-saved.png
