@@ -299,7 +299,7 @@ nothing is not a roadmap.
 | Object right-click menu | done — right-click a row in the object list, or an object in the viewport: per-object settings, duplicate, delete, isolate, show all, centre, drop, auto-orient, lay on face, and part / modifier / negative / blocker / enforcer volumes. In the viewport a right *drag* still pans — the menu is a right press that does not travel, which is how the reference slicer keeps the two apart |
 | Send to printer (Klipper/Moonraker, OctoPrint, PrusaLink…) | done — File ▸ Send to printer…: host, type, API key, Test, Send, Send and print. The upload goes through the engine's own `PrintHostMoonraker` / `OctoPrint` / `PrusaLink` / `Duet` implementations; `tools/check` proves it against a stand-in Moonraker, marker-verified |
 | Multi-filament / multicolour | done, for tool changers — one material per extruder is resolved (`--filaments A,B`), each tool has its own picker in the preset editor, an object prints with a chosen tool (T chip in the object list) and a painted facet prints with the tool it carries. `tools/check` slices a two-tool plate where painting tool 2 adds a tool change and the second colour. MMU single-nozzle mixing stays out by design |
-| Calibration suite | done — File ▸ Calibration…: ten tests, each with its own parameter page, then Build. See "Calibration" below for the per-test contract |
+| Calibration suite | done — File ▸ Calibration… or the rail's tune button: ten tests, each with its own parameter page, then Build. See "Calibration" below for the per-test contract |
 
 ## Calibration
 

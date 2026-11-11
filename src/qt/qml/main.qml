@@ -1018,6 +1018,15 @@ Window {
             settingsPanel.showSubtab("process", "101")
             root.mode = root.modelMode
             root.setStatus("Fuzzy skin lives in Process \u203a Walls & Perimeters")
+            return
+        }
+        if (id === "text") {
+            textDialog.open()
+            return
+        }
+        if (id === "calibrate") {
+            root.calibrationVisible = true
+            return
         }
     }
 
