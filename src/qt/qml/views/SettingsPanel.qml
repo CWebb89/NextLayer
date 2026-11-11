@@ -22,12 +22,19 @@ Item {
 
     signal machineChooserRequested()
     signal changesRequested(string tab)
+    /// The plate's objects, from the row that lists the process categories: a
+    /// drawer that changes what the viewport is showing belongs next to the other
+    /// view switches, not only on a key.
+    signal objectListRequested()
     /// The printer's connection, from the machine settings: the same window the
     /// File menu opens, reachable where a person is editing the machine.
     signal networkRequested()
 
     property string activeSubtab: ""
     property string filterText: ""
+    /// Whether the filter field has the category row. Its icon toggles it, so the
+    /// strip is not permanently giving up a third of the panel to a text field.
+    property bool searching: false
 
     property var tabs: []
     property var visibleGroups: []
@@ -471,7 +478,9 @@ Item {
     }
 
     // The categories of the process, as the strip the reference slicers put in the
-    // same place, and the filter over every setting on the right.
+    // same place, and the filter over every setting on the right. The strip keeps
+    // the whole row until the magnifier asks for the filter: a permanently drawn
+    // search box took a third of a 490 px panel and left three categories on show.
     Item {
         id: categoryRow
         anchors.left: parent.left
@@ -488,7 +497,7 @@ Item {
             anchors.right: categoryTail.left
             anchors.rightMargin: Metrics.sm
             anchors.verticalCenter: parent.verticalCenter
-            visible: !root.filtering
+            visible: !root.filtering && !root.searching
             categories: root.categoryEntries()
             current: root.activeSubtab
             onActivated: (key) => root.selectSubtab(key)
@@ -496,12 +505,12 @@ Item {
 
         Rectangle {
             id: searchBox
-            anchors.left: categoryStrip.visible ? categoryStrip.right : parent.left
-            anchors.leftMargin: categoryStrip.visible ? Metrics.sm : 0
+            anchors.left: parent.left
             anchors.right: categoryTail.left
             anchors.rightMargin: Metrics.sm
             anchors.verticalCenter: parent.verticalCenter
             height: Metrics.controlHeight
+            visible: root.searching
             radius: Metrics.radiusSmall
             color: Colors.surfaceContainer
             border.width: Metrics.borderWidth
@@ -534,6 +543,10 @@ Item {
                 onTextChanged: {
                     root.filterText = text
                     root.refresh()
+                }
+                Keys.onEscapePressed: {
+                    root.searching = false
+                    filterField.text = ""
                 }
             }
         }
@@ -568,6 +581,28 @@ Item {
                 hint: "Reset every change in this process"
                 enabled: root.modifiedTotal > 0
                 onClicked: settingsModel.resetTab(root.activeTab)
+            }
+
+            ToolButton {
+                icon: "search"
+                hint: "Find a setting in this process"
+                active: root.searching
+                onClicked: {
+                    root.searching = !root.searching
+                    if (root.searching) {
+                        filterField.forceActiveFocus()
+                        return
+                    }
+                    filterField.text = ""
+                    root.filterText = ""
+                    root.refresh()
+                }
+            }
+
+            ToolButton {
+                icon: "list"
+                hint: "The objects on this plate (Ctrl+L)"
+                onClicked: root.objectListRequested()
             }
         }
     }

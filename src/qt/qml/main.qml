@@ -1620,6 +1620,8 @@ Window {
 
             onChangesRequested: (tab) => presetDiffDialog.openFor(tab)
 
+            onObjectListRequested: root.showObjectList(!root.objectListVisible)
+
             Behavior on x { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
         }
 
