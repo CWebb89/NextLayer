@@ -252,13 +252,7 @@ bool translateForeignSetting(const QString& key, const QString& value,
     if (noCounterpart().contains(key))
         return false;
 
-    QString target = key;
-    for (const ForeignSettingPair& pair : renamed()) {
-        if (pair.source == key) {
-            target = pair.target;
-            break;
-        }
-    }
+    QString target = foreignTargetFor(key);
 
     translatedName = target;
     translatedValue = value;
@@ -277,6 +271,24 @@ bool translateForeignSetting(const QString& key, const QString& value,
 QVector<ForeignSettingPair> foreignSettingTable()
 {
     return renamed();
+}
+
+QString foreignTargetFor(const QString& source)
+{
+    for (const ForeignSettingPair& pair : renamed()) {
+        if (pair.source == source)
+            return pair.target;
+    }
+    return source;
+}
+
+QString canonicalForeignSource(const QString& engineKey)
+{
+    for (const ForeignSettingPair& pair : renamed()) {
+        if (pair.target == engineKey)
+            return pair.source;
+    }
+    return {};
 }
 
 bool foreignNameFor(const QString& engineKey, const QString& engineValue, QString& name,

@@ -516,6 +516,12 @@ private:
 
     Object* find(int id);
     const Object* find(int id) const;
+    /// Puts an object back where it was after its transform changed: the world
+    /// bounding-box centre keeps its X/Y and the lowest point returns to the bed.
+    /// Scaling and rotating run about the model's own origin, so without this an
+    /// object grows toward a corner and lifts off or sinks through the plate.
+    void anchorAfterTransform(Object& object, const QVector3D& beforeLow,
+                              const QVector3D& beforeHigh);
     QString displayNameOf(int id) const;
     int importObject(const QString& path, const QString& label, bool placeOnBed);
     int importSceneObject(const Slic3r::Domain::ModelObject& source,

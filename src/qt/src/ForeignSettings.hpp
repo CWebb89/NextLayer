@@ -29,6 +29,21 @@ bool translateForeignSetting(const QString& key, const QString& value,
 /// Every rename the table carries, in the order it is written.
 QVector<ForeignSettingPair> foreignSettingTable();
 
+/// The engine name a foreign key maps to, without looking at its value: the key
+/// itself when the table carries no rename for it.
+QString foreignTargetFor(const QString& source);
+
+/// The source name this table accepts for an engine key when a file carries more
+/// than one name that means it. Empty when the table carries no entry for that
+/// key.
+///
+/// Two slicer names can mean one setting here (`support_type` and `support_style`
+/// are both `support_material_style`). A file may carry both, and which one the
+/// object ends up with has to be a rule rather than the order a hash happened to
+/// hold them in: this returns the first entry in the table, which is also the name
+/// `foreignNameFor` writes back, so importing and exporting agree.
+QString canonicalForeignSource(const QString& engineKey);
+
 /// The name and value one of this engine's settings goes out under when a project
 /// is written for the Bambu/Orca dialect, which is the reverse of
 /// `translateForeignSetting`.

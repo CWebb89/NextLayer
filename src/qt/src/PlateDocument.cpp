@@ -1311,6 +1311,16 @@ void PlateDocument::applyForeignSettings(int id, const QHash<QString, QString>& 
     QHash<QString, QString> originalOf;
     QHash<QString, QString> sourceOf;
     for (auto entry = settings.constBegin(); entry != settings.constEnd(); ++entry) {
+        // Two names that mean one setting here must resolve the same way on every
+        // run. The table's order is the rule: the first source for a target wins,
+        // and a file that carries both keeps the loser under the name it arrived
+        // with instead of letting hash order decide what the object is built from.
+        const QString canonical = next_layer::canonicalForeignSource(
+            next_layer::foreignTargetFor(entry.key()));
+        if (!canonical.isEmpty() && canonical != entry.key() && settings.contains(canonical)) {
+            object->foreignSettings.insert(entry.key(), entry.value());
+            continue;
+        }
         QString name;
         QString value;
         if (next_layer::translateForeignSetting(entry.key(), entry.value(), name, value)) {
@@ -2406,10 +2416,14 @@ bool PlateDocument::setRotation(int id, const QVector3D& degrees)
     Object* object = find(id);
     if (object == nullptr)
         return false;
+    QVector3D beforeLow;
+    QVector3D beforeHigh;
+    boxOf(*object->mesh, object->trafo, object->localMin, object->localMax, beforeLow, beforeHigh);
     pushUndo(QStringLiteral("Rotate %1").arg(object->displayName()), id * 16 + 2);
     object->trafo.set_rotation(Vec3d(qDegreesToRadians(degrees.x()),
                                      qDegreesToRadians(degrees.y()),
                                      qDegreesToRadians(degrees.z())));
+    anchorAfterTransform(*object, beforeLow, beforeHigh);
     changed();
     emit objectsChanged();
     return true;
@@ -2420,11 +2434,32 @@ bool PlateDocument::setScale(int id, const QVector3D& factor)
     Object* object = find(id);
     if (object == nullptr)
         return false;
+    QVector3D beforeLow;
+    QVector3D beforeHigh;
+    boxOf(*object->mesh, object->trafo, object->localMin, object->localMax, beforeLow, beforeHigh);
     pushUndo(QStringLiteral("Scale %1").arg(object->displayName()), id * 16 + 3);
     object->trafo.set_scaling_factor(Vec3d(factor.x(), factor.y(), factor.z()));
+    anchorAfterTransform(*object, beforeLow, beforeHigh);
     changed();
     emit objectsChanged();
     return true;
+}
+
+void PlateDocument::anchorAfterTransform(Object& object, const QVector3D& beforeLow,
+                                         const QVector3D& beforeHigh)
+{
+    QVector3D low;
+    QVector3D high;
+    if (!boxOf(*object.mesh, object.trafo, object.localMin, object.localMax, low, high))
+        return;
+    const QVector3D shift((beforeLow.x() + beforeHigh.x() - low.x() - high.x()) * 0.5f,
+                          (beforeLow.y() + beforeHigh.y() - low.y() - high.y()) * 0.5f,
+                          -low.z());
+    if (shift.isNull())
+        return;
+    const Vec3d offset = object.trafo.get_offset();
+    object.trafo.set_offset(Vec3d(offset.x() + shift.x(), offset.y() + shift.y(),
+                                  offset.z() + shift.z()));
 }
 
 bool PlateDocument::setVisible(int id, bool visible)
