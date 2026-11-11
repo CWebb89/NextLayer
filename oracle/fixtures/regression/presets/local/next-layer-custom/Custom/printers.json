@@ -2,7 +2,23 @@
     "printers": [
         {
             "name": "Voron 2.4 350",
-            "slug": "voron-2-4-350"
+            "slug": "voron-2-4-350-0-4-nozzle-copy",
+            "tools": 1
+        },
+        {
+            "name": "Voron 2.4 350 (0.6 nozzle)",
+            "slug": "voron-2-4-350-0-6",
+            "tools": 1
+        },
+        {
+            "name": "Voron 0.2",
+            "slug": "voron-0-2",
+            "tools": 1
+        },
+        {
+            "name": "Voron 1.8",
+            "slug": "voron-1-8",
+            "tools": 1
         }
     ]
 }

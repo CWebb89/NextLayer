@@ -1,0 +1,76 @@
+kind: printer
+id: nl-voron-2-4-350-0-4-nozzle-copy
+name: 'Voron 2.4 350'
+condition: printer.model == "NL_voron-2-4-350-0-4-nozzle-copy_MODEL"
+values:
+  gcode_flavor: 'klipper'
+  single_extruder_multi_material: true
+  silent_mode: false
+  max_print_height: 325
+  extruder_clearance_height: 36
+  extruder_clearance_radius: 65
+  bed_shape:
+  - '0x0'
+  - '350x0'
+  - '350x350'
+  - '0x350'
+  start_gcode: "M190 S[first_layer_bed_temperature]\nM109 S[first_layer_temperature]\nPRINT_START EXTRUDER=[first_layer_temperature] BED=[first_layer_bed_temperature]\n"
+  end_gcode: 'PRINT_END'
+  layer_gcode: ";AFTER_LAYER_CHANGE\n;[layer_z]"
+  pause_print_gcode: 'PAUSE'
+  machine_max_acceleration_e:
+  - 5000
+  - 5000
+  machine_max_acceleration_extruding:
+  - 20000
+  - 20000
+  machine_max_acceleration_retracting:
+  - 5000
+  - 5000
+  machine_max_acceleration_travel:
+  - 20000
+  - 20000
+  machine_max_acceleration_x:
+  - 20000
+  - 20000
+  machine_max_acceleration_y:
+  - 20000
+  - 20000
+  machine_max_acceleration_z:
+  - 500
+  - 200
+  machine_max_feedrate_e:
+  - 25
+  - 25
+  machine_max_feedrate_x:
+  - 500
+  - 200
+  machine_max_feedrate_y:
+  - 500
+  - 200
+  machine_max_feedrate_z:
+  - 12
+  - 12
+  machine_max_jerk_e:
+  - 2.5
+  - 2.5
+  machine_max_jerk_x:
+  - 9
+  - 9
+  machine_max_jerk_y:
+  - 9
+  - 9
+  machine_max_jerk_z:
+  - 0.2
+  - 0.4
+  machine_min_extruding_rate:
+  - 0
+  - 0
+  machine_min_travel_rate:
+  - 0
+  - 0
+  extruder_offset:
+  - '0x0'
+  printer_model: 'NL_voron-2-4-350-0-4-nozzle-copy_MODEL'
+  printer_technology: 'FFF'
+  printer_vendor: 'Custom'

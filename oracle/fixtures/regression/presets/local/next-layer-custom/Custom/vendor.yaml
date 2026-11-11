@@ -9,7 +9,13 @@ features:
   sheet: {}
 printer_families:
 - label: 'Voron 2.4 350'
-  base_model: NL_voron-2-4-350
+  base_model: NL_voron-2-4-350-0-4-nozzle-copy
+- label: 'Voron 2.4 350 (0.6 nozzle)'
+  base_model: NL_voron-2-4-350-0-6
+- label: 'Voron 0.2'
+  base_model: NL_voron-0-2
+- label: 'Voron 1.8'
+  base_model: NL_voron-1-8
 ---
 kind: tool
 technology: FFF
@@ -27,19 +33,82 @@ type: pei_smooth
 kind: printer
 technology: FFF
 name: 'Voron 2.4 350'
-id: NL_voron-2-4-350
+id: NL_voron-2-4-350-0-4-nozzle-copy
 model:
-  base_model: NL_voron-2-4-350
-  model: NL_voron-2-4-350_MODEL
+  base_model: NL_voron-2-4-350-0-4-nozzle-copy
+  model: NL_voron-2-4-350-0-4-nozzle-copy_MODEL
 tool_count: 1
 features: {}
 ---
 kind: printer_config
-id: nl-voron-2-4-350
+id: nl-voron-2-4-350-0-4-nozzle-copy
 name: 'Voron 2.4 350'
-printer: NL_voron-2-4-350
+printer: NL_voron-2-4-350-0-4-nozzle-copy
 legacy_printer_model:
 - 'Voron 2.4 350'
+tool_count: 1
+tools:
+- tool: '0.4'
+sheet: pei_smooth
+---
+kind: printer
+technology: FFF
+name: 'Voron 2.4 350 (0.6 nozzle)'
+id: NL_voron-2-4-350-0-6
+model:
+  base_model: NL_voron-2-4-350-0-6
+  model: NL_voron-2-4-350-0-6_MODEL
+tool_count: 1
+features: {}
+---
+kind: printer_config
+id: nl-voron-2-4-350-0-6
+name: 'Voron 2.4 350 (0.6 nozzle)'
+printer: NL_voron-2-4-350-0-6
+legacy_printer_model:
+- 'Voron 2.4 350 (0.6 nozzle)'
+tool_count: 1
+tools:
+- tool: '0.4'
+sheet: pei_smooth
+---
+kind: printer
+technology: FFF
+name: 'Voron 0.2'
+id: NL_voron-0-2
+model:
+  base_model: NL_voron-0-2
+  model: NL_voron-0-2_MODEL
+tool_count: 1
+features: {}
+---
+kind: printer_config
+id: nl-voron-0-2
+name: 'Voron 0.2'
+printer: NL_voron-0-2
+legacy_printer_model:
+- 'Voron 0.2'
+tool_count: 1
+tools:
+- tool: '0.4'
+sheet: pei_smooth
+---
+kind: printer
+technology: FFF
+name: 'Voron 1.8'
+id: NL_voron-1-8
+model:
+  base_model: NL_voron-1-8
+  model: NL_voron-1-8_MODEL
+tool_count: 1
+features: {}
+---
+kind: printer_config
+id: nl-voron-1-8
+name: 'Voron 1.8'
+printer: NL_voron-1-8
+legacy_printer_model:
+- 'Voron 1.8'
 tool_count: 1
 tools:
 - tool: '0.4'

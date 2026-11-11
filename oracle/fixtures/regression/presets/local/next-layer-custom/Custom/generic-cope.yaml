@@ -1,0 +1,28 @@
+kind: filament
+id: 'nl-generic-cope'
+name: 'Generic CoPE'
+values:
+  bed_temperature: 55
+  disable_fan_first_layers: 1
+  end_filament_gcode: "; filament end gcode\n"
+  extrusion_multiplier: 0.98
+  filament_cost: 20.0
+  filament_density: 1.29
+  filament_diameter: 1.75
+  filament_max_volumetric_speed: 16.0
+  filament_minimal_purge_on_wipe_tower: 15.0
+  filament_multitool_ramming: true
+  filament_multitool_ramming_flow: 16.0
+  filament_multitool_ramming_volume: 5.0
+  filament_soluble: false
+  filament_type: 'CoPE'
+  filament_vendor: 'Generic'
+  first_layer_bed_temperature: 55
+  first_layer_temperature: 220
+  full_fan_speed_layer: 0
+  max_fan_speed: 100
+  min_fan_speed: 100
+  min_print_speed: 10.0
+  slowdown_below_layer_time: 4
+  start_filament_gcode: "; Filament gcode\n"
+  temperature: 220
