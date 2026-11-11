@@ -45,11 +45,34 @@ Popup {
         return presetStore.currentPrint
     }
     readonly property bool currentIsUser: presetStore.presetIsUser(root.presetKind,
-                                                                    root.currentName)
-    readonly property int modified: settingsModel.modifiedCount(root.tab)
-    readonly property var groups: root.filterText.length > 0
-                                  ? settingsModel.groups("", "", root.filterText)
-                                  : settingsModel.groups(root.tab, root.subTab, "")
+                                                                  root.currentName)
+    /// The categories of this preset, the per-category dots and the changed count
+    /// all come from the settings model, so the window re-reads them whenever the
+    /// model says something moved. Opened once and never re-read, it showed the
+    /// values it was opened with for as long as it stayed open: an edit was in the
+    /// model but not on screen, and Save stayed disabled under it.
+    property int modified: 0
+    readonly property var groups: root.groupCache
+    property var groupCache: []
+
+    function refresh() {
+        root.modified = settingsModel.modifiedCount(root.tab)
+        root.groupCache = root.filterText.length > 0
+                        ? settingsModel.groups("", "", root.filterText)
+                        : settingsModel.groups(root.tab, root.subTab, "")
+    }
+
+    Connections {
+        target: settingsModel
+
+        function onChanged() { root.refresh() }
+    }
+
+    Connections {
+        target: presetStore
+
+        function onResolved() { root.refresh() }
+    }
 
     /// The categories of the preset being edited -- Filament has material,
     /// cooling, tool changes; Printer has general, bed, machine limits -- which is
@@ -75,8 +98,13 @@ Popup {
     readonly property var tabChoices: {
         if (root.tab === "filament")
             return presetStore.filamentProfiles
-        if (root.tab === "printer")
-            return root.printerChoices()
+        if (root.tab === "printer") {
+            const out = []
+            const printers = presetStore.printers
+            for (let i = 0; i < printers.length; ++i)
+                out.push({ value: printers[i].name, label: printers[i].name })
+            return out
+        }
         return presetStore.printProfiles
     }
 
@@ -104,13 +132,6 @@ Popup {
     padding: 0
     closePolicy: Popup.CloseOnEscape
 
-    function printerChoices() {
-        const out = []
-        for (let i = 0; i < presetStore.printers.length; ++i)
-            out.push({ value: presetStore.printers[i].name, label: presetStore.printers[i].name })
-        return out
-    }
-
     function openOn(tabKey) {
         root.tab = tabKey
         root.subTab = root.firstCategory()
@@ -118,6 +139,7 @@ Popup {
         root.message = ""
         root.showAddPrinter = false
         root.nameField = root.currentName
+        root.refresh()
         root.open()
     }
 
@@ -132,7 +154,16 @@ Popup {
         return root.categories.length > 0 ? root.categories[0].key : ""
     }
 
-    onTabChanged: root.subTab = root.firstCategory()
+    onTabChanged: {
+        root.subTab = root.firstCategory()
+        root.refresh()
+    }
+
+    onSubTabChanged: root.refresh()
+
+    onFilterTextChanged: root.refresh()
+
+    onOpened: root.refresh()
 
     function title() {
         return root.tab === "filament" ? "Filament settings"
@@ -165,7 +196,7 @@ Popup {
             return
         }
         const error = presetStore.saveUserPreset(root.presetKind, root.currentName, root.tab)
-        root.message = error
+        root.message = error.length > 0 ? error : "saved " + root.currentName
         if (error.length > 0)
             return
         root.reloadWith(presetStore.currentPrint, presetStore.currentFilament)
@@ -177,8 +208,14 @@ Popup {
             root.message = "Give the preset a name first"
             return
         }
-        const error = presetStore.saveUserPreset(root.presetKind, name, root.tab)
-        root.message = error
+        // A new name is a new preset, and it is written whole: a copy that carried
+        // only the moved values would depend on the parent it was copied from and
+        // reading it here twice in a row would say "nothing changed" the second
+        // time, because nothing had.
+        const copy = name !== root.currentName
+        const error = presetStore.saveUserPreset(root.presetKind, name, root.tab, !copy)
+        root.message = error.length > 0 ? error
+                                       : (copy ? "saved " + name : "saved " + root.currentName)
         if (error.length > 0)
             return
         // A saved machine is a machine: it has to become the one selected, or
@@ -302,54 +339,10 @@ Popup {
                 Layout.bottomMargin: Metrics.sm
                 spacing: Metrics.sm
 
-                Repeater {
-                    model: [
-                        { key: "process", title: "Print" },
-                        { key: "filament", title: "Filament" },
-                        { key: "printer", title: "Printer" }
-                    ]
-
-                    delegate: Item {
-                        id: stepTab
-
-                        required property var modelData
-
-                        readonly property bool active: root.tab === stepTab.modelData.key
-
-                        Layout.preferredWidth: tabText.implicitWidth + Metrics.lg * 2
-                        Layout.preferredHeight: Metrics.controlHeight
-
-                        Rectangle {
-                            anchors.fill: parent
-                            radius: Metrics.radiusSmall
-                            color: stepTab.active ? Colors.selectedFill
-                                 : stepMouse.containsMouse ? Colors.hoverFill : "transparent"
-                        }
-
-                        Text {
-                            id: tabText
-                            anchors.centerIn: parent
-                            text: stepTab.modelData.title
-                            font.family: Type.family
-                            font.pixelSize: Type.sizeSmall
-                            font.bold: true
-                            color: stepTab.active ? Colors.accent : Colors.textSecondary
-                        }
-
-                        MouseArea {
-                            id: stepMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                root.tab = stepTab.modelData.key
-                                root.nameField = root.currentName
-                                root.message = ""
-                            }
-                        }
-                    }
-                }
-
+                // Each preset kind is its own window, and a window never offers a
+                // way into another one: switching kind under a shared name field
+                // and Save button is how a printer setting ends up written into a
+                // process preset. The title says which kind this is.
                 Text {
                     Layout.fillWidth: true
                     Layout.preferredWidth: 0
@@ -420,10 +413,12 @@ Popup {
                 }
 
                 ComboBox {
-                    width: 270
+                    width: 300
                     height: Metrics.controlHeight
                     choices: root.tabChoices
                     currentValue: root.currentName
+                    searchable: true
+                    popupWidth: 420
                     onSelected: (value) => root.selectPreset(String(value))
                 }
 
@@ -475,16 +470,6 @@ Popup {
                         root.close()
                         root.networkRequested()
                     }
-                }
-
-                Text {
-                    width: 100
-                    height: Metrics.controlHeight
-                    verticalAlignment: Text.AlignVCenter
-                    text: root.currentIsUser ? "user preset" : "engine preset"
-                    font.family: Type.family
-                    font.pixelSize: Type.sizeCaption
-                    color: Colors.textTertiary
                 }
             }
 
@@ -638,9 +623,40 @@ Popup {
                 Layout.bottomMargin: Metrics.sm
                 spacing: Metrics.sm
 
+                Separator { Layout.fillWidth: true }
+            }
+
+            // The categories of this preset, the way the reference slicers put
+            // them at the top of the same window: material and cooling for a
+            // filament, the bed and the machine limits for a printer. The search
+            // sits on the end of the same row, where the reference puts it, rather
+            // than on a row of its own above the tabs.
+            Item {
+                Layout.fillWidth: true
+                Layout.leftMargin: Metrics.lg
+                Layout.rightMargin: Metrics.lg
+                Layout.topMargin: Metrics.xs
+                Layout.bottomMargin: Metrics.xs
+                Layout.preferredHeight: Metrics.rowHeight
+
+                TabStrip {
+                    id: presetPages
+                    anchors.left: parent.left
+                    anchors.right: searchBox.left
+                    anchors.rightMargin: Metrics.sm
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: root.filterText.length === 0
+                    categories: root.categories
+                    current: root.subTab
+                    onActivated: (key) => root.subTab = key
+                }
+
                 Rectangle {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: Metrics.controlHeight
+                    id: searchBox
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 220
+                    height: Metrics.controlHeight
                     radius: Metrics.radiusSmall
                     color: Colors.surfaceContainer
                     border.width: Metrics.borderWidth
@@ -664,7 +680,7 @@ Popup {
                         anchors.leftMargin: Metrics.sm
                         anchors.rightMargin: Metrics.md
                         background: Item {}
-                        placeholderText: "search every tab"
+                        placeholderText: "search every page"
                         font.family: Type.family
                         font.pixelSize: Type.sizeSmall
                         color: Colors.textPrimary
@@ -673,25 +689,6 @@ Popup {
                         onTextChanged: root.filterText = text
                     }
                 }
-            }
-
-            Separator {
-                Layout.fillWidth: true
-            }
-
-            // The categories of this preset, the way the reference slicers put
-            // them at the top of the same window: material and cooling for a
-            // filament, the bed and the machine limits for a printer.
-            TabStrip {
-                Layout.fillWidth: true
-                Layout.leftMargin: Metrics.lg
-                Layout.rightMargin: Metrics.lg
-                Layout.topMargin: Metrics.xs
-                Layout.preferredHeight: Metrics.rowHeight
-                visible: root.filterText.length === 0
-                categories: root.categories
-                current: root.subTab
-                onActivated: (key) => root.subTab = key
             }
 
             SettingsTree {

@@ -80,7 +80,8 @@ public:
     // selected preset of that kind by its root id, so the file only carries the
     // edit. Every call returns an empty string on success or the reason it
     // failed.
-    Q_INVOKABLE QString saveUserPreset(const QString& kind, const QString& name, const QString& tab);
+    Q_INVOKABLE QString saveUserPreset(const QString& kind, const QString& name,
+                                      const QString& tab, bool changedOnly = true);
     Q_INVOKABLE QString renameUserPreset(const QString& kind, const QString& oldName,
                                          const QString& newName);
     Q_INVOKABLE QString deleteUserPreset(const QString& kind, const QString& name);

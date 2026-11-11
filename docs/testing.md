@@ -174,8 +174,10 @@ What to check by eye after an import:
 
 **Presets and settings**
 
-- Change a setting in each of the three tabs, then `Ctrl+S` a preset, restart,
-  and check it comes back with the value you set.
+- Change a setting in each of the three preset windows (printer, process,
+  filament), then Save and Save as under a new name, restart, and check both come
+  back with the value you set. Save as must report "saved <name>", never "nothing
+  has been changed", and the copy must list print profiles like any other machine.
 - Reset a sub-tab and a whole tab; both must return to the engine's defaults, and
   the settings panel must repaint without a restart.
 - Add a printer via the welcome flow with a wrong bed size (1×1 mm) — the app must

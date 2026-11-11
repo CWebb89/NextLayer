@@ -135,12 +135,20 @@ engine inherit a preset from itself.
 
 The gear beside each preset dropdown opens `views/PresetEditorDialog.qml`, the
 counterpart of the engine's parameters dialog: the whole resolved configuration of
-that preset kind in one window, with its own toolbar. Print / Filament / Printer tabs,
-a preset combo, revert-everything, Save, Save as, Rename, Delete (two clicks:
-the first turns the button into a confirmation), an Add printer form on the
-printer tab, and a search box that filters across every tab. Edits apply to the
-live settings at once; Save writes the changed values into the preset file and
-reloads, which clears the modified markers.
+that preset kind in one window, with its own toolbar. One window per preset kind —
+a printer window never offers a way into the process or filament one — with a page
+strip laid out like the reference slicer's printer settings, a search box on the
+end of that strip, a preset combo, revert-everything, Save, Save as, Rename, Delete
+(two clicks: the first turns the button into a confirmation), and an Add printer
+form on the printer window. Edits apply to the live settings at once; Save writes
+the changed values into the preset file and reloads, which clears the modified
+markers. The window re-reads the model on every change, so a row that moved shows
+it moved and Save lights up under it.
+
+Save as under a new name writes the whole preset, not the diff: a copy that
+carried only the moved values inherited everything else from its parent, which is
+why reading it back reported "nothing changed" and why a copied machine could not
+resolve a print profile.
 
 Save on an engine preset is refused with a reason instead of silently saving a
 copy. The printer tab cannot save a preset: a second printer

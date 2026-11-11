@@ -820,7 +820,8 @@ bool PresetStore::applyReload(const ReloadResult& result)
     return true;
 }
 
-QString PresetStore::saveUserPreset(const QString& kind, const QString& name, const QString& tab)
+QString PresetStore::saveUserPreset(const QString& kind, const QString& name,
+                                    const QString& tab, bool changedOnly)
 {
     if (!validPresetName(name))
         return QStringLiteral("A preset name cannot be empty or contain a slash");
@@ -863,7 +864,12 @@ QString PresetStore::saveUserPreset(const QString& kind, const QString& name, co
         condition = presetConditionIn(parentPath);
     }
 
-    const QString values = m_settings->valuesYaml(tab, true);
+    // A preset written under a new name is a preset in its own right: it has to
+    // carry every value of the one it was copied from, or the copy would follow
+    // the parent it inherited and read as an empty file in every other slicer.
+    // Saving over the same name writes just the moved values, which is what keeps
+    // a user preset a diff of its parent.
+    const QString values = m_settings->valuesYaml(tab, changedOnly);
     if (values.trimmed().isEmpty())
         return QStringLiteral("Nothing has been changed yet, so there is nothing to save");
 
