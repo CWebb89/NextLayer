@@ -1,0 +1,65 @@
+# Open Orca's two preset editors and visit every tab, asserting each page's own
+# label. Run with the app already started and its noise dismissed:
+#   cockpit start orca --command ~/.local/bin/orca-slicer --model oracle/models/cube_20.stl --wait 60 --window-title '*OrcaSlicer*'
+#   cockpit run tools/cockpit/scripts/orca-settings.drive
+#
+# Coordinates are window pixels. The edit pencil beside the printer preset only
+# exists while its row is hovered, which is why each dialog is opened with a
+# `move --hover` first; the pencil for the filament preset is the small icon just
+# right of the preset combo. Tab positions differ per dialog (6 tabs vs 7) and are
+# stable for the dialog's default size.
+
+# ---------------------------------------------------------- printer settings ---
+
+window --clear
+# The window is mapped before its sidebar is drawn, so wait for a real control
+# rather than for the window: the pencil these steps need does not exist yet.
+wait-text "Printer" --timeout 40
+move 200 130 --hover
+sleep 0.5
+click 285 157
+wait-window "Printer settings" --timeout 15
+
+click-text "Basic information" --near 375,72
+assert-text "Printable space"
+click-text "Machine G-code" --near 375,72
+assert-text "File header G-code"
+click 359 72
+assert-text "multi-material"
+click 460 72
+assert-text "Nozzle diameter"
+click 575 72
+assert-text "Emit limits to G-code"
+click 683 72
+# The Notes page is an empty text box for this preset, so there is no label to
+# find on it; the dialog surviving the switch is all that can be asserted.
+assert-window "Printer settings"
+key escape
+sleep 1
+
+# --------------------------------------------------------- material settings ---
+
+window --clear
+move 150 245 --hover
+sleep 0.5
+click 368 247
+wait-window "Material settings" --timeout 15
+
+click 46 65
+assert-text "Type"
+click 135 65
+assert-text "Cooling for specific"
+click 240 65
+assert-text "Retraction Length"
+click 351 65
+assert-text "Filament gcode"
+click 456 65
+assert-text "Wipe"
+click 572 65
+assert-text "Compatible printers"
+click 700 72
+# Empty notes page here too.
+assert-window "Material settings"
+key escape
+
+window --clear

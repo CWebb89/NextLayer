@@ -14,9 +14,17 @@ on /dev/uinput, and captures the workspace through `shot`.
     cockpit key Escape
     cockpit stop
 
-Coordinates on the command line are pixels inside the app window, measured from
-its top-left corner, so they do not move when the window is placed elsewhere.
-`cockpit windows` prints the window geometry that conversion uses.
+Coordinates on the command line are pixels inside the *target window*, measured
+from its top-left corner, so they do not move when the window is placed
+elsewhere. The target is the window this command acts on: `--window` (an address
+prefix, a title glob or an index), else the window the session last clicked
+(`window` sets it by hand), else the focused window on the session workspace,
+else the app's main window. A reference slicer opens its preset editors as
+separate top-level windows, so the target is a real choice and not a detail: the
+tool prints a line whenever the target is not the main window.
+
+Every reported coordinate says which frame it is in. All of them are window
+pixels; `shot --window` crops the capture to the target for the same reason.
 
 Everything that touches the compositor goes through hyprctl, whose Lua bridge
 takes a single Lua expression, and every capture goes through `shot` so the
@@ -29,6 +37,7 @@ import argparse
 import contextlib
 import difflib
 import fcntl
+import fnmatch
 import io
 import glob
 import json
@@ -42,6 +51,7 @@ import time
 
 STATE_DIR = "/tmp/cockpit"
 INPUT_CODES = "/usr/include/linux/input-event-codes.h"
+ATLAS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "atlas")
 
 # ---------------------------------------------------------------- hyprland ---
 
@@ -303,17 +313,34 @@ def sessions() -> dict[str, dict]:
     return found
 
 
-def window_of(state: dict) -> dict:
-    """The session's window, re-resolved by class on its workspace.
+def app_windows(name: str, workspace: int | None = None) -> list[dict]:
+    """Every window that belongs to this app, matched by class.
 
-    Addresses change: a reference app replaces its window during start-up, and a fullscreen
-    toggle can remap it. The class on the session workspace is the stable key. A window
-    whose class does not match is never adopted: adopting whatever happened to be on the
-    workspace meant `stop` could close an unrelated window -- a terminal running the agent
-    among them -- once the app itself had gone.
+    The class is what the compositor reports ("next-layer-qt", "orca-slicer"),
+    the title starts with the app name, and a session may not exist yet, so both
+    are tried. Titles are never matched: a terminal whose title happens to name
+    the app is not the app, and adopting one is how `stop` once closed the
+    agent's own terminal.
+    """
+    wanted = name.lower()
+    found = []
+    for client in clients():
+        if workspace is not None and client["workspace"]["id"] != workspace:
+            continue
+        if wanted and wanted in str(client.get("class", "")).lower():
+            found.append(client)
+    return found
+
+
+def main_window(state: dict) -> dict:
+    """The session's own window, re-resolved by class on its workspace.
+
+    Addresses change: a reference app replaces its window during start-up, and a
+    fullscreen toggle can remap it. The class on the session workspace is the
+    stable key.
     """
     wanted = state.get("class", "")
-    on_workspace = [client for client in clients() if client["workspace"]["id"] == state["ws"]]
+    on_workspace = app_windows(state["app"], state["ws"])
     for client in on_workspace:
         if client.get("address") == state.get("address") and client.get("class", "") == wanted:
             return client
@@ -325,36 +352,140 @@ def window_of(state: dict) -> dict:
     raise SystemExit("cockpit: the session window is gone; run `cockpit stop` then start again")
 
 
-def to_screen(state: dict, x: float, y: float) -> tuple[int, int]:
-    window = window_of(state)
-    left, top = window["at"]
-    width, height = window["size"]
+def focused_window() -> dict | None:
+    current = hypr_json("-j", "activewindow")
+    return current if current.get("address") else None
+
+
+def window_label(client: dict) -> str:
+    return (f"{client['address']} {client.get('title', '')!r} "
+            f"{client['size'][0]}x{client['size'][1]} "
+            f"at {client['at'][0]},{client['at'][1]}")
+
+
+def match_window(spec: str, candidates: list[dict]) -> dict:
+    """Resolve a window spec: an address prefix, a title glob or an index.
+
+    A title spec is what a person reads off `cockpit windows`, so a substring and
+    a glob both work; the focused window wins when several titles match.
+    """
+    text = spec.strip()
+    lowered = text.lower()
+    focused = focused_window()
+    for client in candidates:
+        if client["address"].lower().startswith(lowered):
+            return client
+    titled = [client for client in candidates
+              if lowered in str(client.get("title", "")).lower()
+              or fnmatch.fnmatch(str(client.get("title", "")).lower(), lowered)]
+    for client in titled:
+        if focused and client["address"] == focused["address"]:
+            return client
+    if titled:
+        return titled[0]
+    if text.lstrip("-").isdigit():
+        index = int(text)
+        if -len(candidates) <= index < len(candidates):
+            return candidates[index]
+    visible = ", ".join(repr(client.get("title", "")) for client in candidates) or "none"
+    raise SystemExit(f"cockpit: no window matches {spec!r}; open windows are: {visible}")
+
+
+def resolve_target(state: dict, spec: str | None = None, announce: bool = True) -> dict:
+    """The window this command acts on.
+
+    Order: `--window`, then the session's remembered target (set by the last
+    click, or by `window`), then the focused window on the session workspace,
+    then the app's main window. The remembered target is what keeps a sequence
+    pointed at the dialog it just opened: a modal one takes focus, but focus is
+    not something a script should have to re-read after every step.
+    """
+    main = main_window(state)
+    candidates = app_windows(state["app"], state["ws"])
+    if spec:
+        target = match_window(spec, app_windows(state["app"]) or candidates)
+    else:
+        target = None
+        remembered = state.get("target")
+        if remembered:
+            for client in candidates:
+                if client["address"] == remembered:
+                    target = client
+                    break
+            else:
+                state.pop("target", None)
+                save_state(state["app"], state)
+        if target is None:
+            focused = focused_window()
+            for client in candidates:
+                if focused and client["address"] == focused["address"]:
+                    target = client
+                    break
+        if target is None:
+            target = main
+    if announce:
+        note_target(state, target, main)
+    return target
+
+
+def note_target(state: dict, target: dict, main: dict) -> None:
+    """Say when the target is not the main window -- once, when it changes.
+
+    Silence here is what let a stale popup eat clicks for a whole session: the
+    coordinates were right for the window the tool believed it was driving.
+    """
+    if target["address"] == main["address"]:
+        if state.get("reported") not in (None, "main"):
+            print(f"cockpit: target back to the main window {main.get('title', '')!r}")
+            state["reported"] = "main"
+            save_state(state["app"], state)
+        return
+    if state.get("reported") != target["address"]:
+        print(f"cockpit: target {target.get('title', '')!r} {target['address']} "
+              f"(not the main window)")
+        state["reported"] = target["address"]
+        save_state(state["app"], state)
+
+
+def remember_target(state: dict, target: dict) -> None:
+    if state.get("target") != target["address"]:
+        state["target"] = target["address"]
+        save_state(state["app"], state)
+
+
+def monitor_origin_of(client: dict) -> tuple[int, int]:
+    """Top-left of the monitor this window sits on, in global pixels."""
+    left, top = client["at"]
+    for monitor in hypr_json("-j", "monitors"):
+        if (monitor["x"] <= left < monitor["x"] + monitor["width"]
+                and monitor["y"] <= top < monitor["y"] + monitor["height"]):
+            return int(monitor["x"]), int(monitor["y"])
+    return 0, 0
+
+
+def to_global(target: dict, x: float, y: float) -> tuple[int, int]:
+    """Window pixels -> screen pixels. The one conversion this tool has."""
+    left, top = target["at"]
+    width, height = target["size"]
     if not (0 <= x <= width and 0 <= y <= height):
-        print(
-            f"cockpit: warning: ({x:g}, {y:g}) is outside the {width}x{height} window",
-            file=sys.stderr,
-        )
+        print(f"cockpit: warning: ({x:g}, {y:g}) is outside the {width}x{height} window "
+              f"{target.get('title', '')!r}", file=sys.stderr)
     return int(left + x), int(top + y)
 
 
+def to_window(target: dict, x: float, y: float) -> tuple[int, int]:
+    """Screen pixels -> window pixels."""
+    left, top = target["at"]
+    return int(round(x - left)), int(round(y - top))
+
+
+def frame_header(target: dict) -> str:
+    return (f"frame window {target['address']} {target['size'][0]}x{target['size'][1]} "
+            f"{target.get('title', '')!r} at {target['at'][0]},{target['at'][1]} "
+            f"-- coordinates are window pixels")
+
+
 # ---------------------------------------------------------------- commands ---
-
-
-def app_windows(name: str) -> list[dict]:
-    """Every open window that belongs to this app, matched by class or title.
-
-    The class is what the compositor reports ("next-layer-qt"), the title starts
-    with the app name, and a session may not exist yet, so both are tried.
-    """
-    wanted = name.lower()
-    found = []
-    for client in clients():
-        window_class = str(client.get("class", "")).lower()
-        # Class only: a terminal whose title happens to name the app is not the
-        # app, and adopting one is how `stop` once closed the agent's terminal.
-        if wanted and wanted in window_class:
-            found.append(client)
-    return found
 
 
 def adopt_window(name: str, client: dict) -> dict:
@@ -369,7 +500,7 @@ def cmd_start(args: argparse.Namespace) -> int:
     state = sessions().get(args.app)
     if state is not None:
         try:
-            window_of(state)
+            main_window(state)
             print(f"cockpit: {args.app} is already running on workspace {state['ws']}")
             return 1
         except SystemExit:
@@ -417,10 +548,17 @@ def cmd_start(args: argparse.Namespace) -> int:
     while time.monotonic() < deadline and not address:
         time.sleep(0.4)
         for client in clients():
-            if client["workspace"]["id"] == workspace:
-                address = client["address"]
-                window_class = client.get("class", "")
-                break
+            if client["workspace"]["id"] != workspace:
+                continue
+            # A splash window (Orca's "Loading...") is mapped first and is gone by
+            # the time anything can be driven, so a session that adopts it starts
+            # every command against a window that no longer exists.
+            if args.window_title and not fnmatch.fnmatch(
+                    str(client.get("title", "")).lower(), args.window_title.lower()):
+                continue
+            address = client["address"]
+            window_class = client.get("class", "")
+            break
     if not address:
         print(f"cockpit: nothing appeared on workspace {workspace} within {args.wait:g}s")
         return 1
@@ -438,11 +576,11 @@ def cmd_start(args: argparse.Namespace) -> int:
              "class": window_class, "command": command, "log": log,
              "started": time.time()}
     save_state(args.app, state)
-    window = window_of(state)
+    window = main_window(state)
 
     if not args.no_activate_click:
         # See the module note: without this the first key of the session is lost.
-        centre = to_screen(state, window["size"][0] // 2, window["size"][1] // 2)
+        centre = to_global(window, window["size"][0] // 2, window["size"][1] // 2)
         move_cursor(*centre)
         time.sleep(0.1)
         device = Input()
@@ -477,40 +615,32 @@ def press_key(app: str, name: str) -> None:
             pass
 
 
-def click_text_in_window(app: str, text: str) -> bool:
-    """Click a button by its label in the session window. False when it is absent."""
-    args = argparse.Namespace(app=app, text=text, index=0, x=0, y=0, button="left",
-                              double=False, settle=0.15)
-    # Looking for a button that is not there is the normal case, so its complaint
-    # is swallowed: a stop that needs no guard should read as one line.
-    with contextlib.redirect_stderr(io.StringIO()):
-        try:
-            return cmd_click_text(args) == 0
-        except SystemExit:
-            return False
-
-
 def cmd_stop(args: argparse.Namespace) -> int:
     state = load_state(args.app)
-    # Only ever close a window that is this session's own: the address on disk can be
-    # stale, and closing a stale address closes whatever now owns it.
-    try:
-        window = window_of(state)
-    except SystemExit:
-        window = None
-    if window is not None:
-        hypr("dispatch", f'hl.dsp.window.close({{window="address:{window["address"]}"}})')
+
+    def open_windows() -> list[dict]:
+        # Only ever close windows that belong to this app on this session's own
+        # workspace: the addresses on disk can be stale, and closing a stale
+        # address closes whatever now owns it.
+        return app_windows(state["app"], state["ws"])
+
+    # A preset editor is a separate top-level window and it blocks its parent, so
+    # closing the main window first leaves the dialog holding the app open. Close
+    # every window of the app, dialogs first (they are the smaller ones).
+    windows = sorted(open_windows(), key=lambda client: client["size"][0] * client["size"][1])
+    for client in windows:
+        hypr("dispatch", f'hl.dsp.window.close({{window="address:{client["address"]}"}})')
+        time.sleep(0.2)
+
+    if windows:
         # The app refuses to close over unsaved work and asks what to do with it.
         # That guard is part of the app, so the tool has to answer it: poll for the
-        # window to go, and answer "Discard" the moment it appears -- nothing on a
-        # test plate is worth keeping, and the guard would otherwise hold the window
-        # open indefinitely.
+        # windows to go, and answer "Discard" the moment they do not -- nothing on
+        # a test plate is worth keeping, and the guard would otherwise hold the
+        # window open indefinitely.
         deadline = time.monotonic() + 8.0
         attempts = 0
-        while time.monotonic() < deadline:
-            if not any(client["workspace"]["id"] == state["ws"]
-                       and client.get("class") == state.get("class") for client in clients()):
-                break
+        while time.monotonic() < deadline and open_windows():
             # The app asks "save this plate before closing?" when what is on the
             # plate is unsaved, and the second close request is the answer the app
             # documents as discard. Keys are tried too: they are free when the
@@ -518,21 +648,24 @@ def cmd_stop(args: argparse.Namespace) -> int:
             press_key(args.app, "d")
             attempts += 1
             if attempts >= 2:
-                hypr("dispatch", f'hl.dsp.window.close({{window="address:{window["address"]}"}})')
+                for client in open_windows():
+                    hypr("dispatch",
+                         f'hl.dsp.window.close({{window="address:{client["address"]}"}})')
             time.sleep(0.6)
         wait_for_gone(state, 1.5)
-    still_open = any(client["workspace"]["id"] == state["ws"]
-                     and client.get("class") == state.get("class") for client in clients())
+    still_open = open_windows()
     if still_open:
         # Keep the session: an open window the tool cannot close is still a
         # session, and dropping the record orphans it.
-        print(f"cockpit: {args.app} is still open on workspace {state['ws']}", file=sys.stderr)
+        titles = ", ".join(repr(client.get("title", "")) for client in still_open)
+        print(f"cockpit: {args.app} is still open on workspace {state['ws']}: {titles}",
+              file=sys.stderr)
         return 1
 
     os.unlink(state_path(args.app))
     if state.get("return_ws"):
         focus_workspace(state["return_ws"])
-    print(f"cockpit: stopped {args.app}" if window is not None
+    print(f"cockpit: stopped {args.app}" if windows
           else f"cockpit: {args.app} was already gone; cleared the session")
     return 0
 
@@ -564,30 +697,90 @@ def cmd_log(args: argparse.Namespace) -> int:
 
 def cmd_windows(args: argparse.Namespace) -> int:
     state = load_state(args.app)
-    for client in clients():
-        if client["workspace"]["id"] != state["ws"]:
-            continue
-        print(f"{client['address']} {client['class']!r} {client['title']!r} "
-              f"at {client['at'][0]},{client['at'][1]} size {client['size'][0]}x{client['size'][1]}")
+    try:
+        target = resolve_target(state, getattr(args, "window", None), announce=False)
+    except SystemExit:
+        target = None
+    found = (app_windows(state["app"]) if args.all
+             else app_windows(state["app"], state["ws"]))
+    if args.json:
+        print(json.dumps({
+            "workspace": state["ws"],
+            "target": target["address"] if target else None,
+            "windows": [{"address": client["address"], "class": client.get("class", ""),
+                         "title": client.get("title", ""), "at": client["at"],
+                         "size": client["size"], "workspace": client["workspace"]["id"],
+                         "target": bool(target and client["address"] == target["address"])}
+                        for client in found]}, indent=2))
+        return 0
+    if not found:
+        print(f"cockpit: no window for {state['app']!r} on workspace {state['ws']}")
+        return 0
+    for index, client in enumerate(found):
+        marker = " <- target" if target and client["address"] == target["address"] else ""
+        print(f"[{index}] {window_label(client)} workspace {client['workspace']['id']}{marker}")
+    return 0
+
+
+def cmd_window(args: argparse.Namespace) -> int:
+    """Set, show or clear the session's remembered target window."""
+    state = load_state(args.app)
+    if args.clear:
+        state.pop("target", None)
+        state["reported"] = "main"
+        save_state(state["app"], state)
+        print("cockpit: target cleared; commands follow the main window")
+        return 0
+    if not args.spec:
+        print(window_label(resolve_target(state, getattr(args, "window", None))))
+        return 0
+    target = resolve_target(state, args.spec, announce=False)
+    remember_target(state, target)
+    print(f"cockpit: target {window_label(target)}")
     return 0
 
 
 def cmd_focus(args: argparse.Namespace) -> int:
-    focus_session(load_state(args.app))
+    state = load_state(args.app)
+    focus_workspace(state["ws"])
+    time.sleep(0.15)
+    target = resolve_target(state, getattr(args, "window", None))
+    hypr("dispatch", f'hl.dsp.focus({{window="address:{target["address"]}"}})')
     return 0
+
+
+def crop_to_window(png: str, target: dict) -> bool:
+    """Crop a workspace capture down to one window, in place."""
+    origin_x, origin_y = monitor_origin_of(target)
+    x = target["at"][0] - origin_x
+    y = target["at"][1] - origin_y
+    width, height = target["size"]
+    prepared = f"{png}.crop.png"
+    result = subprocess.run(["magick", png, "-crop", f"{width}x{height}+{x}+{y}", "+repage",
+                             prepared], capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"cockpit: crop to the window failed: {result.stderr.strip()}", file=sys.stderr)
+        return False
+    os.replace(prepared, png)
+    return True
 
 
 def cmd_shot(args: argparse.Namespace) -> int:
     state = load_state(args.app)
+    target = resolve_target(state, getattr(args, "window", None))
     out = os.path.abspath(args.out)
-    subprocess.run(["shot", "onws", str(state["ws"]), out, *args.grim], check=True)
-    print(out)
+    subprocess.run(["shot", "onws", str(state["ws"]), out, *args.grim], check=True,
+                   capture_output=True)
+    cropped = False if args.workspace_frame else crop_to_window(out, target)
+    print(f"cockpit: {out} ({'workspace' if args.workspace_frame or not cropped else 'window'} "
+          f"frame, {target.get('title', '')!r})")
     return 0
 
 
 def cmd_move(args: argparse.Namespace) -> int:
     state = load_state(args.app)
-    target = to_screen(state, args.x, args.y)
+    target = resolve_target(state, getattr(args, "window", None))
+    point = to_global(target, args.x, args.y)
     # `hl.dsp.cursor.move` warps the cursor, and a warp produces no pointer event
     # for the client: Qt never learns the pointer arrived, so hover state, hover
     # fills and tooltips stay frozen where they were. Walking the pointer there
@@ -600,7 +793,7 @@ def cmd_move(args: argparse.Namespace) -> int:
         # one step each way leaves the content where it began. Relative motion
         # from the virtual device was tried first and did not: the client stayed
         # on the stale hover until a button event arrived.
-        move_cursor(*target)
+        move_cursor(*point)
         time.sleep(0.12)
         pointer = Input()
         try:
@@ -610,17 +803,27 @@ def cmd_move(args: argparse.Namespace) -> int:
             pointer.close()
         time.sleep(0.05)
         return 0
-    move_cursor(*target)
+    move_cursor(*point)
     return 0
 
 
-def capture(args: argparse.Namespace) -> str:
+def capture(args: argparse.Namespace, target: dict | None = None) -> tuple[str, dict]:
+    """Capture the session workspace and crop it to the target window.
+
+    The target is resolved before the capture on purpose: `shot onws` switches
+    the compositor to the session workspace to capture it, which moves focus, so
+    a focused-window default read afterwards would name the wrong window.
+    """
     state = load_state(args.app)
+    if target is None:
+        target = resolve_target(state, getattr(args, "window", None))
     out = os.path.join(STATE_DIR, f"{args.app}.png")
     os.makedirs(STATE_DIR, exist_ok=True)
     subprocess.run(["shot", "onws", str(state["ws"]), out], check=True,
                    capture_output=True)
-    return out
+    if not getattr(args, "workspace_frame", False):
+        crop_to_window(out, target)
+    return out, target
 
 
 def _ocr_pass(png: str, scale: float, psm: str = "3") -> list[dict]:
@@ -649,33 +852,84 @@ def _ocr_pass(png: str, scale: float, psm: str = "3") -> list[dict]:
 def ocr_passes(png: str) -> list[list[dict]]:
     """OCR runs kept separate, best-suited first.
 
-    Dark-theme text reads best raw; a light toolbar on a dark background needs an
+    Dark-theme text reads best raw; a reference app's light toolbar needs an
     inverted enlargement, and small glyphs need tesseract's sparse-text mode.
-    Merging the runs would break line grouping, so they stay apart.
+    Merging the runs would break line grouping, so they stay apart. Every run
+    works on the window crop, which is small enough for four runs to be cheap;
+    page-segmentation 3 is added to the pair the whole-screen version used, since
+    a window with a toolbar, a notebook strip and a form is not one block.
     """
-    passes = [_ocr_pass(png, 1.0)]
-    if not shutil.which("magick"):
-        return passes
+    passes = [_ocr_pass(png, 1.0, "3"), _ocr_pass(png, 1.0, "11")]
     prepared = os.path.join(STATE_DIR, "ocr-prepared.png")
-    subprocess.run(["magick", png, "-colorspace", "gray", "-negate", "-resize", "300%",
-                    prepared], check=True, capture_output=True)
-    passes.append(_ocr_pass(prepared, 1 / 3, "11"))
+    if prepare_ocr_image(png, prepared):
+        passes.append(_ocr_pass(prepared, 0.4, "6"))
+        passes.append(_ocr_pass(prepared, 0.4, "11"))
     return passes
 
 
+def prepare_ocr_image(png: str, prepared: str) -> bool:
+    """Grey, inverted, contrast-stretched, 250% -- what small light text needs."""
+    if not shutil.which("magick"):
+        return False
+    result = subprocess.run(["magick", png, "-colorspace", "gray", "-negate",
+                             "-auto-level", "-resize", "250%", prepared],
+                            capture_output=True)
+    return result.returncode == 0
+
+
 def ocr_words(png: str) -> list[dict]:
+    """Every word any pass saw, first sighting wins.
+
+    The passes overlap, so the same word arrives up to four times with slightly
+    different boxes; without this, `describe` lists every label as a duplicate.
+    """
     words: list[dict] = []
+    seen: set[tuple[str, int, int]] = set()
     for run in ocr_passes(png):
-        words.extend(run)
+        for word in run:
+            key = (word["text"].lower(), word["x"] // 12, word["y"] // 12)
+            if key in seen:
+                continue
+            seen.add(key)
+            words.append(word)
     return words
 
 
 def best_matches(png: str, query: str) -> list[dict]:
+    """Every match any OCR pass found, deduplicated.
+
+    Returning the first pass that matched anything lost labels that only one pass
+    can read: a wx notebook strip on a dark dialog comes out of the inverted
+    enlargement, not the raw run, and asking for a tab then went unmatched while
+    the same word inside a G-code field matched instead.
+    """
+    matches: list[dict] = []
+    seen: set[tuple[str, int, int]] = set()
     for words in ocr_passes(png):
-        matches = find_matches(words, query)
-        if matches:
-            return matches
-    return []
+        for match in find_matches(words, query):
+            key = (match["text"].lower(), match["x"] // 10, match["y"] // 10)
+            if key in seen:
+                continue
+            seen.add(key)
+            matches.append(match)
+    return matches
+
+
+def group_lines(words: list[dict]) -> list[list[dict]]:
+    """OCR words grouped into visual lines.
+
+    Tesseract reports a box per word in reading order, so a line group is words
+    whose top edge is within a few pixels of the line's first word.
+    """
+    lines: list[list[dict]] = []
+    for word in sorted(words, key=lambda item: (item["y"], item["x"])):
+        if lines and abs(word["y"] - lines[-1][0]["y"]) <= 6:
+            lines[-1].append(word)
+        else:
+            lines.append([word])
+    for line in lines:
+        line.sort(key=lambda item: item["x"])
+    return lines
 
 
 def find_matches(words: list[dict], query: str) -> list[dict]:
@@ -684,17 +938,11 @@ def find_matches(words: list[dict], query: str) -> list[dict]:
     A query matches a run of consecutive words on one line once spaces are
     ignored, so "Slice plate" is found even though OCR reports two words.
     """
-    lines: list[list[dict]] = []
-    for word in sorted(words, key=lambda item: (item["y"], item["x"])):
-        if lines and abs(word["y"] - lines[-1][0]["y"]) <= 6:
-            lines[-1].append(word)
-        else:
-            lines.append([word])
+    lines = group_lines(words)
 
     wanted = "".join(query.lower().split())
     matches: list[dict] = []
     for line in lines:
-        line.sort(key=lambda item: item["x"])
         joined = "".join(word["text"].lower() for word in line)
         start = joined.find(wanted)
         while start >= 0:
@@ -727,6 +975,12 @@ def find_matches(words: list[dict], query: str) -> list[dict]:
     return []
 
 
+def normalise(text: str) -> str:
+    """Lowercase, no spaces, no shortcut suffix: what two labels are compared on."""
+    text = text.split("[")[0]
+    return "".join(text.lower().split())
+
+
 def _box(chosen: list[dict], ratio: float | None = None) -> dict:
     left = min(word["x"] for word in chosen)
     top = min(word["y"] for word in chosen)
@@ -737,77 +991,373 @@ def _box(chosen: list[dict], ratio: float | None = None) -> dict:
             "conf": min(word["conf"] for word in chosen), "ratio": ratio}
 
 
-def window_relative(args: argparse.Namespace, matches: list[dict]) -> list[dict]:
-    """OCR boxes are in screen pixels; the CLI speaks window pixels."""
-    window = window_of(load_state(args.app))
-    left, top = window["at"]
-    for match in matches:
-        match["x"] -= left
-        match["y"] -= top
-    return matches
+def rank_matches(matches: list[dict], near: str | None) -> list[dict]:
+    """Order matches by distance from a point, so `--index` is predictable."""
+    if not matches or not near:
+        return matches
+    try:
+        near_x, near_y = (float(part) for part in near.replace(" ", "").split(","))
+    except ValueError:
+        raise SystemExit(f"cockpit: --near wants X,Y in window pixels, not {near!r}")
+    return sorted(matches, key=lambda match: (match_point(match)[0] - near_x) ** 2
+                  + (match_point(match)[1] - near_y) ** 2)
+
+
+def match_point(match: dict) -> tuple[int, int]:
+    return int(match["x"] + match["w"] / 2), int(match["y"] + match["h"] / 2)
+
+
+def frame_dict(target: dict) -> dict:
+    return {"address": target["address"], "title": target.get("title", ""),
+            "at": target["at"], "size": target["size"], "frame": "window"}
+
+
+def closest_labels(png: str, query: str, limit: int = 8) -> list[str]:
+    """The visible labels most similar to a query, for a failure message."""
+    wanted = "".join(query.lower().split())
+    scored: list[tuple[float, str]] = []
+    for line in group_lines(ocr_words(png)):
+        for first in range(len(line)):
+            for last in range(first, min(first + 4, len(line))):
+                text = " ".join(word["text"] for word in line[first:last + 1])
+                ratio = difflib.SequenceMatcher(
+                    None, wanted, "".join(text.lower().split())).ratio()
+                if ratio >= 0.3:
+                    scored.append((ratio, text))
+    scored.sort(reverse=True)
+    chosen: list[str] = []
+    for _, text in scored:
+        if text not in chosen:
+            chosen.append(text)
+        if len(chosen) >= limit:
+            break
+    return chosen
+
+
+def report_want(png: str, target: dict, text: str, app: str) -> None:
+    """Say what is visible, and what would make the missing label findable.
+
+    This is the contract that replaces silence: a caller that cannot find a
+    control must learn what the window does show and what to open instead.
+    """
+    print(f"cockpit: want {text!r} -- it is not in the target window "
+          f"{target.get('title', '')!r}.", file=sys.stderr)
+    closest = closest_labels(png, text)
+    if closest:
+        print("  closest visible labels: " + ", ".join(repr(label) for label in closest),
+              file=sys.stderr)
+    recorded = atlas_search(app, text, window_title=target.get("title", ""))
+    if recorded:
+        print(f"  the atlas has {recorded['text']!r} in window {recorded['window']!r} "
+              f"at ({recorded['x']}, {recorded['y']}) -- `cockpit window "
+              f"{recorded['window']!r}` then retry", file=sys.stderr)
+    elif atlas_search(app, text):
+        other = atlas_search(app, text)
+        print(f"  the atlas has it in window {other['window']!r}, not this one -- "
+              f"`cockpit windows --all`, then `cockpit window {other['window']!r}`",
+              file=sys.stderr)
+    else:
+        print("  no atlas entry either: open the window or page that owns it "
+              "(`cockpit windows --all`), then `cockpit window <title or address>`",
+              file=sys.stderr)
 
 
 def cmd_find_text(args: argparse.Namespace) -> int:
-    png = capture(args)
-    matches = best_matches(png, args.text)
+    png, target = capture(args)
+    matches = rank_matches(best_matches(png, args.text), args.near)
+    if args.json:
+        print(json.dumps({"frame": frame_dict(target),
+                          "matches": [dict(match, centre=match_point(match))
+                                      for match in matches]}, indent=2))
+        return 0 if matches else 1
+    print(frame_header(target))
     if not matches:
-        print(f"cockpit: no text matching {args.text!r} on screen", file=sys.stderr)
-        for word in ocr_words(png)[:60]:
-            print(f"  {word['text']}", file=sys.stderr)
+        report_want(png, target, args.text, load_state(args.app)["app"])
         return 1
-    for index, match in enumerate(window_relative(args, matches)):
-        print(f"{index} {match['x'] + match['w'] // 2} {match['y'] + match['h'] // 2} "
-              f"{match['text']!r} conf {match['conf']:.0f}")
+    for index, match in enumerate(matches):
+        x, y = match_point(match)
+        print(f"{index} {x} {y} {match['text']!r} conf {match['conf']:.0f}")
     return 0
+
+
+def tooltip_at(args: argparse.Namespace, target: dict, x: float, y: float) -> str:
+    """Hover a point and read the tooltip that appears under it, retrying the hover.
+
+    A tooltip is a popup of its own, drawn above the window it belongs to, so it
+    is not in the window crop: the workspace frame is captured and only the band
+    under the pointer is OCR'd. The pointer is left where it landed, because
+    moving it away dismisses the very thing the answer is about.
+
+    wx does not show a tooltip on every dwell -- the timer sometimes misses the
+    motion that started it -- so a miss is retried from a fresh approach rather
+    than reported as "no tooltip".
+    """
+    attempts = getattr(args, "tries", 1)
+    best = ""
+    for _ in range(attempts):
+        text = tooltip_once(args, target, x, y)
+        if quality(text) > quality(best):
+            best = text
+        if quality(best) >= 6:
+            break
+    return best
+
+
+def tooltip_once(args: argparse.Namespace, target: dict, x: float, y: float) -> str:
+    state = load_state(args.app)
+    # The tooltip only survives if the pointer is over a focused window when the
+    # frame is taken, and `shot onws` *switches* to the session workspace when it
+    # is not active: the app then re-enters, wx drops the tooltip, and the frame
+    # shows nothing. Focusing first makes the capture a no-op switch.
+    focus_workspace(state["ws"])
+    time.sleep(0.2)
+    global_x, global_y = to_global(target, x, y)
+    # The pointer is walked into the control instead of warped onto it: a warp
+    # sends the client no motion event, and a tooltip needs real motion over the
+    # widget before its hover timer starts at all.
+    move_cursor(global_x - 8, global_y - 8)
+    time.sleep(0.1)
+    pointer = Input()
+    try:
+        for _ in range(4):
+            pointer.relative(2, 2)
+            time.sleep(0.05)
+    finally:
+        pointer.close()
+    out = os.path.join(STATE_DIR, f"{args.app}.png")
+    os.makedirs(STATE_DIR, exist_ok=True)
+    # One capture, after the hover has had time to mature: `shot onws` switches
+    # workspace and back, which the app reads as the pointer leaving, so a
+    # capture hides the tooltip and restarts its timer. Retrying in a loop is
+    # therefore worse than waiting once.
+    time.sleep(args.wait)
+    subprocess.run(["shot", "onws", str(state["ws"]), out], check=True,
+                   capture_output=True)
+    ox, oy = monitor_origin_of(target)
+    global_x, global_y = to_global(target, x, y)
+    left = max(0, global_x - ox - 300)
+    top = max(0, global_y - oy + (-46 if args.above else 4))
+    crop = os.path.join(STATE_DIR, f"{args.app}-tip.png")
+    subprocess.run(["magick", out, "-crop", f"900x56+{left}+{top}", "+repage", crop],
+                   check=True, capture_output=True)
+    # The tooltip's offset from the pointer is not fixed -- wx places it left or
+    # right of the cursor depending on the widget -- but its background is far
+    # darker than anything around it, so its box can be found instead of guessed:
+    # threshold the band, negate and trim, and that box is the text.
+    box = os.path.join(STATE_DIR, f"{args.app}-tipbox.png")
+    trimmed = subprocess.run(["magick", crop, "-colorspace", "gray", "-threshold",
+                              "15%", "-negate", "-trim", "+repage", box],
+                             capture_output=True)
+    text = tooltip_text(crop)
+    if trimmed.returncode == 0:
+        size = subprocess.run(["magick", "identify", "-format", "%w %h", box],
+                              capture_output=True, text=True).stdout.split()
+        if len(size) == 2 and 20 <= int(size[0]) <= 800 and 8 <= int(size[1]) <= 60:
+            found = tooltip_text(box)
+            if quality(found) > quality(text):
+                text = found
+    return text
+
+
+def tooltip_text(png: str) -> str:
+    """The tooltip line in a crop, or '' -- the longest line is the tooltip.
+
+    The band under a pointer can also contain toolbar text or a label; a tooltip
+    is the widest single run of words in it, and every tooltip this drives is one
+    line long.
+    """
+    if not os.path.exists(png):
+        return ""
+    plain = os.path.join(STATE_DIR, "ocr-tip-plain.png")
+    stretched = os.path.join(STATE_DIR, "ocr-tip-stretched.png")
+    passes = [_ocr_pass(png, 1.0, "6"), _ocr_pass(png, 1.0, "7")]
+    # A tooltip is light text on a small dark box inside a mostly uniform crop, and
+    # `-auto-level` over that crop throws the glyph edges away: plain negate and
+    # enlarge reads them, so both variants are tried and the best line wins.
+    if shutil.which("magick"):
+        if subprocess.run(["magick", png, "-colorspace", "gray", "-negate",
+                           "-resize", "300%", plain],
+                          capture_output=True).returncode == 0:
+            passes.extend([_ocr_pass(plain, 1.0, "6"), _ocr_pass(plain, 1.0, "7")])
+        if prepare_ocr_image(png, stretched):
+            passes.extend([_ocr_pass(stretched, 0.4, "6"), _ocr_pass(stretched, 0.4, "7")])
+    best = ""
+    for words in passes:
+        for line in words_by_row(words):
+            text = " ".join(word["text"] for word in line).strip()
+            if sum(character.isalpha() for character in text) < 3:
+                continue
+            if quality(text) > quality(best) or (quality(text) == quality(best)
+                                                 and len(text) > len(best)):
+                best = text
+    return best
+
+
+def words_by_row(words: list[dict], tolerance: int = 6) -> list[list[dict]]:
+    """Words grouped into rows, tolerant enough to reunite a split label.
+
+    Tesseract sometimes reports the two words of a tooltip as separate lines one
+    pixel apart; a grouping that keys on exact baselines then answers with half
+    the label, which reads as a wrong tooltip rather than an unreadable one.
+    """
+    rows: list[list[dict]] = []
+    for word in sorted(words, key=lambda item: (item["y"], item["x"])):
+        centre = word["y"] + word["h"] / 2
+        for row in rows:
+            anchor = row[0]["y"] + row[0]["h"] / 2
+            if abs(anchor - centre) <= tolerance:
+                row.append(word)
+                break
+        else:
+            rows.append([word])
+    return [sorted(row, key=lambda item: item["x"]) for row in rows]
+
+
+def quality(text: str) -> float:
+    """How much of a candidate looks like words rather than OCR noise."""
+    if not text:
+        return -1.0
+    letters = sum(character.isalpha() for character in text)
+    noise = sum(character in "\\_~^`'\"|<>{}[]" for character in text)
+    return letters - 2 * noise
+
+
+def cmd_tip(args: argparse.Namespace) -> int:
+    target = resolve_target(load_state(args.app), getattr(args, "window", None))
+    text = tooltip_at(args, target, args.x, args.y)
+    if args.json:
+        print(json.dumps({"frame": frame_dict(target), "x": args.x, "y": args.y,
+                          "tip": text}, indent=2))
+        return 0 if text else 1
+    if not text:
+        print(f"cockpit: no tooltip at {args.x},{args.y} in {window_label(target)} "
+              f"after {args.wait:.1f}s", file=sys.stderr)
+        return 1
+    print(f"cockpit: tip {text!r} at {args.x},{args.y}")
+    return 0
+
+
+def cmd_tips(args: argparse.Namespace) -> int:
+    """Sweep a row of controls and print what each one says it does."""
+    target = resolve_target(load_state(args.app), getattr(args, "window", None))
+    step = args.step
+    x = args.start
+    while (x <= args.end) if step > 0 else (x >= args.end):
+        text = tooltip_at(args, target, x, args.row)
+        print(f"{x:5.0f} {args.row:5.0f}  {text or '-'}")
+        x += step
+    return 0
+
+
+def cmd_assert_tip(args: argparse.Namespace) -> int:
+    target = resolve_target(load_state(args.app), getattr(args, "window", None))
+    text = tooltip_at(args, target, args.x, args.y)
+    if tip_matches(args.text, text):
+        print(f"cockpit: tip {text!r} at {args.x},{args.y} matches {args.text!r}")
+        return 0
+    print(f"cockpit: want tooltip {args.text!r} at {args.x},{args.y}, got {text or 'nothing'!r}",
+          file=sys.stderr)
+    return 1
+
+
+def tip_matches(wanted_text: str, observed: str) -> bool:
+    """Whether a tooltip is the one that was asked for, allowing OCR damage.
+
+    A tooltip is 11 px light-on-dark text and tesseract mangles single letters
+    ("Boolean" comes back "Boolkean"), so a strict comparison fails on the right
+    tooltip. The threshold is the one `find-text` already uses for the same
+    reason; on strings this short a stricter ratio rejects correct answers.
+    """
+    wanted = normalise(wanted_text)
+    seen = normalise(observed)
+    if not wanted:
+        return False
+    if wanted in seen or seen in wanted:
+        return True
+    return difflib.SequenceMatcher(None, wanted, seen).ratio() >= 0.72
 
 
 def cmd_ocr(args: argparse.Namespace) -> int:
-    words = window_relative(args, ocr_words(capture(args)))
-    for word in sorted(words, key=lambda item: (item["y"], item["x"])):
+    png, target = capture(args)
+    words = sorted(ocr_words(png), key=lambda item: (item["y"], item["x"]))
+    if args.json:
+        print(json.dumps({"frame": frame_dict(target), "words": words}, indent=2))
+        return 0 if words else 1
+    print(frame_header(target))
+    for word in words:
         print(f"{word['x']:4d} {word['y']:4d} {word['w']:3d} {word['h']:3d} "
               f"{word['conf']:5.0f} {word['text']}")
-    return 0
+    return 0 if words else 1
 
 
 def cmd_click_text(args: argparse.Namespace) -> int:
-    matches = best_matches(capture(args), args.text)
-    if not matches:
-        print(f"cockpit: no text matching {args.text!r} on screen", file=sys.stderr)
-        return 1
-    matches = window_relative(args, matches)
-    if args.index >= len(matches):
+    state = load_state(args.app)
+    target = resolve_target(state, getattr(args, "window", None))
+    png, target = capture(args, target)
+    matches = rank_matches(best_matches(png, args.text), args.near)
+    if args.index < len(matches):
+        match = matches[args.index]
+        x, y = match_point(match)
+        print(f"cockpit: clicking {match['text']!r} at ({x}, {y}) in "
+              f"{target.get('title', '')!r}")
+        return click_in(state, target, x, y, args.button, args.double, args.settle)
+    if matches:
         print(f"cockpit: only {len(matches)} match(es) for {args.text!r}", file=sys.stderr)
         return 1
-    match = matches[args.index]
-    args.x = match["x"] + match["w"] / 2
-    args.y = match["y"] + match["h"] / 2
-    print(f"cockpit: clicking {match['text']!r} at ({args.x:.0f}, {args.y:.0f})")
-    return cmd_click(args)
+    if not args.no_atlas:
+        recorded = atlas_lookup(state["app"], target, args.text)
+        if recorded:
+            print(f"cockpit: atlas {recorded['text']!r} at ({recorded['x']}, {recorded['y']}) "
+                  f"in {target.get('title', '')!r} (recorded {recorded['updated']})")
+            return click_in(state, target, recorded["x"], recorded["y"], args.button,
+                            args.double, args.settle)
+    report_want(png, target, args.text, state["app"])
+    return 1
 
 
 def cmd_click(args: argparse.Namespace) -> int:
     state = load_state(args.app)
-    screen = to_screen(state, args.x, args.y)
-    hypr("dispatch", f'hl.dsp.focus({{window="address:{state["address"]}"}})')
-    move_cursor(*screen)
-    time.sleep(args.settle)
+    target = resolve_target(state, getattr(args, "window", None))
+    return click_in(state, target, args.x, args.y, args.button, args.double, args.settle,
+                    focus=not args.no_focus)
+
+
+def click_in(state: dict, target: dict, x: float, y: float, button: str = "left",
+             double: bool = False, settle: float = 0.08, focus: bool = True) -> int:
+    """Press at a point in window pixels, in the target window.
+
+    The last few pixels are walked with real pointer motion rather than warped.
+    A warp sends the client no pointer event, and a wx control that only appears
+    on hover (Orca's preset edit pencil) is then not there yet when the press
+    arrives, so the press lands on the panel behind it and the click looks dead.
+    """
+    if focus:
+        hypr("dispatch", f'hl.dsp.focus({{window="address:{target["address"]}"}})')
+    screen_x, screen_y = to_global(target, x, y)
+    move_cursor(screen_x - 40, screen_y - 6)
     device = Input()
     try:
-        for _ in range(2 if args.double else 1):
-            device.button(args.button, True)
+        for _ in range(8):
+            device.relative(5, 1)
+            time.sleep(0.012)
+        time.sleep(settle)
+        for _ in range(2 if double else 1):
+            device.button(button, True)
             time.sleep(0.02)
-            device.button(args.button, False)
+            device.button(button, False)
             time.sleep(0.06)
     finally:
         device.close()
+    remember_target(state, target)
     return 0
 
 
 def cmd_drag(args: argparse.Namespace) -> int:
     state = load_state(args.app)
-    start = to_screen(state, args.x1, args.y1)
-    end = to_screen(state, args.x2, args.y2)
-    hypr("dispatch", f'hl.dsp.focus({{window="address:{state["address"]}"}})')
+    target = resolve_target(state, getattr(args, "window", None))
+    start = to_global(target, args.x1, args.y1)
+    end = to_global(target, args.x2, args.y2)
+    hypr("dispatch", f'hl.dsp.focus({{window="address:{target["address"]}"}})')
     move_cursor(*start)
     time.sleep(args.settle)
     pointer = Input()
@@ -837,8 +1387,10 @@ def cmd_drag(args: argparse.Namespace) -> int:
 
 def cmd_scroll(args: argparse.Namespace) -> int:
     state = load_state(args.app)
+    target = resolve_target(state, getattr(args, "window", None))
     if args.x is not None and args.y is not None:
-        move_cursor(*to_screen(state, args.x, args.y))
+        hypr("dispatch", f'hl.dsp.focus({{window="address:{target["address"]}"}})')
+        move_cursor(*to_global(target, args.x, args.y))
         time.sleep(0.05)
     device = Input()
     try:
@@ -848,16 +1400,21 @@ def cmd_scroll(args: argparse.Namespace) -> int:
     return 0
 
 
-def focus_session(state: dict) -> None:
-    """Make the session's workspace active, then focus the app's own window."""
-    focus_workspace(state["ws"])
-    time.sleep(0.15)
-    hypr("dispatch", f'hl.dsp.focus({{window="address:{state["address"]}"}})')
+def focus_session(state: dict, target: dict | None = None, focus: bool = True) -> dict:
+    """Make the session's workspace active, then focus the target window."""
+    if target is None:
+        target = resolve_target(state, None)
+    if focus:
+        focus_workspace(state["ws"])
+        time.sleep(0.15)
+        hypr("dispatch", f'hl.dsp.focus({{window="address:{target["address"]}"}})')
+    return target
 
 
 def cmd_key(args: argparse.Namespace) -> int:
     state = load_state(args.app)
-    focus_session(state)
+    focus_session(state, resolve_target(state, getattr(args, "window", None)),
+                  focus=not getattr(args, "no_focus", False))
     time.sleep(0.05)
     names = key_names()
     alias = {"escape": "esc", "return": "enter", "del": "delete", "pgup": "pageup"}
@@ -878,7 +1435,8 @@ def cmd_key(args: argparse.Namespace) -> int:
 
 def cmd_type(args: argparse.Namespace) -> int:
     state = load_state(args.app)
-    focus_session(state)
+    focus_session(state, resolve_target(state, getattr(args, "window", None)),
+                  focus=not getattr(args, "no_focus", False))
     time.sleep(0.05)
     device = Input("cockpit-keyboard", kind="keyboard")
     try:
@@ -904,6 +1462,227 @@ def cmd_keys(_: argparse.Namespace) -> int:
     return 0
 
 
+# ------------------------------------------------------------------- atlas ---
+# A per-app record of what was once on screen: window title -> page -> label ->
+# window-relative box. Small wx labels OCR badly ("Slice plate" arrives as
+# "sicepate") but they do not move, so one discovery run per window and page
+# makes them clickable for good. It is a cache with provenance, never a
+# substitute for a capture: a hit prints the date it was recorded.
+
+
+def atlas_path(app: str) -> str:
+    return os.path.join(ATLAS_DIR, f"{app}.json")
+
+
+def load_atlas(app: str) -> dict:
+    path = atlas_path(app)
+    if not os.path.exists(path):
+        return {"app": app, "windows": {}}
+    with open(path, encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def save_atlas(app: str, atlas: dict) -> None:
+    os.makedirs(ATLAS_DIR, exist_ok=True)
+    atlas["app"] = app
+    atlas["updated"] = time.strftime("%Y-%m-%d")
+    with open(atlas_path(app), "w", encoding="utf-8") as handle:
+        json.dump(atlas, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+
+
+def atlas_labels(atlas: dict, title: str, page: str) -> dict:
+    window = atlas["windows"].setdefault(title, {"size": [0, 0], "pages": {}})
+    return window["pages"].setdefault(page, {})
+
+
+def atlas_scores(app: str, text: str) -> list[dict]:
+    atlas = load_atlas(app)
+    wanted = "".join(text.lower().split())
+    found: list[dict] = []
+    for title, window in atlas["windows"].items():
+        for page, labels in window["pages"].items():
+            for label, box in labels.items():
+                ratio = difflib.SequenceMatcher(
+                    None, wanted, "".join(label.lower().split())).ratio()
+                if ratio < 0.7:
+                    continue
+                found.append({"text": label, "window": title, "page": page,
+                              "x": box[0] + box[2] // 2, "y": box[1] + box[3] // 2,
+                              "box": box, "ratio": round(ratio, 3),
+                              "updated": atlas.get("updated", "earlier")})
+    found.sort(key=lambda entry: entry["ratio"], reverse=True)
+    return found
+
+
+def atlas_search(app: str, text: str, window_title: str = "") -> dict | None:
+    """Best atlas label for a query, preferring the window the caller is in."""
+    for entry in atlas_scores(app, text):
+        if window_title and entry["window"] == window_title:
+            return entry
+    scored = atlas_scores(app, text)
+    return scored[0] if scored else None
+
+
+def atlas_lookup(app: str, target: dict, text: str) -> dict | None:
+    return atlas_search(app, text, window_title=target.get("title", ""))
+
+
+def cmd_atlas(args: argparse.Namespace) -> int:
+    state = load_state(args.app)
+    atlas = load_atlas(state["app"])
+    if args.action == "record":
+        target = resolve_target(state, getattr(args, "window", None))
+        png, target = capture(args, target)
+        title = args.title or target.get("title", "").strip() or target["address"]
+        page = args.page or "main"
+        page_labels = atlas_labels(atlas, title, page)
+        previous = len(page_labels)
+        labels: dict = {}
+        words = ocr_words(png)
+        for word in words:
+            labels[word["text"]] = [word["x"], word["y"], word["w"], word["h"]]
+        # A label is usually several words ("Basic information", "Emit limits to
+        # G-code"), and a query is written the way it reads, so runs of up to
+        # three words are stored beside the single words. A whole line is never
+        # stored as one label: on a tab strip that box spans every tab, and its
+        # centre is the wrong tab.
+        for line in group_lines(words):
+            for start in range(len(line)):
+                for length in range(2, 4):
+                    run = line[start:start + length]
+                    if len(run) < length:
+                        break
+                    text = " ".join(word["text"] for word in run)
+                    left = min(word["x"] for word in run)
+                    top = min(word["y"] for word in run)
+                    right = max(word["x"] + word["w"] for word in run)
+                    bottom = max(word["y"] + word["h"] for word in run)
+                    labels.setdefault(text, [left, top, right - left, bottom - top])
+        atlas["windows"][title]["pages"][page] = labels
+        atlas["windows"][title]["size"] = list(target["size"])
+        save_atlas(state["app"], atlas)
+        print(f"cockpit: atlas {state['app']!r} window {title!r} page {page!r}: "
+              f"{len(labels)} label(s) from {len(words)} word(s), replacing {previous} "
+              f"-> {atlas_path(state['app'])}")
+        return 0
+    if args.action == "show":
+        if not atlas["windows"]:
+            print(f"cockpit: no atlas for {state['app']!r} yet "
+                  f"(`cockpit atlas record` in the window it should learn)")
+            return 0
+        for title, window in sorted(atlas["windows"].items()):
+            if args.title and args.title.lower() not in title.lower():
+                continue
+            print(f"{title!r} {window['size'][0]}x{window['size'][1]}")
+            for page, labels in sorted(window["pages"].items()):
+                if args.page and page != args.page:
+                    continue
+                print(f"  page {page!r}: {len(labels)} label(s)")
+                if args.labels:
+                    for label, box in sorted(labels.items()):
+                        print(f"    {box[0]:4d} {box[1]:4d} {box[2]:3d} {box[3]:3d} {label}")
+        print(f"recorded {atlas.get('updated', 'earlier')} in {atlas_path(state['app'])}")
+        return 0
+    if not args.text:
+        raise SystemExit("cockpit: `atlas find` wants a label to look for")
+    hits = [entry for entry in atlas_scores(state["app"], args.text)
+            if not args.title or args.title.lower() in entry["window"].lower()]
+    if not hits:
+        print(f"cockpit: the atlas has nothing like {args.text!r} -- "
+              f"`cockpit atlas record` after finding it by eye", file=sys.stderr)
+        return 1
+    for entry in hits[:10]:
+        print(f"{entry['ratio']:.2f} {entry['window']!r} page {entry['page']!r} "
+              f"{entry['text']!r} at ({entry['x']}, {entry['y']})")
+    return 0
+
+
+# --------------------------------------------------------------- questions ---
+
+
+def cmd_describe(args: argparse.Namespace) -> int:
+    """Everything the tool can see: windows, target, and every readable label."""
+    state = load_state(args.app)
+    main = main_window(state)
+    target = resolve_target(state, getattr(args, "window", None))
+    print(f"cockpit: {state['app']!r} on workspace {state['ws']}")
+    print(f"main window: {window_label(main)}")
+    for index, client in enumerate(app_windows(state["app"])):
+        marker = " <- target" if client["address"] == target["address"] else ""
+        print(f"  [{index}] {window_label(client)} workspace "
+              f"{client['workspace']['id']}{marker}")
+    png, target = capture(args, target)
+    words = sorted(ocr_words(png), key=lambda item: (item["y"], item["x"]))
+    print(frame_header(target))
+    print(f"{len(words)} readable label(s):")
+    for word in words:
+        print(f"  {word['x']:4d} {word['y']:4d} {word['w']:3d} {word['h']:3d} "
+              f"{word['conf']:5.0f} {word['text']}")
+    if not words:
+        print("nothing readable -- the window may be blank, covered, or still drawing")
+    return 0
+
+
+def cmd_want(args: argparse.Namespace) -> int:
+    """Answer "is this on screen, and if not, what would make it appear"."""
+    state = load_state(args.app)
+    target = resolve_target(state, getattr(args, "window", None))
+    png, target = capture(args, target)
+    matches = best_matches(png, args.text)
+    if matches:
+        x, y = match_point(matches[0])
+        print(f"cockpit: {matches[0]['text']!r} is visible at ({x}, {y}) in "
+              f"{target.get('title', '')!r}")
+        return 0
+    report_want(png, target, args.text, state["app"])
+    return 1
+
+
+def wait_for_text(args: argparse.Namespace) -> bool:
+    deadline = time.monotonic() + args.timeout
+    while True:
+        png, target = capture(args)
+        matches = best_matches(png, args.text)
+        if matches:
+            x, y = match_point(matches[0])
+            print(f"cockpit: found {matches[0]['text']!r} at ({x}, {y}) in "
+                  f"{target.get('title', '')!r}")
+            return True
+        if time.monotonic() >= deadline:
+            report_want(png, target, args.text, load_state(args.app)["app"])
+            return False
+        time.sleep(args.interval)
+
+
+def wait_for_window(args: argparse.Namespace) -> bool:
+    deadline = time.monotonic() + args.timeout
+    pattern = args.pattern.lower()
+    while True:
+        state = load_state(args.app)
+        candidates = app_windows(state["app"])
+        for client in candidates:
+            title = str(client.get("title", "")).lower()
+            if fnmatch.fnmatch(title, pattern) or pattern in title:
+                print(f"cockpit: window {window_label(client)} matches {args.pattern!r}")
+                remember_target(state, client)
+                return True
+        if time.monotonic() >= deadline:
+            titles = ", ".join(repr(client.get("title", "")) for client in candidates)
+            print(f"cockpit: want window {args.pattern!r} -- open windows are: "
+                  f"{titles or 'none'}", file=sys.stderr)
+            return False
+        time.sleep(args.interval)
+
+
+def cmd_assert_text(args: argparse.Namespace) -> int:
+    return 0 if wait_for_text(args) else 1
+
+
+def cmd_assert_window(args: argparse.Namespace) -> int:
+    return 0 if wait_for_window(args) else 1
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     if args.app is None:
         raise SystemExit("cockpit: `run` needs --app when more than one session is running")
@@ -916,15 +1695,25 @@ def cmd_run(args: argparse.Namespace) -> int:
             continue
         print(f"cockpit run {number}: {line}")
         words = shlex.split(line)
+        # `try` is for the steps that clean up an environment's own mess -- a
+        # startup dialog this app raises about a file it cannot find, say. The
+        # step still prints, so it is never hidden; only its failure is forgiven,
+        # because a drive that aborts on an absent dialog is a drive that fails
+        # the gate for a reason that has nothing to do with the app under test.
+        forgive = words[0] == "try"
+        if forgive:
+            words = words[1:]
         if words[0] == "sleep":
             time.sleep(float(words[1]))
             continue
-        if words[0] == "shot":
-            subprocess.run(["shot", "onws", str(load_state(args.app)["ws"]),
-                            os.path.abspath(words[1]), *words[2:]], check=True)
-            continue
-        if main(["--app", args.app, *words], nested=True) != 0:
-            print(f"cockpit: script stopped at line {number}")
+        try:
+            status = main(["--app", args.app, *words], nested=True)
+        except SystemExit as exit_request:
+            status = exit_request.code if isinstance(exit_request.code, int) else 1
+        if status != 0:
+            if forgive:
+                continue
+            print(f"cockpit: script stopped at line {number}: {line}")
             return 1
     return 0
 
@@ -935,6 +1724,8 @@ def cmd_run(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="cockpit", description=__doc__.splitlines()[0])
     parser.add_argument("--app", help="session name (defaults to the only running one)")
+    parser.add_argument("--window", default=None,
+                        help="target window: address prefix, title glob or index")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     start = subparsers.add_parser("start", help="launch the app alone on an unused workspace")
@@ -945,6 +1736,8 @@ def build_parser() -> argparse.ArgumentParser:
                        help="extra argument passed before the model (repeatable)")
     start.add_argument("--workspace", type=int, help="use this workspace instead of a free one")
     start.add_argument("--wait", type=float, default=25.0, help="seconds to wait for a window")
+    start.add_argument("--window-title", default=None,
+                       help="wait for a window whose title matches this glob")
     start.add_argument("--no-fullscreen", action="store_true")
     start.add_argument("--no-activate-click", action="store_true",
                        help="do not click once to activate the window (keys will not arrive)")
@@ -961,14 +1754,25 @@ def build_parser() -> argparse.ArgumentParser:
                      help="how many trailing lines to print (0 for all)")
     log.set_defaults(func=cmd_log)
 
-    windows = subparsers.add_parser("windows", help="list windows on the session workspace")
+    windows = subparsers.add_parser("windows", help="list the app's windows and the target")
+    windows.add_argument("--all", action="store_true",
+                         help="every window of the app, on any workspace")
+    windows.add_argument("--json", action="store_true")
     windows.set_defaults(func=cmd_windows)
+
+    window = subparsers.add_parser("window", help="set, show or clear the target window")
+    window.add_argument("spec", nargs="?",
+                        help="address prefix, title glob or index from `cockpit windows`")
+    window.add_argument("--clear", action="store_true", help="go back to the main window")
+    window.set_defaults(func=cmd_window)
 
     focus = subparsers.add_parser("focus", help="focus the app's window and workspace")
     focus.set_defaults(func=cmd_focus)
 
-    shot = subparsers.add_parser("shot", help="capture the workspace to a PNG")
+    shot = subparsers.add_parser("shot", help="capture the target window to a PNG")
     shot.add_argument("out")
+    shot.add_argument("--workspace-frame", action="store_true",
+                      help="capture the whole workspace instead of cropping to the window")
     shot.add_argument("grim", nargs="*", help="extra arguments for grim")
     shot.set_defaults(func=cmd_shot)
 
@@ -985,6 +1789,8 @@ def build_parser() -> argparse.ArgumentParser:
     click.add_argument("--button", default="left", choices=sorted(BUTTONS))
     click.add_argument("--double", action="store_true")
     click.add_argument("--settle", type=float, default=0.08)
+    click.add_argument("--no-focus", action="store_true",
+                       help="do not focus the window first (keeps an open menu alive)")
     click.set_defaults(func=cmd_click)
 
     drag = subparsers.add_parser("drag", help="press, move, release between two points")
@@ -1012,34 +1818,122 @@ def build_parser() -> argparse.ArgumentParser:
     key.add_argument("--modifier", action="append", default=[], choices=sorted(MODIFIERS))
     key.add_argument("--times", type=int, default=1)
     key.add_argument("--interval", type=float, default=0.05)
+    key.add_argument("--no-focus", action="store_true",
+                     help="do not focus the window first (a menu already has the keys)")
     key.set_defaults(func=cmd_key)
 
     keys = subparsers.add_parser("keys", help="list known key names")
     keys.set_defaults(func=cmd_keys)
 
     ocr = subparsers.add_parser("ocr", help="list every word on screen with its position")
+    ocr.add_argument("--json", action="store_true", help="boxes as JSON, with the frame")
     ocr.set_defaults(func=cmd_ocr)
+
+    tip = subparsers.add_parser("tip", help="hover a control and read its tooltip")
+    tip.add_argument("x", type=float)
+    tip.add_argument("y", type=float)
+    tip.add_argument("--wait", type=float, default=3.0,
+                     help="seconds to keep hovering before giving up")
+    tip.add_argument("--above", action="store_true",
+                     help="the tooltip opens above the pointer")
+    tip.add_argument("--tries", type=int, default=3,
+                     help="how many times to hover before giving up")
+    tip.add_argument("--json", action="store_true")
+    tip.set_defaults(func=cmd_tip)
+
+    tips = subparsers.add_parser("tips", help="sweep a row of controls, one tooltip each")
+    tips.add_argument("--row", type=float, required=True)
+    tips.add_argument("--from", dest="start", type=float, required=True)
+    tips.add_argument("--to", dest="end", type=float, required=True)
+    tips.add_argument("--step", type=float, default=32.0)
+    tips.add_argument("--wait", type=float, default=1.6)
+    tips.add_argument("--above", action="store_true")
+    tips.add_argument("--tries", type=int, default=2)
+    tips.set_defaults(func=cmd_tips)
+
+    assert_tip = subparsers.add_parser("assert-tip",
+                                       help="fail unless a control's tooltip says this")
+    assert_tip.add_argument("x", type=float)
+    assert_tip.add_argument("y", type=float)
+    assert_tip.add_argument("text")
+    assert_tip.add_argument("--wait", type=float, default=3.0)
+    assert_tip.add_argument("--above", action="store_true")
+    assert_tip.add_argument("--tries", type=int, default=3)
+    assert_tip.set_defaults(func=cmd_assert_tip)
 
     find_text = subparsers.add_parser("find-text", help="locate text on screen")
     find_text.add_argument("text")
+    find_text.add_argument("--near", help="order matches by distance from X,Y")
+    find_text.add_argument("--json", action="store_true")
     find_text.set_defaults(func=cmd_find_text)
 
     click_text = subparsers.add_parser("click-text", help="click a label found on screen")
     click_text.add_argument("text")
     click_text.add_argument("--index", type=int, default=0)
+    click_text.add_argument("--near", help="order matches by distance from X,Y")
+    click_text.add_argument("--no-atlas", action="store_true",
+                            help="do not fall back to a recorded atlas label")
     click_text.add_argument("--button", default="left", choices=sorted(BUTTONS))
     click_text.add_argument("--double", action="store_true")
     click_text.add_argument("--settle", type=float, default=0.08)
     click_text.set_defaults(func=cmd_click_text)
 
+    describe = subparsers.add_parser("describe", help="windows, target and every readable label")
+    describe.set_defaults(func=cmd_describe)
+
+    want = subparsers.add_parser("want", help="is this label on screen, and what would show it")
+    want.add_argument("text")
+    want.set_defaults(func=cmd_want)
+
+    atlas = subparsers.add_parser("atlas", help="the per-app record of controls and where they sit")
+    atlas.add_argument("action", choices=["record", "show", "find"])
+    atlas.add_argument("text", nargs="?", help="label to look for (`find`)")
+    atlas.add_argument("--title", help="store/look up under this window title")
+    atlas.add_argument("--page", help="store/look up under this page or tab")
+    atlas.add_argument("--labels", action="store_true", help="`show` prints every label")
+    atlas.set_defaults(func=cmd_atlas)
+
+    assert_text = subparsers.add_parser("assert-text", help="fail unless a label is on screen")
+    assert_text.add_argument("text")
+    assert_text.add_argument("--timeout", type=float, default=0.0)
+    assert_text.add_argument("--interval", type=float, default=0.5)
+    assert_text.set_defaults(func=cmd_assert_text)
+
+    wait_text = subparsers.add_parser("wait-text", help="wait for a label to appear")
+    wait_text.add_argument("text")
+    wait_text.add_argument("--timeout", type=float, default=10.0)
+    wait_text.add_argument("--interval", type=float, default=0.5)
+    wait_text.set_defaults(func=cmd_assert_text)
+
+    assert_window = subparsers.add_parser("assert-window", help="fail unless a window exists")
+    assert_window.add_argument("pattern")
+    assert_window.add_argument("--timeout", type=float, default=0.0)
+    assert_window.add_argument("--interval", type=float, default=0.5)
+    assert_window.set_defaults(func=cmd_assert_window)
+
+    wait_window = subparsers.add_parser("wait-window", help="wait for a window to appear")
+    wait_window.add_argument("pattern")
+    wait_window.add_argument("--timeout", type=float, default=10.0)
+    wait_window.add_argument("--interval", type=float, default=0.5)
+    wait_window.set_defaults(func=cmd_assert_window)
+
     type_command = subparsers.add_parser("type", help="type text (US layout)")
     type_command.add_argument("text")
     type_command.add_argument("--interval", type=float, default=0.01)
+    type_command.add_argument("--no-focus", action="store_true")
     type_command.set_defaults(func=cmd_type)
 
     run = subparsers.add_parser("run", help="run a file of cockpit commands")
     run.add_argument("script")
     run.set_defaults(func=cmd_run)
+
+    # `--window` is accepted after the subcommand as well as before it, and the
+    # subcommand's copy is suppressed so it never overwrites the global one.
+    for subparser in subparsers.choices.values():
+        subparser.add_argument("--window", default=argparse.SUPPRESS,
+                               help="target window: address prefix, title glob or index")
+        subparser.add_argument("--app", default=argparse.SUPPRESS,
+                               help="session name (defaults to the only running one)")
 
     return parser
 

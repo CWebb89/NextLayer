@@ -1466,8 +1466,12 @@ if test $ui -eq 1
     # A session file can outlive its window -- an earlier run killed, or a person's
     # own cockpit session left behind -- and `start` then reports "already running"
     # on a window that is gone, which reads as this gate failing for no reason.
-    $cockpit stop >/dev/null 2>&1
-    set -l start_out ($cockpit start next-layer --model $model 2>&1)
+    # One session per app, named explicitly: with two sessions alive `cockpit`
+    # refuses to guess which one a bare command meant, and the gate would read
+    # that refusal as a missing control.
+    set -l app --app next-layer
+    $cockpit $app stop >/dev/null 2>&1
+    set -l start_out ($cockpit $app start next-layer --model $model 2>&1)
     if test $status -ne 0
         __bad "cockpit start: $start_out"
     else
@@ -1475,25 +1479,83 @@ if test $ui -eq 1
         # correct behaviour: with no printer there is nothing to slice onto. The
         # gate is about a window that renders and a plate toolbar on it, so it
         # dismisses the flow the same way a user would.
-        if $cockpit find-text 'Not now' >/dev/null 2>&1
-            $cockpit click-text 'Not now' >/dev/null 2>&1
+        if $cockpit $app find-text 'Not now' >/dev/null 2>&1
+            $cockpit $app click-text 'Not now' >/dev/null 2>&1
             sleep 1
         end
-        $cockpit shot $ui_shot >/dev/null 2>&1
-        set -l label_out ($cockpit find-text 'Save preset' 2>&1)
+        $cockpit $app shot $ui_shot >/dev/null 2>&1
+        # The app draws its header before the plate toolbar is ready, so the gate
+        # waits for the control rather than catching a half-drawn frame; on a
+        # timeout `wait-text` says what the window does show instead.
+        set -l label_out ($cockpit $app wait-text 'Save preset' --timeout 30 2>&1)
         set -l label_rc $status
         set -l size 0
         if test -f $ui_shot
             set size (stat -c %s $ui_shot)
         end
         if test $label_rc -ne 0
-            __bad "window: no 'Save preset' control on screen ($ui_shot)"
+            __bad "window: no 'Save preset' control on screen ($ui_shot): "(string join ' | ' -- (string match -r 'cockpit: .*' -- $label_out | head -2))
         else if test $size -lt 20000
             __bad "window: capture is blank ($size bytes, $ui_shot)"
         else
             __ok "window: header control found, frame captured ($ui_shot)"
         end
-        $cockpit stop >/dev/null 2>&1
+        $cockpit $app stop >/dev/null 2>&1
+    end
+
+    # The reference slicer, driven for real: both preset editors, every tab, each
+    # page's own label asserted through the cockpit. This is the gate for the
+    # cockpit itself, not for next-layer -- it proves the tool can open another
+    # app's windows, find their controls and verify a step landed.
+    if not command -v orca-slicer >/dev/null
+        __skip 'orca: no orca-slicer on this machine, so the reference drive cannot run'
+    else
+        $cockpit stop --app orca >/dev/null 2>&1
+        set -l orca_start ($cockpit --app orca start orca --command orca-slicer --model $model --wait 60 --window-title '*OrcaSlicer*' 2>&1)
+        if test $status -ne 0
+            __bad "orca: cockpit start: $orca_start"
+        else
+            set -l drive ($cockpit --app orca run $root/tools/cockpit/scripts/orca-settings.drive 2>&1)
+            set -l drive_rc $status
+            set -l asserted (string match -r 'cockpit: found ' -- $drive | count)
+            set -l windows (string match -r 'matches ' -- $drive | count)
+            set -l wanted_gone (string match -r 'cockpit: want ' -- $drive | count)
+            if test $drive_rc -ne 0
+                __bad "orca: the settings drive stopped early (rc $drive_rc): "(string join ' | ' -- (string match -r 'cockpit run [0-9]+:' -- $drive | tail -1))(string join ' | ' -- (string match -r 'cockpit: want .*' -- $drive | head -1))
+            # 11 page labels plus the readiness wait for the sidebar.
+            else if test $asserted -ne 12 -o $wanted_gone -ne 0
+                __bad "orca: $asserted of 12 labels confirmed, $wanted_gone missing"
+            else if test $windows -lt 4
+                __bad "orca: only $windows window steps confirmed, expected 4"
+            else
+                __ok "orca: $asserted page labels asserted across both preset editors, $windows window steps confirmed"
+            end
+            # The sidebar's process pages, then the viewport's toolbar. Both
+            # assume the left panel at its default width and a fresh app, and the
+            # process drive puts the width back before it returns.
+            set -l process ($cockpit --app orca run $root/tools/cockpit/scripts/orca-process.drive 2>&1)
+            set -l process_rc $status
+            set -l pages (string match -r 'cockpit: found ' -- $process | count)
+            if test $process_rc -ne 0
+                __bad "orca: the process tabs drive stopped early (rc $process_rc): "(string join ' | ' -- (string match -r 'cockpit run [0-9]+:' -- $process | tail -1))(string join ' | ' -- (string match -r 'cockpit: want .*' -- $process | head -1))
+            # six page labels plus the readiness wait and the widened-panel check.
+            else if test $pages -ne 8
+                __bad "orca: $pages of 8 process page labels asserted"
+            else
+                __ok "orca: 6 process pages asserted, each by a label only that page shows"
+            end
+            set -l viewport ($cockpit --app orca run $root/tools/cockpit/scripts/orca-viewport.drive 2>&1)
+            set -l viewport_rc $status
+            set -l tips (string match -r 'cockpit: tip ' -- $viewport | count)
+            if test $viewport_rc -ne 0
+                __bad "orca: the viewport toolbar drive stopped early (rc $viewport_rc): "(string join ' | ' -- (string match -r 'cockpit run [0-9]+:' -- $viewport | tail -1))(string join ' | ' -- (string match -r 'cockpit: want .*' -- $viewport | head -1))
+            else if test $tips -lt 16
+                __bad "orca: $tips of 16 toolbar tooltips read from their buttons"
+            else
+                __ok "orca: $tips viewport toolbar buttons identified by their tooltips"
+            end
+            $cockpit stop --app orca >/dev/null 2>&1
+        end
     end
 end
 

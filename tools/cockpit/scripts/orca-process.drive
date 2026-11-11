@@ -1,0 +1,41 @@
+# Every process settings page, asserted by a label only that page shows.
+#
+# The six pages live in the left panel's tab strip, and the panel is only wide
+# enough for five of them, so the panel is widened first and the widen is proven
+# by finding "Others" rather than assumed. The tabs are clicked by coordinate:
+# a tab that is not selected is painted grey on dark and no OCR pass reads it,
+# which is why the page is asserted instead of the tab. Each page is waited for
+# rather than sampled once -- a page that is still building reads as missing.
+#
+# The first lines clear whatever Orca raised about its own recent projects and
+# make sure the Prepare view is the one on screen: a modal stops every tab click
+# behind it, and a cold start lands on the home screen, which has no settings
+# panel at all. Both are forgiven so the drive still runs on a clean profile.
+try key enter --window Error
+window '*OrcaSlicer*'
+try click-text Prepare
+sleep 3
+wait-text "Process" --timeout 40
+drag 392 600 660 600 --steps 12
+assert-text "Others"
+sleep 0.5
+click 43 380
+wait-text "Layer height" --timeout 10
+sleep 0.4
+click 126 380
+wait-text "Wall loops" --timeout 10
+sleep 0.4
+click 210 380
+wait-text "First layer speed" --timeout 10
+sleep 0.4
+click 289 380
+wait-text "Enable support" --timeout 10
+sleep 0.4
+click 392 380
+wait-text "Prime tower" --timeout 10
+sleep 0.4
+click 492 380
+wait-text "Skirt" --timeout 10
+sleep 0.4
+click 43 380
+drag 660 600 392 600 --steps 12

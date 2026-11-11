@@ -1,0 +1,30 @@
+# The 3D viewport's toolbar, every button read from its own tooltip.
+#
+# Coordinates are the unselected layout, and assume the left panel at its default
+# width: widening the panel moves the whole toolbar right. With an object
+# selected Orca re-lays the toolbar out as well, so nothing is clicked here --
+# a tooltip is the only label an icon-only button has, and hovering is the only
+# way to read it.
+#
+# Five buttons are not asserted. Move, Rotate, Scale and Lay on Face show no
+# tooltip at all while disabled (hovering them yields icon noise), and enabling
+# them needs a selection, which moves every button in the row. Cut flips between
+# a name and a hint depending on the selection, and neither form reads reliably.
+wait-text "Process" --timeout 40
+assert-tip 673 92 "Add"
+assert-tip 717 92 "Add plate"
+assert-tip 761 92 "Auto orient"
+assert-tip 805 92 "Arrange"
+assert-tip 849 92 "Add instance"
+assert-tip 893 92 "Remove instance"
+assert-tip 937 92 "Split to objects"
+assert-tip 981 92 "Split to parts"
+assert-tip 1025 92 "Variable layer height"
+
+assert-tip 1325 92 "Mesh Boolean"
+assert-tip 1375 92 "Support Painting"
+assert-tip 1415 92 "Seam painting"
+assert-tip 1455 92 "fuzzy skin"
+assert-tip 1495 92 "Emboss"
+assert-tip 1590 92 "at least two volumes"
+assert-tip 1690 92 "Assembly View"
