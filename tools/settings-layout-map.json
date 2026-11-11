@@ -169,7 +169,7 @@
     "printer": [
       {
         "key": "machine",
-        "title": "Machine",
+        "title": "Basic information",
         "sections": [
           "Firmware & G-code",
           "Capabilities",
@@ -178,8 +178,23 @@
         ]
       },
       {
+        "key": "gcode",
+        "title": "Machine G-code",
+        "sections": [
+          "Custom G-code"
+        ]
+      },
+      {
+        "key": "extruders",
+        "title": "Extruder",
+        "sections": [
+          "Extruder offsets",
+          "Single extruder MM"
+        ]
+      },
+      {
         "key": "motion",
-        "title": "Motion",
+        "title": "Motion ability",
         "sections": [
           "Limits",
           "Accelerations",
@@ -188,25 +203,10 @@
         ]
       },
       {
-        "key": "extruders",
-        "title": "Extruders",
-        "sections": [
-          "Extruder offsets",
-          "Single extruder MM"
-        ]
-      },
-      {
         "key": "bed",
         "title": "Bed & probe",
         "sections": [
           "Build plate"
-        ]
-      },
-      {
-        "key": "gcode",
-        "title": "Custom G-code",
-        "sections": [
-          "Custom G-code"
         ]
       },
       {

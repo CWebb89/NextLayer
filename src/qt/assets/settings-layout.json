@@ -671,7 +671,7 @@
     "printer": [
       {
         "key": "machine",
-        "title": "Machine",
+        "title": "Basic information",
         "sections": [
           {
             "title": "Firmware & G-code",
@@ -713,8 +713,54 @@
         ]
       },
       {
+        "key": "gcode",
+        "title": "Machine G-code",
+        "sections": [
+          {
+            "title": "Custom G-code",
+            "settings": [
+              "start_gcode",
+              "autoemit_temperature_commands",
+              "end_gcode",
+              "before_layer_gcode",
+              "layer_gcode",
+              "toolchange_gcode",
+              "between_objects_gcode",
+              "color_change_gcode",
+              "pause_print_gcode",
+              "template_custom_gcode",
+              "custom_parameters_printer"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "extruders",
+        "title": "Extruder",
+        "sections": [
+          {
+            "title": "Extruder offsets",
+            "settings": [
+              "extruder_offset"
+            ]
+          },
+          {
+            "title": "Single extruder MM",
+            "settings": [
+              "cooling_tube_length",
+              "cooling_tube_retraction",
+              "enable_pressure_advance_during_ramming",
+              "extra_loading_move",
+              "high_current_on_filament_swap",
+              "multimaterial_purging",
+              "parking_pos_retraction"
+            ]
+          }
+        ]
+      },
+      {
         "key": "motion",
-        "title": "Motion",
+        "title": "Motion ability",
         "sections": [
           {
             "title": "Limits",
@@ -758,30 +804,6 @@
         ]
       },
       {
-        "key": "extruders",
-        "title": "Extruders",
-        "sections": [
-          {
-            "title": "Extruder offsets",
-            "settings": [
-              "extruder_offset"
-            ]
-          },
-          {
-            "title": "Single extruder MM",
-            "settings": [
-              "cooling_tube_length",
-              "cooling_tube_retraction",
-              "enable_pressure_advance_during_ramming",
-              "extra_loading_move",
-              "high_current_on_filament_swap",
-              "multimaterial_purging",
-              "parking_pos_retraction"
-            ]
-          }
-        ]
-      },
-      {
         "key": "bed",
         "title": "Bed & probe",
         "sections": [
@@ -791,28 +813,6 @@
               "bed_custom_model",
               "bed_custom_texture",
               "bed_shape"
-            ]
-          }
-        ]
-      },
-      {
-        "key": "gcode",
-        "title": "Custom G-code",
-        "sections": [
-          {
-            "title": "Custom G-code",
-            "settings": [
-              "start_gcode",
-              "autoemit_temperature_commands",
-              "end_gcode",
-              "before_layer_gcode",
-              "layer_gcode",
-              "toolchange_gcode",
-              "between_objects_gcode",
-              "color_change_gcode",
-              "pause_print_gcode",
-              "template_custom_gcode",
-              "custom_parameters_printer"
             ]
           }
         ]
