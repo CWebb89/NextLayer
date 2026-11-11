@@ -154,5 +154,6 @@ text boxes, and the drive asserts only that the dialog survived the switch.
 All three assume the left panel at its default width — widening it moves the whole
 viewport toolbar right — and the process drive restores it for the next one.
 
-`tools/check --ui` runs all three as gates; they skip with a named reason when
-`orca-slicer` is not installed.
+`tools/check --ui --with-orca` runs all three as gates; they skip with a named
+reason when `orca-slicer` is not installed, and they are opt-in because they open a
+second application — `tools/check --ui` alone drives next-layer only.

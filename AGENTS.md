@@ -43,6 +43,7 @@ One command answers it:
 ~/dev/next-layer/tools/check            # every gate, including the oracle
 ~/dev/next-layer/tools/check --fast     # skip the oracle
 ~/dev/next-layer/tools/check --ui       # + a real window, captured and read
+~/dev/next-layer/tools/check --ui --with-orca   # + the reference slicer drives
 ```
 
 It does not build — a binary older than its sources fails the first gate and

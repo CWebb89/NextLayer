@@ -17,6 +17,7 @@ Two rules before anything else:
 ```sh
 tools/check            # 31 gates, ~60 s once warm
 tools/check --ui       # + a real window, captured and read
+tools/check --ui --with-orca   # + OrcaSlicer driven beside it
 ```
 
 Read the *verdict lines*, not the exit code. Each gate prints a measured number:
