@@ -70,7 +70,14 @@ complete inventory, this is the part you need before you start a print.
   engine refuses the pair outright (`VariableLayerHeightAndOrganicSupports`), and so
   does the slicer this dialect comes from, so a Bambu/Orca project that carries both
   will not slice until one of them is dropped. This is engine behaviour, not a
-  reading of the file.
+  reading of the file. **Measured 2026-11-11, and there is a second half to it:** a
+  project written from a file that carried neither now comes back with a layer
+  height profile the source never had (`Metadata/Slic3r_PE_layer_heights_profile.txt`,
+  1-6 bands at 0.1/0.2 mm), so re-saving a Bambu project with organic supports
+  produces a file this app itself refuses to slice (`slicing did not finish
+  (status 7); error 13 support_material_style`). Reproduce with
+  `--export-project` on `oracle/fixtures/bambu_project.py`'s fixture and reopen the
+  written file. Not fixed; the writer is where the profile is invented.
 - **A project this app exports makes PrusaSlicer's command line crash on
   re-export.** `prusa-slicer FILE.3mf --export-3mf` segfaults (exit 139) when the
   file carries a timeline marker that is not a tool change: a pause, a colour
