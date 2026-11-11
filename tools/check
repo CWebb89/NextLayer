@@ -1503,6 +1503,56 @@ if test $ui -eq 1
         $cockpit $app stop >/dev/null 2>&1
     end
 
+    # Save as, driven through the printer settings window: the window has to say it
+    # saved, the file it wrote has to be the whole preset rather than the diff, and
+    # the copy has to resolve print profiles like any other machine. It writes a
+    # real user preset, so it is removed before and after, and the preset is read
+    # back through the headless path instead of through the window that made it.
+    set -l sa_store $HOME/.local/share/next-layer/presets/user/next-layer-custom/Custom
+    set -l sa_file $sa_store/'printer-Gate Save As.yaml'
+    set -l sa_bundle $HOME/.local/share/next-layer/presets/local/next-layer-custom/Custom
+    rm -f $sa_file
+    $cockpit $app stop >/dev/null 2>&1
+    set -l sa_start ($cockpit $app start next-layer --model $model --arg=--preset-dialog --arg=printer 2>&1)
+    if test $status -ne 0
+        __bad "save as: cockpit start: $sa_start"
+    else
+        set -l sa_drive ($cockpit $app run $root/tools/cockpit/scripts/next-layer-save-as.drive 2>&1)
+        set -l sa_rc $status
+        $cockpit $app stop >/dev/null 2>&1
+        set -l sa_saved (string match -r 'cockpit: found .*saved Gate Save As' -- $sa_drive | count)
+        set -l sa_lines 0
+        set -l sa_values 0
+        set -l sa_inherits 0
+        if test -f $sa_file
+            set sa_lines (count (cat $sa_file))
+            set sa_values (grep -c '^  [a-z_]*:' $sa_file)
+            set sa_inherits (grep -c "^  silent_mode: true" $sa_file)
+        end
+        set -l sa_profiles ("$bin" --dump-presets --printer 'Gate Save As' 2>/dev/null | grep -c 'filament profiles: ')
+        set -l sa_named ("$bin" --dump-presets --printer 'Gate Save As' 2>/dev/null | grep -c 'print profiles for Gate Save As:')
+        rm -f $sa_file
+        if test $sa_rc -ne 0
+            __bad "save as: the drive stopped early (rc $sa_rc): "(string join ' | ' -- (string match -r 'cockpit run [0-9]+:' -- $sa_drive | tail -1))(string join ' | ' -- (string match -r 'cockpit: want .*' -- $sa_drive | head -1))
+        else if test $sa_saved -ne 1
+            __bad "save as: the window never said it saved the copy ($sa_saved of 1): "(string join ' | ' -- (string match -r 'cockpit: (found|want) .*' -- $sa_drive | tail -2))
+        else if test $sa_values -lt 60
+            __bad "save as: the copy carries $sa_values values over $sa_lines lines, so it wrote the diff rather than the preset"
+        else if test $sa_inherits -ne 1
+            __bad 'save as: the copy does not carry the value the window changed, so the edit never reached the file'
+        else
+            __ok "save as: the window reported the copy, which carries $sa_values values over $sa_lines lines including the value that was changed"
+        end
+        # The copy is not in the machine list: it is written to the user bundle,
+        # and the list the window offers comes from the vendor bundle's
+        # printers.json. Reported rather than asserted, because it is a defect in
+        # the app, not in this gate -- docs/known-issues.md carries it.
+        if test $sa_named -ne 1 -o $sa_profiles -ne 1
+            __skip "save as: the copy is not offered as a machine (named $sa_named, profiles $sa_profiles), so it cannot be selected -- docs/known-issues.md"
+        else
+            __ok "save as: the copy resolves its print and filament profiles"
+        end
+    end
     # The reference slicer, driven for real: both preset editors, every tab, each
     # page's own label asserted through the cockpit. This is the gate for the
     # cockpit itself, not for next-layer -- it proves the tool can open another

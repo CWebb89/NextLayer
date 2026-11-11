@@ -113,6 +113,13 @@ complete inventory, this is the part you need before you start a print.
 
 ## Interface
 
+- **A machine saved with "Save as" is written but cannot be chosen.** The copy
+  lands in `presets/user/…/printer-<name>.yaml` with the whole value set, and the
+  window reports it saved, but the machine list the window offers is built from the
+  vendor bundle's `printers.json`, which a user preset never enters — so the copy
+  is not in the Machine dropdown and cannot be selected. Measured 2026-11-10:
+  `--dump-presets` lists no such machine and the dropdown does not show it. The
+  gate `tools/check --ui` reports it as a skip until this is fixed.
 - **Scaling is about the model's own corner, not its centre.** Scaling a 20 mm cube to
   1.5 makes it 30 mm, but it grows toward +X/+Y instead of staying where it was: the
   transform scales the object in place around its own bounding-box minimum. Move, rotate
