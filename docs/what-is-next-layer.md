@@ -53,7 +53,7 @@ Verified by measurement, not by memory:
 | Thing | How it is known |
 | --- | --- |
 | Slicing correctness | 12 of 12 oracle cases produce **byte-identical G-code** to the reference slicer's own output |
-| The app's own path | 41 gates in `tools/check`, each reading a number out of its tool, not just an exit code |
+| The app's own path | 50 gates in `tools/check` with `--ui` (45 with `--fast`), each reading a number out of its tool, not just an exit code |
 | A real print | The 3D Benchy, printed on the Voron and reported as good as Orca's |
 | Foreign projects | Your downloaded Bambu/Orca projects open with zero complaints; 109 settings translate |
 | Viewport, preview | Rendered and measured headlessly, and driven with real mouse and keyboard |
@@ -64,7 +64,7 @@ Honest list, in order of how much it matters:
 
 | Gap | What it means in practice |
 | --- | --- |
-| A project saved from an *opened* 3MF shifts its objects by half their footprint | Reopening a saved project moves the models. A bug, not a preference. |
+| A project saved from an *opened* 3MF comes back with a different toolpath | The same layer, move and filament totals, a different digest, and one more per-object override than the file carried. Reproducible; the older "objects shift by half their footprint" claim was a measurement error and is retracted in `docs/known-issues.md`. |
 | Exports mix two file dialects | Orca reads the Bambu-style half and ignores the PrusaSlicer half, so a per-object setting can be lost on the way back out. |
 | A colour-change marker crashes PrusaSlicer on re-export | Measured: PrusaSlicer 2.9.6 segfaults on the marker this app writes. Their bug, our trigger. |
 | Per-perimeter fan speeds, a height-based speed limit | Bambu files use these; this engine has no concept of them. |

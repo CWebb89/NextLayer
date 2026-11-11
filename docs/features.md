@@ -43,7 +43,10 @@ rather than after the print. Three surfaces, three spines:
 The table lives in `tools/settings-layout-map.json` (pages, section order, and the
 per-setting exceptions where one engine group holds two subjects), and
 `tools/settings_layout.py` joins it with `--dump-settings-json` to write
-`src/qt/assets/settings-layout.json`, which is what the app loads. The script
+`src/qt/assets/settings-layout.json`, which is what the app loads. That file is
+compiled into the binary, so regenerating it is not enough: an incremental rebuild
+has to follow, or the app keeps the old pages and the generator looks broken.
+The script
 fails if any setting the app shows has no page, so a new engine setting cannot
 silently disappear. Verify with `next-layer-qt --dump-tabs` and inspect one page
 with `next-layer-qt --dump-subtab process/surface`.

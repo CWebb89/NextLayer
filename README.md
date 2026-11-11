@@ -8,7 +8,7 @@ Source: <https://github.com/CWebb89/NextLayer>
 
 ![The application with a printer set up and a model on the plate](docs/screenshots/model.png)
 
-Alpha, `0.1.0`. It slices and prints, and it does not yet do everything the mature
+Alpha, `0.1.2`. It slices and prints, and it does not yet do everything the mature
 slicers do — `docs/features.md` is the ledger, with every tab, tool and setting
 marked done, staged or blocked on the engine. What has been proven on hardware is
 recorded in `docs/real-prints.md`, and `docs/release-audit.md` is the honest
@@ -21,7 +21,8 @@ version of every claim on this page, with the code behind each one.
   links, not from code rewritten here.
 - **Built for tool changers.** Per-tool filaments, per-tool colours, tool changes;
   no MMU and no single-nozzle colour mixing. Implemented, and not yet verified on
-  hardware: the only print recorded so far is on a single-extruder machine.
+  hardware: the only print recorded so far is on a single-extruder machine, so
+  finishing this needs a machine with more than one tool to test on.
 - **A Qt Quick 3D interface.** Its own viewport, its own G-code preview, its own
   settings panel. Not a skin over a wxWidgets app.
 - **Local.** No account, no telemetry, no cloud. Projects are one file on your
@@ -79,6 +80,10 @@ Two things worth knowing:
 - Compiling this saturates memory before it saturates cores. `-j4` is deliberate;
   on a 16 GB machine with no swap beyond zram, a higher job count has frozen the
   desktop.
+- The settings pages are data, but not runtime data: `tools/settings-layout-map.json`
+  → `tools/settings_layout.py` → `src/qt/assets/settings-layout.json`, which is
+  compiled into the binary. Regenerating it is not enough — rebuild, or the app
+  keeps the old page titles and looks like the generator failed.
 
 The printer catalog is generated, not committed:
 
@@ -92,13 +97,14 @@ the engine ships.
 
 ## Install
 
-`v0.1.0` publishes three things on its release page: a self-contained AppImage, a
-tarball the AUR package unpacks, and the update manifest. Neither install needs a
-compiler:
+The releases publish three things: a self-contained AppImage, a tarball the AUR
+package unpacks, and the update manifest. Neither install needs a compiler.
+`v0.1.0` is the newest tag in this repository; `0.1.1` and `0.1.2` are built and
+packaged under `dist/` and not yet tagged.
 
 ```sh
 # self-contained, nothing installed
-chmod +x NextLayer-0.1.0-x86_64.AppImage && ./NextLayer-0.1.0-x86_64.AppImage
+chmod +x NextLayer-0.1.2-x86_64.AppImage && ./NextLayer-0.1.2-x86_64.AppImage
 
 # Arch: builds nothing, unpacks the release tarball
 paru -S next-layer-bin
