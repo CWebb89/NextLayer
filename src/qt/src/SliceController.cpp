@@ -207,16 +207,20 @@ void SliceController::slice()
         m_document != nullptr ? m_document->sliceObjects()
                               : QVector<next_layer::PlateSliceObject>();
 
-    m_worker = std::thread([this, modelPath, outputPath, objects, plate] {
+    // Everything the worker reads out of the document is taken here, on the GUI
+    // thread, in one go. Reading it inside the thread was a race against an edit
+    // made while the slice ran -- the document's containers belong to this thread.
+    const QVector<next_layer::PlateLayerGcode> layerGcodes =
+        m_document != nullptr ? m_document->layerGcodeList()
+                              : QVector<next_layer::PlateLayerGcode>();
+    const QVector<next_layer::PlateInLayerPolyline> inLayer =
+        m_document != nullptr ? m_document->inLayerList()
+                              : QVector<next_layer::PlateInLayerPolyline>();
+
+    m_worker = std::thread([this, modelPath, outputPath, objects, plate, layerGcodes, inLayer] {
         const auto started = std::chrono::steady_clock::now();
 
         QString engineError;
-        const QVector<next_layer::PlateLayerGcode> layerGcodes =
-            m_document != nullptr ? m_document->layerGcodeList()
-                                  : QVector<next_layer::PlateLayerGcode>();
-        const QVector<next_layer::PlateInLayerPolyline> inLayer =
-            m_document != nullptr ? m_document->inLayerList()
-                                  : QVector<next_layer::PlateInLayerPolyline>();
         const bool sliced = !objects.empty()
             ? m_runtime.slicePlate(objects, m_configPath, outputPath, engineError, layerGcodes, inLayer)
             : m_runtime.slice(modelPath, m_configPath, outputPath, engineError);
