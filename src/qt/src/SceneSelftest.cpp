@@ -322,6 +322,49 @@ int runSceneSelftest(const QStringList& models,
         return 1;
     }
 
+    // Scaling and rotating run about the model's own origin, so both have to put
+    // the object back: the world centre of its bounding box keeps its X/Y and its
+    // lowest point returns to the bed. Otherwise a 20 mm cube scaled 1.5x grows
+    // toward +X/+Y and a rotated part lifts off the plate or sinks through it.
+    {
+        const auto centreOf = [&document](int objectId) {
+            const QVector3D low = document.objectBoundsMin(objectId);
+            const QVector3D high = document.objectBoundsMax(objectId);
+            return QVector3D((low.x() + high.x()) * 0.5f, (low.y() + high.y()) * 0.5f, low.z());
+        };
+        const QVector3D turned = centreOf(secondId);
+        document.setScale(secondId, QVector3D(1.5, 1.5, 1.5));
+        const QVector3D scaled = centreOf(secondId);
+        document.setScale(secondId, QVector3D(1.0, 1.0, 1.0));
+        const QVector3D restored = centreOf(secondId);
+        const double scaleShift = std::max(std::abs(scaled.x() - turned.x()),
+                                           std::abs(scaled.y() - turned.y()));
+        const double rotateShift = std::max(std::abs(restored.x() - turned.x()),
+                                            std::abs(restored.y() - turned.y()));
+        std::printf("pivot: scale moved the centre %.3f mm, restoring it moved %.3f mm, "
+                    "min Z %.3f after scaling and %.3f after restoring\n",
+                    scaleShift, rotateShift, scaled.z(), restored.z());
+        if (scaleShift > 0.001 || rotateShift > 0.001
+            || std::abs(scaled.z()) > 0.001 || std::abs(restored.z()) > 0.001) {
+            std::fprintf(stderr, "scaling moved the object instead of growing it in place\n");
+            return 1;
+        }
+        // A rotation that is not about Z lifts the corners, so the lowest point
+        // goes below the plate: this is the half of the pivot rule that a
+        // symmetric mesh cannot hide.
+        document.setRotation(secondId, QVector3D(30.0, 0.0, 45.0));
+        const QVector3D tilted = centreOf(secondId);
+        document.setRotation(secondId, QVector3D(0.0, 0.0, 45.0));
+        const double tiltShift = std::max(std::abs(tilted.x() - turned.x()),
+                                          std::abs(tilted.y() - turned.y()));
+        std::printf("pivot: a 30 degree tilt about X moved the centre %.3f mm and left min Z %.3f\n",
+                    tiltShift, tilted.z());
+        if (tiltShift > 0.001 || std::abs(tilted.z()) > 0.001) {
+            std::fprintf(stderr, "rotating lifted the object off the plate or moved it sideways\n");
+            return 1;
+        }
+    }
+
     document.setRotation(firstId, QVector3D(0.0, 0.0, 30.0));
 
     document.selectObject(secondId);

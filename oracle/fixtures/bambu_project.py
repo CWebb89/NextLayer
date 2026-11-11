@@ -117,7 +117,7 @@ RELS = """<?xml version="1.0" encoding="UTF-8"?>
 def main(argv: list[str]) -> int:
     args = [argument for argument in argv[1:] if not argument.startswith("--")]
     flags = {argument for argument in argv[1:] if argument.startswith("--")}
-    if len(args) != 1 or flags - {"--no-support-style"}:
+    if len(args) != 1 or flags - {"--no-support-style", "--collisions"}:
         sys.stderr.write(__doc__)
         return 2
     settings = SETTINGS
@@ -126,6 +126,24 @@ def main(argv: list[str]) -> int:
                      "support_object_xy_distance"):
             settings = "".join(written for written in settings.splitlines(keepends=True)
                                if f'"{line}"' not in written)
+    if "--collisions" in flags:
+        # Both names of every pair that means one setting here, plus a tool number
+        # this machine does not have. A file may carry both, and which one wins has
+        # to be the table's order rather than the order a hash happened to hold
+        # them in, or the same project resolves differently on every run.
+        extra = (
+            '    <metadata key="support_style" value="snug"/>\n'
+            '    <metadata key="bridge_flow" value="0.9"/>\n'
+            '    <metadata key="internal_bridge_flow" value="1.4"/>\n'
+            '    <metadata key="tree_support_branch_angle" value="40"/>\n'
+            '    <metadata key="tree_support_branch_angle_organic" value="55"/>\n'
+            '    <metadata key="overhang_3_4_speed" value="20%"/>\n'
+            '    <metadata key="overhang_4_4_speed" value="10%"/>\n'
+        )
+        settings = settings.replace('    <metadata key="extruder" value="1"/>\n', "", 1)
+        settings = settings.replace('    <metadata key="support_type"',
+                                    extra + '    <metadata key="extruder" value="7"/>\n'
+                                    '    <metadata key="support_type"', 1)
     with zipfile.ZipFile(args[0], "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("[Content_Types].xml", CONTENT_TYPES)
         archive.writestr("_rels/.rels", RELS)

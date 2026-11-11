@@ -4,6 +4,8 @@
 #   tools/check                 everything, ~1 minute
 #   tools/check --fast          skip the oracle (the slow, byte-exact half)
 #   tools/check --ui            also open a real window, click, and capture it
+#   tools/check --ui --with-orca
+#                               add the reference slicer drives (opens Orca)
 #   tools/check --update-qmllint-baseline
 #                               accept the current qmllint warnings as known
 #
@@ -45,6 +47,7 @@ set -g failures
 
 set -l fast 0
 set -l ui 0
+set -l with_orca 0
 set -l update 0
 set -l static 0
 
@@ -54,16 +57,19 @@ for arg in $argv
             set fast 1
         case --ui
             set ui 1
+        case --with-orca
+            set with_orca 1
         case --update-qmllint-baseline
             set update 1
         case --static
             set static 1
         case -h --help
             printf '%s\n' \
-                'usage: tools/check [--fast] [--ui] [--static] [--update-qmllint-baseline]' \
+                'usage: tools/check [--fast] [--ui [--with-orca]] [--static] [--update-qmllint-baseline]' \
                 '' \
                 '  --fast                      skip oracle verify (the slow, byte-exact check)' \
                 '  --ui                        also drive a real window and capture it' \
+                '  --with-orca                 add the reference slicer drives (opens Orca)' \
                 '  --static                    only the gates that need no built binary (CI)' \
                 '  --update-qmllint-baseline   accept the current qmllint warnings as known' \
                 '' \
@@ -713,6 +719,69 @@ else if test (count (string match -a -- '*key="perimeters"*' $foreign_metadata))
     __bad 'foreign project: the file written for Bambu/Orca still carries the name perimeters instead of wall_loops'
 else
     __ok "foreign project: it saves again -- the per-object settings go back out in the names the slicer that wrote the file reads (wall_loops, sparse_infill_density), the 3 settings this engine cannot apply ride out under their own names, and the $foreign_placed[2] object(s) come back within $foreign_placed[3] mm of where they were put"
+end
+
+# Two names that mean one setting here have to resolve the same way on every run,
+# because a downloaded file may carry both. The table's order decides which wins --
+# not the order a hash happened to hold them in, which is what made the same file
+# import differently on different runs. The fixture carries both names of four
+# pairs and a tool number this machine does not have, and is opened three times.
+set -l collide_mf /tmp/nl-check-collide.3mf
+python3 $root/oracle/fixtures/bambu_project.py $collide_mf --collisions >/dev/null 2>&1
+set -l collide_digests
+set -l collide_out
+for run in 1 2 3
+    set collide_out (env QT_QPA_PLATFORM=eglfs XDG_DATA_HOME=$tools_home $bin $collide_mf --dump-applied 2>/dev/null | grep -v '^\[')
+    set -a collide_digests (printf '%s' $collide_out | md5sum | string split ' ')[1]
+end
+set -l collide_unique (printf '%s\n' $collide_digests | sort -u | count)
+set -l collide_expected 'support_material_style = organic' 'bridge_flow_ratio = 0.9' \
+    'support_tree_angle = 40' 'overhang_speed_3 = 20%' 'extruder = 1'
+set -l collide_kept 'support_style = snug' 'internal_bridge_flow = 1.4' \
+    'tree_support_branch_angle_organic = 55' 'overhang_4_4_speed = 10%'
+set -l collide_missing
+for wanted in $collide_expected
+    if not string match -q -- "*$wanted*" $collide_out
+        set -a collide_missing $wanted
+    end
+end
+for wanted in $collide_kept
+    if not string match -q -- "*$wanted*" $collide_out
+        set -a collide_missing $wanted
+    end
+end
+if test $collide_unique -ne 1
+    __bad "foreign settings: the same file resolved $collide_unique different ways in three runs, so a project's toolpath depends on hash order"
+else if test (count $collide_missing) -gt 0
+    __bad "foreign settings: $collide_missing did not come out as the table says"
+else
+    __ok "foreign settings: 4 aliased pairs resolve to the table's own name every run (support_type over support_style, bridge_flow over internal_bridge_flow) and the losers ride out under their own names, with tool 7 clamped to the 1 this machine has"
+end
+
+# Scaling and rotating run about the model's own origin, so both have to put the
+# object back where the person put it: the world centre of its bounding box keeps
+# its X/Y and the lowest point returns to the bed. Measured, not asserted in prose.
+set -l pivot_out (env QT_QPA_PLATFORM=eglfs XDG_DATA_HOME=$tools_home $bin $model \
+    $root/oracle/models/bridge_30.stl --scene-selftest $tools_cfg,/tmp/nl-check-scene.gcode 2>&1)
+set -l pivot_scale (string match -r 'pivot: scale moved the centre ([0-9.]+) mm, restoring it moved ([0-9.]+) mm, min Z (-?[0-9.]+) after scaling and (-?[0-9.]+) after restoring' -- $pivot_out)
+set -l pivot_tilt (string match -r 'pivot: a 30 degree tilt about X moved the centre ([0-9.]+) mm and left min Z (-?[0-9.]+)' -- $pivot_out)
+set -l pivot_worst 0
+if test (count $pivot_scale) -eq 5
+    for value in $pivot_scale[2..5]
+        set pivot_worst (math "max($pivot_worst, abs($value))")
+    end
+end
+if test (count $pivot_tilt) -eq 3
+    for value in $pivot_tilt[2..3]
+        set pivot_worst (math "max($pivot_worst, abs($value))")
+    end
+end
+if test (count $pivot_scale) -ne 5 -o (count $pivot_tilt) -ne 3
+    __bad 'pivot: the scene selftest printed no pivot measurement: '(string match -r 'error.*|not centred.*' -- $pivot_out | head -1)
+else if awk -v worst=$pivot_worst 'BEGIN { exit !(worst > 0.001) }'
+    __bad "pivot: scaling or rotating moved the object by up to $pivot_worst mm instead of growing it in place"
+else
+    __ok "pivot: scaling 1.5x and tilting 30 degrees keep the bounding-box centre within $pivot_worst mm and leave the lowest point on the bed"
 end
 
 # ... and a plate this app authored is written in this engine's own names, because
@@ -1470,53 +1539,15 @@ if test $ui -eq 1
     # refuses to guess which one a bare command meant, and the gate would read
     # that refusal as a missing control.
     set -l app --app next-layer
-    $cockpit $app stop >/dev/null 2>&1
-    set -l start_out ($cockpit $app start next-layer --model $model 2>&1)
-    if test $status -ne 0
-        __bad "cockpit start: $start_out"
-    else
-        # A first start opens the printer set-up flow over the plate, and that is
-        # correct behaviour: with no printer there is nothing to slice onto. The
-        # gate is about a window that renders and a plate toolbar on it, so it
-        # dismisses the flow the same way a user would.
-        if $cockpit $app find-text 'Not now' >/dev/null 2>&1
-            $cockpit $app click-text 'Not now' >/dev/null 2>&1
-            sleep 1
-        end
-        $cockpit $app shot $ui_shot >/dev/null 2>&1
-        # The app draws its header before the plate toolbar is ready, so the gate
-        # waits for the control rather than catching a half-drawn frame; on a
-        # timeout `wait-text` says what the window does show instead.
-        set -l label_out ($cockpit $app wait-text 'Save preset' --timeout 30 2>&1)
-        set -l label_rc $status
-        set -l size 0
-        if test -f $ui_shot
-            set size (stat -c %s $ui_shot)
-        end
-        if test $label_rc -ne 0
-            __bad "window: no 'Save preset' control on screen ($ui_shot): "(string join ' | ' -- (string match -r 'cockpit: .*' -- $label_out | head -2))
-        else if test $size -lt 20000
-            __bad "window: capture is blank ($size bytes, $ui_shot)"
-        else
-            __ok "window: header control found, frame captured ($ui_shot)"
-        end
-        $cockpit $app stop >/dev/null 2>&1
-    end
-
-    # Save as, driven through the printer settings window: the window has to say it
-    # saved, the file it wrote has to be the whole preset rather than the diff, and
-    # the copy has to resolve print profiles like any other machine. It writes a
-    # real user preset, so it is removed before and after, and the preset is read
-    # back through the headless path instead of through the window that made it.
     set -l sa_store $HOME/.local/share/next-layer/presets/user/next-layer-custom/Custom
     set -l sa_file $sa_store/'printer-Gate Save As.yaml'
-    set -l sa_bundle $HOME/.local/share/next-layer/presets/local/next-layer-custom/Custom
     set -l sa_drive
     set -l sa_rc 1
     set -l sa_start
-    # A window that was not focused when the name was typed is the one way this
-    # sequence loses a keystroke, and restarting costs ten seconds: one retry on a
-    # fresh window, never a loop.
+    # One window for both the frame and the Save-as drive. Opening the printer
+    # settings window at start-up costs nothing -- it is an overlay, so the header
+    # the frame gate reads is still drawn behind it -- and it saves a second
+    # launch, which is the expensive half of a UI run.
     for attempt in 1 2
         rm -f $sa_file
         $cockpit $app stop >/dev/null 2>&1
@@ -1524,15 +1555,54 @@ if test $ui -eq 1
         if test $status -ne 0
             break
         end
+        if test $attempt -eq 1
+            # A first start opens the printer set-up flow over the plate, and that
+            # is correct behaviour: with no printer there is nothing to slice onto.
+            # The gate is about a window that renders and a plate toolbar on it, so
+            # it dismisses the flow the same way a user would.
+            if $cockpit $app find-text 'Not now' >/dev/null 2>&1
+                $cockpit $app click-text 'Not now' >/dev/null 2>&1
+                sleep 1
+            end
+        end
         set sa_drive ($cockpit $app run $root/tools/cockpit/scripts/next-layer-save-as.drive 2>&1)
         set sa_rc $status
-        $cockpit $app stop >/dev/null 2>&1
         if test $sa_rc -eq 0
             break
         end
+        $cockpit $app shot /tmp/nl-check-saveas-retry.png >/dev/null 2>&1
+        $cockpit $app stop >/dev/null 2>&1
     end
+
+    if test -z "$sa_start"; or test $sa_rc -ne 0
+        if test -n "$sa_start"
+            __bad "cockpit start: $sa_start"
+        else
+            __bad "window: no window after two attempts: $sa_start"
+        end
+    else
+        $cockpit $app shot $ui_shot >/dev/null 2>&1
+        set -l size 0
+        if test -f $ui_shot
+            set size (stat -c %s $ui_shot)
+        end
+        if test $size -lt 20000
+            __bad "window: capture is blank ($size bytes, $ui_shot)"
+        else
+            __ok "window: printer settings open over a drawn plate, frame captured ($ui_shot)"
+        end
+    end
+
+    # Save as, driven through the printer settings window: the window has to say it
+    # saved, the file it wrote has to be the whole preset rather than the diff, and
+    # the copy has to resolve print profiles like any other machine. It writes a
+    # real user preset, so it is removed before and after, and the preset is read
+    # back through the headless path instead of through the window that made it.
+    # The window is already open: see the loop above, which stops it here.
+    $cockpit $app stop >/dev/null 2>&1
     if test $sa_rc -ne 0
         __bad "save as: the drive stopped early after two windows (rc $sa_rc): "(string join ' | ' -- (string match -r 'cockpit run [0-9]+:' -- $sa_drive | tail -1))(string join ' | ' -- (string match -r 'cockpit: (want|found) .*' -- $sa_drive | tail -1))
+        rm -f $sa_file
     else
         set -l sa_saved (string match -r 'cockpit: found .*[Gg]ate [Ss]ave [Aa]s' -- $sa_drive | count)
         set -l sa_lines 0
@@ -1568,8 +1638,11 @@ if test $ui -eq 1
     # The reference slicer, driven for real: both preset editors, every tab, each
     # page's own label asserted through the cockpit. This is the gate for the
     # cockpit itself, not for next-layer -- it proves the tool can open another
-    # app's windows, find their controls and verify a step landed.
-    if not command -v orca-slicer >/dev/null
+    # app's windows, find their controls and verify a step landed. Opt-in: it opens
+    # a second application three times over, and that is the slow half of a UI run.
+    if test $with_orca -ne 1
+        __skip 'orca: reference drives are opt-in (tools/check --ui --with-orca)'
+    else if not command -v orca-slicer >/dev/null
         __skip 'orca: no orca-slicer on this machine, so the reference drive cannot run'
     else
         $cockpit stop --app orca >/dev/null 2>&1
