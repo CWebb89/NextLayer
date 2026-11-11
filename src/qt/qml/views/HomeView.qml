@@ -8,15 +8,15 @@ import "../theme"
 import "../components"
 
 // The screen the app lands on: what this program is for, the three ways to start,
-// what was open last, which machine will slice it, and the two sibling projects
-// that make up the rest of the stack. Modelled on the reference slicers' home
-// pages, minus their account column -- there is nothing to sign in to here.
-// Nothing on this page touches a network.
+// what was open last, and which machine will slice it -- with the artwork, the
+// pitch and the two sibling projects framed together in the aside on the right.
+// Modelled on the reference slicers' home pages, minus their account column --
+// there is nothing to sign in to here. Nothing on this page touches a network.
 Item {
     id: root
 
-    /// The printer artwork. A transparent PNG, so the page colour shows through and
-    /// the drawing reads as part of the page rather than as a picture in a frame.
+    /// The printer artwork. A transparent PNG, so the panel colour shows through and
+    /// the drawing reads as part of the card rather than as a picture in a frame.
     property string heroSource: "qrc:/next-layer/brand/next-layer-printer.png"
     property string version: ""
     property string engineVersion: ""
@@ -32,8 +32,28 @@ Item {
     signal clearRecentRequested()
 
     readonly property int pageMargin: width > 1400 ? Metrics.huge * 3 : Metrics.huge * 2
-    readonly property int columnWidth: Math.max(440, Math.min(720, width * 0.44))
-    readonly property bool artVisible: width > 1080 && root.heroSource !== ""
+    readonly property int gutter: Metrics.huge * 2
+    readonly property int columnWidth: root.wide
+                                        ? Math.max(400, Math.min(560, width * 0.36))
+                                        : Math.min(width - root.pageMargin * 2, 720)
+    /// Short windows give the aside less room than its content and its artwork want
+    /// together, so the frame and the gutters tighten rather than the card scrolling.
+    readonly property bool compactAside: height < 900
+    readonly property int asidePad: root.compactAside ? Metrics.huge * 1.25 : Metrics.huge * 2
+
+    /// Two columns need room for a readable pitch beside a plate of actions; below
+    /// that the pitch and the stack rejoin the column and the artwork steps aside.
+    readonly property bool wide: width >= 1240 && root.heroSource !== ""
+
+    readonly property string pitchEyebrow: "LOCAL SLICING, END TO END"
+    readonly property string pitchHeadline: "Slice on your own machine."
+    readonly property string pitchBody: "A slicer of our own: this interface, an open slicing "
+                                        + "engine, and every toolpath calculated here. Your models, "
+                                        + "your settings and your G-code stay on this disk, in "
+                                        + "formats another slicer can read."
+    readonly property string stackBlurb: "next-layer plans the paths. The two projects below run "
+                                         + "the machine and watch it, and the three share one data "
+                                         + "file format: the G-code."
 
     /// The three promises the whole application keeps. They are the answer to "why
     /// another slicer", so they sit under the sentence rather than in a settings
@@ -44,34 +64,26 @@ Item {
     readonly property string processName: presetStore.currentPrint
     readonly property string filamentName: presetStore.currentFilament
 
+    /// The home page is a landing screen, not a file manager: six entries is what
+    /// fits beside the aside, and the rest are one `Ctrl+Shift+O` away.
+    readonly property var recentShown: recent.slice(0, root.compactAside ? 4 : 6)
+
     Rectangle {
         anchors.fill: parent
         color: Colors.surface
     }
 
-    Image {
-        id: hero
-
-        anchors.verticalCenter: parent.verticalCenter
-        anchors.right: parent.right
-        anchors.rightMargin: Metrics.xl
-        width: Math.min(root.width * 0.56, 860)
-        height: Math.min(root.height * 0.84, width * 0.72)
-        visible: root.artVisible
-        source: root.artVisible ? root.heroSource : ""
-        fillMode: Image.PreserveAspectFit
-        asynchronous: true
-        smooth: true
-        mipmap: true
-    }
-
+    // The plate of actions, and the machine they will run on.
     Flickable {
         id: page
 
         anchors.left: parent.left
         anchors.top: parent.top
         anchors.bottom: parent.bottom
-        anchors.leftMargin: root.pageMargin
+        anchors.leftMargin: root.wide
+                            ? root.pageMargin
+                            : Math.max(root.pageMargin,
+                                       (root.width - root.columnWidth) / 2)
         width: root.columnWidth
         contentWidth: width
         contentHeight: body.height + body.topPadding + body.bottomPadding
@@ -83,77 +95,25 @@ Item {
             id: body
 
             width: page.width
-            topPadding: Math.max(Metrics.huge * 2,
-                                 Math.min(Metrics.huge * 3, (page.height - body.implicitHeight) * 0.3))
+            topPadding: Math.max(Metrics.xl,
+                                 Math.min(Metrics.huge * 3, (page.height - body.implicitHeight) * 0.4))
             bottomPadding: Metrics.huge * 2
             spacing: Metrics.lg
 
-            // --- What this is -------------------------------------------------
-
-            Text {
+            HomeIntro {
                 width: parent.width
-                text: "LOCAL SLICING, END TO END"
-                font.family: Type.family
-                font.pixelSize: Type.sizeCaption
-                font.letterSpacing: 2.4
-                color: Colors.accent
+                visible: !root.wide
+                eyebrow: root.pitchEyebrow
+                headline: root.pitchHeadline
+                body: root.pitchBody
+                chips: root.promises
             }
 
-            Text {
+            Item {
                 width: parent.width
-                text: "Slice on your own machine."
-                wrapMode: Text.WordWrap
-                font.family: Type.family
-                font.pixelSize: Math.min(Type.sizeXLarge, Math.max(Type.sizeLarge,
-                                                                  body.width * 0.062))
-                font.bold: true
-                color: Colors.textPrimary
+                height: root.wide ? 0 : Metrics.md
+                visible: !root.wide
             }
-
-            Text {
-                width: parent.width
-                text: "A slicer of our own: this interface, an open slicing engine, and every "
-                      + "toolpath calculated here. Your models, your settings and your G-code "
-                      + "stay on this disk, in formats another slicer can read."
-                wrapMode: Text.WordWrap
-                lineHeight: 1.28
-                font.family: Type.family
-                font.pixelSize: Type.sizeSmall
-                color: Colors.textSecondary
-            }
-
-            Row {
-                width: parent.width
-                spacing: Metrics.sm
-
-                Repeater {
-                    model: root.promises
-
-                    delegate: Rectangle {
-                        id: promise
-
-                        required property string modelData
-
-                        width: promiseText.implicitWidth + Metrics.lg * 2
-                        height: promiseText.implicitHeight + Metrics.sm
-                        radius: height / 2
-                        color: Colors.alpha(Colors.accent, 0.10)
-                        border.width: Metrics.borderWidth
-                        border.color: Colors.alpha(Colors.accent, 0.28)
-
-                        Text {
-                            id: promiseText
-                            anchors.centerIn: parent
-                            text: promise.modelData
-                            font.family: Type.family
-                            font.pixelSize: Type.sizeCaption
-                            color: Colors.accent
-                        }
-                    }
-                }
-            }
-
-            Item { width: 1; height: Metrics.sm }
 
             // --- Start --------------------------------------------------------
 
@@ -267,7 +227,7 @@ Item {
                 visible: root.recent.length > 0
 
                 Repeater {
-                    model: root.recent
+                    model: root.recentShown
 
                     delegate: Rectangle {
                         id: row
@@ -453,44 +413,16 @@ Item {
                 }
             }
 
-            Item { width: 1; height: Metrics.md }
-
-            // --- The stack ----------------------------------------------------
-
-            SectionTitle {
+            Item {
                 width: parent.width
-                text: "The rest of the stack"
+                height: root.wide ? 0 : Metrics.md
+                visible: !root.wide
             }
 
-            Text {
+            HomeStack {
                 width: parent.width
-                text: "next-layer plans the paths. The two projects below run the machine and "
-                      + "watch it, and the three share one data file format: the G-code."
-                wrapMode: Text.WordWrap
-                lineHeight: 1.25
-                font.family: Type.family
-                font.pixelSize: Type.sizeCaption
-                color: Colors.textSecondary
-            }
-
-            ProductCard {
-                width: parent.width
-                icon: "dashboard"
-                name: "klipshell"
-                tagline: "A desktop control surface for Klipper printers: dashboard, console, "
-                         + "print files, history, bed mesh, G-code viewer and machine health, "
-                         + "in one keyboard-driven window over Moonraker."
-                tags: ["Quickshell · QML", "Klipper / Moonraker", "8 views"]
-            }
-
-            ProductCard {
-                width: parent.width
-                icon: "monitor_heart"
-                name: "LayerMind"
-                tagline: "Sits above Klipper and Moonraker and turns every print into a data "
-                         + "point: hardware health over time, failure patterns, and diagnostics "
-                         + "that end in a recommendation rather than a chart."
-                tags: ["Rust", "252 tests", "AI diagnostics"]
+                visible: !root.wide
+                blurb: root.stackBlurb
             }
 
             Item { width: 1; height: Metrics.lg }
@@ -534,6 +466,127 @@ Item {
         }
     }
 
+    // The artwork, the pitch and the stack, framed as one card. The card is the same
+    // height as the window so the page reads as two balanced columns rather than a
+    // column and a floating picture.
+    Rectangle {
+        id: aside
+
+        visible: root.wide
+        anchors.left: page.right
+        anchors.leftMargin: root.gutter
+        anchors.right: parent.right
+        anchors.rightMargin: root.pageMargin
+        anchors.top: parent.top
+        anchors.topMargin: Metrics.xl
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: Metrics.xl
+
+        radius: Metrics.radiusLarge
+        color: Colors.surfaceContainerLow
+        border.width: Metrics.cardBorderWidth
+        border.color: Colors.edge
+        clip: true
+
+        Flickable {
+            id: asideScroll
+
+            anchors.fill: parent
+            contentWidth: width
+            contentHeight: asideBody.implicitHeight
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+            Column {
+                id: asideBody
+
+                width: asideScroll.width
+
+                Item {
+                    id: artFrame
+
+                    width: parent.width
+                    // Whatever the pitch and the stack do not need, so the card never
+                    // scrolls at a size the window actually opens at.
+                    height: Math.max(root.compactAside ? Metrics.huge * 8 : Metrics.huge * 13,
+                                     Math.min(parent.width * 0.42,
+                                              aside.height - asidePanel.height))
+
+                    Rectangle {
+                        anchors.fill: parent
+                        gradient: Gradient {
+                            GradientStop { position: 0.0; color: Colors.alpha(Colors.accent, 0.13) }
+                            GradientStop { position: 0.75; color: Colors.alpha(Colors.accent, 0.02) }
+                            GradientStop { position: 1.0; color: "transparent" }
+                        }
+                    }
+
+                    Image {
+                        anchors.fill: parent
+                        anchors.margins: root.compactAside ? Metrics.lg : Metrics.huge
+                        anchors.bottomMargin: Metrics.sm
+                        source: root.heroSource
+                        fillMode: Image.PreserveAspectFit
+                        verticalAlignment: Image.AlignBottom
+                        asynchronous: true
+                        smooth: true
+                        mipmap: true
+                    }
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        height: parent.height * 0.22
+                        gradient: Gradient {
+                            GradientStop { position: 0.0; color: "transparent" }
+                            GradientStop { position: 1.0; color: Colors.surfaceContainerLow }
+                        }
+                    }
+                }
+
+                Item {
+                    id: asidePanel
+
+                    width: asideBody.width
+                    height: asideColumn.implicitHeight + root.asidePad * 2
+
+                    Column {
+                        id: asideColumn
+
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.leftMargin: root.asidePad
+                        anchors.rightMargin: root.asidePad
+                        anchors.topMargin: Metrics.md
+                        spacing: root.compactAside ? Metrics.xl : Metrics.huge
+
+                        HomeIntro {
+                            width: parent.width
+                            eyebrow: root.pitchEyebrow
+                            headline: root.pitchHeadline
+                            body: root.pitchBody
+                            chips: root.promises
+                        }
+
+                        Rectangle {
+                            width: parent.width
+                            height: Metrics.borderWidth
+                            color: Colors.separator
+                        }
+
+                        HomeStack {
+                            width: parent.width
+                            blurb: root.stackBlurb
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     function engineLabel() {
         return root.engineVersion.length > 0 ? root.engineVersion : "bundled"
     }
@@ -541,35 +594,5 @@ Item {
     function stamp(when) {
         const date = new Date(when)
         return isNaN(date.getTime()) ? "" : Qt.formatDateTime(date, "yyyy-MM-dd HH:mm")
-    }
-
-    // A section heading: the words, then the rule that carries them across the page.
-    component SectionTitle: Item {
-        id: title
-
-        property string text: ""
-
-        implicitHeight: titleText.implicitHeight
-
-        Text {
-            id: titleText
-            anchors.left: parent.left
-            anchors.verticalCenter: parent.verticalCenter
-            text: title.text
-            font.family: Type.family
-            font.pixelSize: Type.sizeCaption
-            font.letterSpacing: 1.8
-            font.bold: true
-            color: Colors.textSecondary
-        }
-
-        Rectangle {
-            anchors.left: titleText.right
-            anchors.leftMargin: Metrics.lg
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            height: Metrics.borderWidth
-            color: Colors.separator
-        }
     }
 }

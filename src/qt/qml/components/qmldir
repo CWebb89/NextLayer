@@ -6,6 +6,8 @@ ComboBox 1.0 ComboBox.qml
 Divider 1.0 Divider.qml
 Field 1.0 Field.qml
 FloatingChip 1.0 FloatingChip.qml
+HomeIntro 1.0 HomeIntro.qml
+HomeStack 1.0 HomeStack.qml
 Icon 1.0 Icon.qml
 LayerSlider 1.0 LayerSlider.qml
 ListRow 1.0 ListRow.qml
@@ -17,6 +19,7 @@ ProductCard 1.0 ProductCard.qml
 RangeSlider 1.0 RangeSlider.qml
 ResizeGrip 1.0 ResizeGrip.qml
 SectionHeader 1.0 SectionHeader.qml
+SectionTitle 1.0 SectionTitle.qml
 SelectionCard 1.0 SelectionCard.qml
 Separator 1.0 Separator.qml
 SettingEditor 1.0 SettingEditor.qml

@@ -78,7 +78,7 @@ Item {
             color: Colors.textSecondary
         }
 
-        Row {
+        Flow {
             width: parent.width
             spacing: Metrics.xs
 
@@ -86,6 +86,8 @@ Item {
                 model: root.tags
 
                 delegate: Rectangle {
+                    id: tag
+
                     required property string modelData
 
                     width: tagText.implicitWidth + Metrics.md * 2
@@ -96,7 +98,7 @@ Item {
                     Text {
                         id: tagText
                         anchors.centerIn: parent
-                        text: modelData
+                        text: tag.modelData
                         font.family: Type.family
                         font.pixelSize: Type.sizeCaption
                         color: Colors.textTertiary

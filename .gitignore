@@ -1,5 +1,6 @@
 /upstream/
 /dist/
 /.pi/
+/tools/cockpit/atlas/
 __pycache__/
 *.pyc
