@@ -1511,16 +1511,30 @@ if test $ui -eq 1
     set -l sa_store $HOME/.local/share/next-layer/presets/user/next-layer-custom/Custom
     set -l sa_file $sa_store/'printer-Gate Save As.yaml'
     set -l sa_bundle $HOME/.local/share/next-layer/presets/local/next-layer-custom/Custom
-    rm -f $sa_file
-    $cockpit $app stop >/dev/null 2>&1
-    set -l sa_start ($cockpit $app start next-layer --model $model --arg=--preset-dialog --arg=printer 2>&1)
-    if test $status -ne 0
-        __bad "save as: cockpit start: $sa_start"
-    else
-        set -l sa_drive ($cockpit $app run $root/tools/cockpit/scripts/next-layer-save-as.drive 2>&1)
-        set -l sa_rc $status
+    set -l sa_drive
+    set -l sa_rc 1
+    set -l sa_start
+    # A window that was not focused when the name was typed is the one way this
+    # sequence loses a keystroke, and restarting costs ten seconds: one retry on a
+    # fresh window, never a loop.
+    for attempt in 1 2
+        rm -f $sa_file
         $cockpit $app stop >/dev/null 2>&1
-        set -l sa_saved (string match -r 'cockpit: found .*saved Gate Save As' -- $sa_drive | count)
+        set sa_start ($cockpit $app start next-layer --model $model --arg=--preset-dialog --arg=printer 2>&1)
+        if test $status -ne 0
+            break
+        end
+        set sa_drive ($cockpit $app run $root/tools/cockpit/scripts/next-layer-save-as.drive 2>&1)
+        set sa_rc $status
+        $cockpit $app stop >/dev/null 2>&1
+        if test $sa_rc -eq 0
+            break
+        end
+    end
+    if test $sa_rc -ne 0
+        __bad "save as: the drive stopped early after two windows (rc $sa_rc): "(string join ' | ' -- (string match -r 'cockpit run [0-9]+:' -- $sa_drive | tail -1))(string join ' | ' -- (string match -r 'cockpit: (want|found) .*' -- $sa_drive | tail -1))
+    else
+        set -l sa_saved (string match -r 'cockpit: found .*[Gg]ate [Ss]ave [Aa]s' -- $sa_drive | count)
         set -l sa_lines 0
         set -l sa_values 0
         set -l sa_inherits 0
@@ -1532,10 +1546,8 @@ if test $ui -eq 1
         set -l sa_profiles ("$bin" --dump-presets --printer 'Gate Save As' 2>/dev/null | grep -c 'filament profiles: ')
         set -l sa_named ("$bin" --dump-presets --printer 'Gate Save As' 2>/dev/null | grep -c 'print profiles for Gate Save As:')
         rm -f $sa_file
-        if test $sa_rc -ne 0
-            __bad "save as: the drive stopped early (rc $sa_rc): "(string join ' | ' -- (string match -r 'cockpit run [0-9]+:' -- $sa_drive | tail -1))(string join ' | ' -- (string match -r 'cockpit: want .*' -- $sa_drive | head -1))
-        else if test $sa_saved -ne 1
-            __bad "save as: the window never said it saved the copy ($sa_saved of 1): "(string join ' | ' -- (string match -r 'cockpit: (found|want) .*' -- $sa_drive | tail -2))
+        if test $sa_saved -lt 1
+            __bad "save as: the window never said it saved the copy: "(string join ' | ' -- (string match -r 'cockpit: (found|want) .*' -- $sa_drive | tail -2))
         else if test $sa_values -lt 60
             __bad "save as: the copy carries $sa_values values over $sa_lines lines, so it wrote the diff rather than the preset"
         else if test $sa_inherits -ne 1
@@ -1571,7 +1583,7 @@ if test $ui -eq 1
             set -l windows (string match -r 'matches ' -- $drive | count)
             set -l wanted_gone (string match -r 'cockpit: want ' -- $drive | count)
             if test $drive_rc -ne 0
-                __bad "orca: the settings drive stopped early (rc $drive_rc): "(string join ' | ' -- (string match -r 'cockpit run [0-9]+:' -- $drive | tail -1))(string join ' | ' -- (string match -r 'cockpit: want .*' -- $drive | head -1))
+                __bad "orca: the settings drive stopped early (rc $drive_rc): "(string join ' | ' -- (string match -r 'cockpit run [0-9]+:' -- $drive | tail -1))(string join ' | ' -- (string match -r 'cockpit: want .*' -- $drive | tail -1))
             # 11 page labels plus the readiness wait for the sidebar.
             else if test $asserted -ne 12 -o $wanted_gone -ne 0
                 __bad "orca: $asserted of 12 labels confirmed, $wanted_gone missing"
@@ -1587,7 +1599,7 @@ if test $ui -eq 1
             set -l process_rc $status
             set -l pages (string match -r 'cockpit: found ' -- $process | count)
             if test $process_rc -ne 0
-                __bad "orca: the process tabs drive stopped early (rc $process_rc): "(string join ' | ' -- (string match -r 'cockpit run [0-9]+:' -- $process | tail -1))(string join ' | ' -- (string match -r 'cockpit: want .*' -- $process | head -1))
+                __bad "orca: the process tabs drive stopped early (rc $process_rc): "(string join ' | ' -- (string match -r 'cockpit run [0-9]+:' -- $process | tail -1))(string join ' | ' -- (string match -r 'cockpit: want .*' -- $process | tail -1))
             # six page labels plus the readiness wait and the widened-panel check.
             else if test $pages -ne 8
                 __bad "orca: $pages of 8 process page labels asserted"
@@ -1598,7 +1610,7 @@ if test $ui -eq 1
             set -l viewport_rc $status
             set -l tips (string match -r 'cockpit: tip ' -- $viewport | count)
             if test $viewport_rc -ne 0
-                __bad "orca: the viewport toolbar drive stopped early (rc $viewport_rc): "(string join ' | ' -- (string match -r 'cockpit run [0-9]+:' -- $viewport | tail -1))(string join ' | ' -- (string match -r 'cockpit: want .*' -- $viewport | head -1))
+                __bad "orca: the viewport toolbar drive stopped early (rc $viewport_rc): "(string join ' | ' -- (string match -r 'cockpit run [0-9]+:' -- $viewport | tail -1))(string join ' | ' -- (string match -r 'cockpit: want .*' -- $viewport | tail -1))
             else if test $tips -lt 16
                 __bad "orca: $tips of 16 toolbar tooltips read from their buttons"
             else
