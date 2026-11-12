@@ -1137,9 +1137,9 @@ if test $paint_rc -ne 0
     __bad "paint cost: "(string join '; ' -- $paint_out)
 else if test -z "$paint_ms"
     __bad "paint cost: no measurement in '"$paint_out"'"
-else if test (math "$paint_ms > 32") -eq 1
+else if python3 -c 'import sys; raise SystemExit(0 if float(sys.argv[1]) > 32 else 1)' $paint_ms
     __bad "paint cost: a dab costs $paint_ms ms, over the 32 ms ceiling"
-else if test (math "$pick_ms > 0.5") -eq 1
+else if python3 -c 'import sys; raise SystemExit(0 if float(sys.argv[1]) > 0.5 else 1)' $pick_ms
     __bad "paint cost: a ray pick costs $pick_ms ms, over the 0.5 ms ceiling"
 else
     __ok "paint cost: "(string match -r 'mean [0-9.]+ ms.*pick [0-9.]+ ms/ray' -- $paint_out)
