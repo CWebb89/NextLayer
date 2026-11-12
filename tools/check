@@ -1506,6 +1506,41 @@ else
     __ok "headless frame: $smoke_match[4]% covered, $smoke_match[2]x$smoke_match[3] ($shot)"
 end
 
+# Palette gate: the file matugen writes is the only thing keeping the interface on
+# the desktop's scheme, and the compiled-in scheme is a silent stand-in -- rename
+# that file upstream and the app renders cleanly in a palette nobody chose. The
+# fixture half is hermetic; the second half reads this machine's own palette and
+# is skipped where there is none, because a machine without matugen has none.
+set -l palette_fixture /tmp/nl-check-palette.json
+printf '%s' '{"primary":"#ff00ff","primaryContainer":"#a000a0","primaryText":"#000000","primaryContainerText":"#ffffff"}' > $palette_fixture
+set -l palette_out (env NEXT_LAYER_COLORS=$palette_fixture $bin --dump-palette 2>&1)
+set -l palette_rc $status
+set -l palette_source (string match -r 'palette: source (.+)' -- $palette_out)
+set -l palette_primary (string match -r 'palette: primary (.+)' -- $palette_out)
+if test $palette_rc -ne 0
+    __bad "palette: --dump-palette exited $palette_rc: "(string join '; ' -- $palette_out)
+else if test (count $palette_primary) -lt 2
+    __bad 'palette: --dump-palette printed no primary role'
+else if test (count $palette_source) -lt 2 -o "$palette_source[2]" != "$palette_fixture"
+    __bad "palette: NEXT_LAYER_COLORS was ignored: the source printed '$palette_source[2]'"
+else if test (string lower -- $palette_primary[2]) != '#ff00ff'
+    __bad "palette: the fixture's primary printed as '$palette_primary[2]'"
+else
+    __ok "palette: a palette file tints the app ($palette_primary[2])"
+end
+set -l family_palette $HOME/.cache/matugen/layer-colors.json
+if not test -f $family_palette
+    __skip "palette: no $family_palette on this machine, so the family palette cannot be read back"
+else
+    set -l family_out (env -u NEXT_LAYER_COLORS $bin --dump-palette 2>&1)
+    set -l family_source (string match -r 'palette: source (.+)' -- $family_out)
+    if test (count $family_source) -lt 2 -o "$family_source[2]" != "$family_palette"
+        __bad "palette: with no override the app read '$family_source[2]' instead of $family_palette, so it stopped following matugen"
+    else
+        __ok "palette: with no override the app reads $family_palette"
+    end
+end
+
 # Thumbnail gate: the plate render goes into the G-code a host reads, and the two
 # failures that matter are silent -- no block at all (a blank plate on the printer's
 # screen) and a block appended a second time by a second slice (a file that grows

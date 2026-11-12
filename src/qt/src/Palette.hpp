@@ -11,7 +11,7 @@ namespace next_layer {
 
 // Resolves the 36-key matugen MD3 palette, first match wins:
 // $NEXT_LAYER_COLORS, ~/.cache/matugen/next-layer-colors.json,
-// ~/.cache/matugen/klipshell-colors.json. Unreadable, malformed or
+// ~/.cache/matugen/layer-colors.json. Unreadable, malformed or
 // non-string-valued entries fall through to the next candidate; when none
 // resolves, roles() is empty and Colors.qml keeps its compiled-in defaults.
 class Palette : public QObject

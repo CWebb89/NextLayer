@@ -38,7 +38,7 @@ next_layer::Palette::Palette(QObject* parent)
     const QStringList candidates{
         qEnvironmentVariable("NEXT_LAYER_COLORS"),
         cache + "next-layer-colors.json",
-        cache + "klipshell-colors.json",
+        cache + "layer-colors.json",
     };
 
     for (const QString& candidate : candidates) {

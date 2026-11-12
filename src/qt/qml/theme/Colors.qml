@@ -6,7 +6,7 @@ import QtQuick
 import NextLayer 1.0
 
 // matugen MD3 palette. The 36 role values are compiled-in defaults taken from
-// klipshell's Colors.qml; every derived token is computed from them, so a
+// layer's Colors.qml; every derived token is computed from them, so a
 // palette handed over by Host (via Palette) recolours the whole app. Hardcoded
 // palette hex belongs in this file only.
 QtObject {

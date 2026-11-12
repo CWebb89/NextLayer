@@ -902,6 +902,9 @@ int main(int argc, char* argv[])
     const QCommandLineOption dump_icons_option("dump-icons",
         "Resolve the icon font the way the interface does: print whether its family is "
         "registered and whether a ligature name still measures as one glyph, then exit.");
+    const QCommandLineOption dump_palette_option("dump-palette",
+        "Report the file the interface's palette was read from and the primary it resolved "
+        "to, then exit.");
     const QCommandLineOption dump_object_settings_option("dump-object-settings",
         "List the settings a single object can override, with their types, and exit.");
     const QCommandLineOption dump_foreign_settings_option("dump-foreign-settings",
@@ -950,7 +953,7 @@ int main(int argc, char* argv[])
                        hover_test_option, panel_left_option, selftest_option, slice_all_option, plate_tools_option, slice_features_option,
                        project_version_test_option, project_test_option, export_project_option, mesh_tools_option, update_option,
                        update_install_option, multi_tool_option, print_host_test_option, print_host_start_option, apply_offsets_option, volume_settings_option, calibration_test_option, shape_test_option, keep_gcode_option, scene_selftest_option, preview_stats_option, vgcode_shot_option,
-                       dump_presets_option, dump_presets_json_option, dump_fonts_option, dump_icons_option, dump_object_settings_option, dump_foreign_settings_option, preset_printer_option, preset_process_option, preset_filament_option, preset_filaments_option,
+                       dump_presets_option, dump_presets_json_option, dump_fonts_option, dump_icons_option, dump_palette_option, dump_object_settings_option, dump_foreign_settings_option, preset_printer_option, preset_process_option, preset_filament_option, preset_filaments_option,
                        set_option, add_printer_option, save_preset_option, rename_preset_option,
                        delete_preset_option, export_preset_option, import_preset_option,
                        import_slicer_option, export_bundle_option, thumbnail_test_option});
@@ -1386,6 +1389,18 @@ int main(int argc, char* argv[])
         std::printf("icons: family %s\n", registered ? "registered" : "missing");
         std::printf("icons: ligature %d per-character %d\n", ligature, per_character);
         return (registered && per_character > 0 && ligature * 2 < per_character) ? 0 : 1;
+    }
+
+    if (parser.isSet(dump_palette_option)) {
+        const next_layer::Palette palette;
+        const QVariantMap roles = palette.roles();
+        const QString source = palette.source();
+        std::printf("palette: source %s\n",
+                    source.isEmpty() ? "defaults" : qUtf8Printable(source));
+        std::printf("palette: %lld role(s)\n", static_cast<long long>(roles.size()));
+        std::printf("palette: primary %s\n",
+                    qUtf8Printable(roles.value(QStringLiteral("primary")).toString()));
+        return 0;
     }
 
     if (parser.isSet(dump_fonts_option)) {
