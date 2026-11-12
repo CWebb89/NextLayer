@@ -12,7 +12,7 @@ Alpha, `0.1.2`. It slices and prints, and it does not yet do everything the matu
 slicers do — `docs/features.md` is the ledger, with every tab, tool and setting
 marked done, staged or blocked on the engine. What has been proven on hardware is
 recorded in `docs/real-prints.md`, and `docs/release-audit.md` is the honest
-version of every claim on this page, with the code behind each one.
+version of these claims as of the `0.1.0` audit, with the code behind each one.
 
 ## What it is
 
@@ -97,22 +97,22 @@ the engine ships.
 
 ## Install
 
-The releases publish three things: a self-contained AppImage, a tarball the AUR
-package unpacks, and the update manifest. Neither install needs a compiler.
-`v0.1.0` is the newest tag in this repository; `0.1.1` and `0.1.2` are built and
-packaged under `dist/` and not yet tagged.
+`v0.1.2` is the newest tag. It publishes the tarball the AUR package unpacks and
+the update manifest; the AppImage and the checksums for this version are built
+under `dist/` and are not attached to the release yet. `v0.1.0` is an older
+pre-release that carries all four artefacts, and `0.1.1` exists only under
+`dist/`. The AUR package is written but not published, so `paru -S next-layer-bin`
+does not find it yet.
 
 ```sh
-# self-contained, nothing installed
-chmod +x NextLayer-0.1.2-x86_64.AppImage && ./NextLayer-0.1.2-x86_64.AppImage
-
-# Arch: builds nothing, unpacks the release tarball
-paru -S next-layer-bin
+# nothing here needs a compiler
+curl -LO https://github.com/CWebb89/NextLayer/releases/download/v0.1.2/next-layer-0.1.2.tar.gz
+tar xf next-layer-0.1.2.tar.gz && ./next-layer-qt
 ```
 
-Both were built and run from a clean prefix before publishing. If something is
-missing on your machine, it will say so on stderr — there is no crash reporter
-and nothing is sent anywhere, so a terminal paste is the only report we get.
+If something is missing on your machine, it will say so on stderr — there is no
+crash reporter and nothing is sent anywhere, so a terminal paste is the only
+report we get.
 
 ## Run
 

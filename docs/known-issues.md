@@ -1,6 +1,6 @@
 # Known issues
 
-What is wrong, missing, or unverified in `0.1.0`, in the order it is likely to be
+What is wrong, missing, or unverified in `0.1.2`, in the order it is likely to be
 hit. This is the user-facing half of `docs/features.md`; that ledger is the
 complete inventory, this is the part you need before you start a print.
 
