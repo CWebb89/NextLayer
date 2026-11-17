@@ -38,6 +38,16 @@ complete inventory, this is the part you need before you start a print.
   `;HEIGHT:` and nothing else: no `;TYPE:Perimeter`, no `;TYPE:Infill`. The
   application's own preview colours by feature, so it cannot colour an HFW
   slice, and no post-hoc analysis can separate walls from infill in a file.
+- **Arranged objects were packed touching until `96349ea`.** `arrangeOnBed` left
+  `Settings::scaled_offset` at zero, so a plate of two objects fused into one part:
+  two 20 mm cubes came out as a 40 mm solid sharing a wall face. It now sets the
+  3 mm the arrange gizmo and cut gizmo already use, which puts 6 mm between models.
+- **`retract_speed` from the plate does not reach the engine.** After the Voron
+  preset set `retract_length: 0.8` and `retract_speed: 35`, the G-code retracts
+  `G1 E-0.80000 F1500` -- the length crossed, the speed did not, and F1500 is the
+  engine's own 25 mm/s default. The application declares both as print settings and
+  the engine holds both on its printer config, so one of the two names crosses the
+  boundary and the other does not. Not yet diagnosed.
 - **Object exclusion is not emitted.** One `;OBJECT:` marker, no
   `EXCLUDE_OBJECT_DEFINE`. On a multi-object plate a failing object cannot be
   cancelled from the front panel without losing the rest of the print.
