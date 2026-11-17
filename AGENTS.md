@@ -1,8 +1,14 @@
 # next-layer
 
-A 3D printer slicer of our own, built on an open-source slicing engine used as a
-**library**. We write the interface and the application; the engine does
-the geometry and G-code. `THIRD-PARTY.md` names the engine and its licence.
+A 3D printer slicer of our own. Slicing runs on **HFW**, our Rust engine in
+`~/dev/HFW/HFW-final`, reached as a subprocess today and as a C library in phase 1 of
+`docs/rust-engine-plan.md`. The C++ engine under `upstream/` is still linked for the
+plate model, settings, arrange, preview and project files, and that plan is how it
+leaves. `docs/engine-boundary.md` is the generated file-by-file measure of the
+remaining work; `tools/engine-boundary.py --check` runs in `tools/check`.
+
+When a turn touches the engine boundary — a new `Slic3r::` use, a new HFW call, a
+phase landing — update the plan's progress ledger in the same commit.
 
 Deeper context lives outside this repo, in the agent memory store:
 `~/.pi/agent/projects-memory/next-layer/MEMORY.md` — read it first. It carries

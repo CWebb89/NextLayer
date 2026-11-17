@@ -298,6 +298,26 @@ else
     __ok 'settings layout: generated table matches the engine'
 end
 
+# No surface may offer a setting the engine ignores. The mechanism is
+# --engine-capabilities: a list of settings to remove everywhere. The engine this
+# application ships with has none, so the plain sidebar is the full 352; an
+# engine that cannot apply a setting must hide it instead of presenting a
+# control whose value never arrives. The gate drives both states and requires
+# the listed names to exist and to disappear, so a typo in the list fails here
+# rather than silently doing nothing.
+set -l caps $root/oracle/engine-capabilities-hfw.json
+if not test -f $caps
+    __skip 'engine capabilities: no HFW capability list (run oracle/engine_capabilities_check.py --from-ledger)'
+else
+    set -l caps_out (python3 $root/oracle/engine_capabilities_check.py --check $caps 2>&1)
+    set -l caps_rc $status
+    if test $caps_rc -ne 0
+        __bad "engine capabilities: "(string join ' ' (string match -r 'settings.*|removed.*' -- $caps_out | head -n 2))
+    else
+        __ok (string match -r 'engine-capabilities: .*' -- $caps_out)
+    end
+end
+
 set -l font_out ($bin --dump-fonts 2>&1)
 set -l font_rc $status
 set -l font_count (string match -r '^fonts: (\d+) openable$' -- $font_out)
@@ -1089,6 +1109,15 @@ for cal_flavour in klipper marlin
     else
         __ok "calibration ($cal_flavour): $cal_summary[2] test(s) built and sliced, "(count $cal_refused)" refused as unsupported, every band command in the G-code"
     end
+end
+
+# Engine boundary: the file-by-file inventory in docs/engine-boundary.md is
+# generated from src/, so it goes stale the moment a file starts or stops using
+# the C++ engine. Checked here rather than remembered.
+if not python3 tools/engine-boundary.py --check >/dev/null 2>&1
+    __bad "engine boundary: docs/engine-boundary.md is stale; run tools/engine-boundary.py"
+else
+    __ok "engine boundary: docs/engine-boundary.md matches src/"
 end
 
 # Settings gate: the sidebar has to expose the engine's own config, not a
