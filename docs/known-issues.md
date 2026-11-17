@@ -19,6 +19,28 @@ complete inventory, this is the part you need before you start a print.
 - **One printer has printed anything.** A Voron 2.4 R2 350 on Klipper +
   Moonraker. Marlin, RepRapFirmware, PrusaLink and OctoPrint are implemented
   against their documented APIs and untested against a real machine.
+- **The retraction the engine prints is PrusaSlicer's default, not the machine's.**
+  The first benchy through the whole chain printed `G1 E-2.00000 F1500` 481 times:
+  2 mm at 25 mm/s, which is `retract_length`'s PrusaSlicer default. The Voron
+  printer preset has no `retract_length`, `retract_speed` or
+  `retract_restart_extra` at all, so nothing overrode it, and 2 mm on a direct
+  drive is roughly three times what the machine wants. It printed without
+  obvious artefacts, which is exactly why it has to be measured rather than
+  eyeballed — set the retraction in the printer preset and re-slice.
+- **The engine emits two commands stock Klipper does not have.**
+  `SAVE_VELOCITY_LIMIT` and `RESTORE_VELOCITY_LIMIT` bracket every layer (240
+  each in the benchy), and Klipper answers `Unknown command` to all 480. The
+  acceleration changes inside them (`SET_VELOCITY_LIMIT ACCEL=…`) do work, so the
+  print is unaffected in practice — but any intent to *restore* a limit after a
+  feature is silently dropped, and a printer that treats unknown commands as
+  fatal would stop. Emit these only for the firmware dialects that define them.
+- **G-code carries no feature-type comments.** The file has `;LAYER:`, `;Z:` and
+  `;HEIGHT:` and nothing else: no `;TYPE:Perimeter`, no `;TYPE:Infill`. The
+  application's own preview colours by feature, so it cannot colour an HFW
+  slice, and no post-hoc analysis can separate walls from infill in a file.
+- **Object exclusion is not emitted.** One `;OBJECT:` marker, no
+  `EXCLUDE_OBJECT_DEFINE`. On a multi-object plate a failing object cannot be
+  cancelled from the front panel without losing the rest of the print.
 - **The calibration suite's band commands were only ever printed by Klipper.**
   Input shaping is Klipper-only by design and refuses on other flavours rather
   than emit commands that do nothing; the Marlin-side equivalents (`M593`) are
