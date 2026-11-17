@@ -1,8 +1,8 @@
 # next-layer
 
-A 3D printer slicer. An application of our own on top of an open-source slicing
-engine, used as a library: the engine does the geometry and the G-code, this
-repository is the program you look at.
+A 3D printer slicer. An application of our own on top of our own slicing engine:
+the engine does the geometry and the G-code, this repository is the program you
+look at.
 
 Source: <https://github.com/CWebb89/NextLayer>
 
@@ -10,15 +10,26 @@ Source: <https://github.com/CWebb89/NextLayer>
 
 Alpha, `0.1.2`. It slices and prints, and it does not yet do everything the mature
 slicers do — `docs/features.md` is the ledger, with every tab, tool and setting
-marked done, staged or blocked on the engine. What has been proven on hardware is
+marked done, staged or blocked on an engine. What has been proven on hardware is
 recorded in `docs/real-prints.md`, and `docs/release-audit.md` is the honest
 version of these claims as of the `0.1.0` audit, with the code behind each one.
+
+## Where the engine work is
+
+The application slices with **HFW**, the Rust engine in the sibling `HFW`
+repository (`NEXT_LAYER_ENGINE=hfw`). It still links the C++ engine under
+`upstream/` for the plate model, settings, arrange, preview and project files.
+Retiring that completely is planned phase by phase in
+[`docs/rust-engine-plan.md`](docs/rust-engine-plan.md), and
+[`docs/engine-boundary.md`](docs/engine-boundary.md) is the generated, file-by-file
+measure of how far along it is. Read those two before deciding anything about the
+engine.
 
 ## What it is
 
 - **A real engine underneath.** Supports, seams, variable layer height, adaptive
-  infill: the parts of slicing that are geometry come from the engine this project
-  links, not from code rewritten here.
+  infill: the parts of slicing that are geometry come from HFW, our own Rust
+  engine, not from code rewritten here and not from the C++ engine being retired.
 - **Built for tool changers.** Per-tool filaments, per-tool colours, tool changes;
   no MMU and no single-nozzle colour mixing. Implemented, and not yet verified on
   hardware: the only print recorded so far is on a single-extruder machine, so
@@ -33,8 +44,9 @@ version of these claims as of the `0.1.0` audit, with the code behind each one.
 
 - Not a fork of another slicer's GUI. The interface, the scene and the toolpaths'
   presentation are written here.
-- Not a reimplementation of a slicing engine. That would be a decade of work and
-  it has already been done better than we would.
+- Not a reimplementation of a slicing engine. HFW is that engine, and it is a
+  separate project with its own gate and its own claims.
+- Not free of the C++ engine yet. `docs/rust-engine-plan.md` is how that ends.
 - Not stable. Settings names, file formats and the CLI may move between tags.
 
 If any of the above reads as more detail than you want, `docs/what-is-next-layer.md`
