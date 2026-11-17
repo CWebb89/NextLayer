@@ -27,17 +27,6 @@ complete inventory, this is the part you need before you start a print.
   drive is roughly three times what the machine wants. It printed without
   obvious artefacts, which is exactly why it has to be measured rather than
   eyeballed — set the retraction in the printer preset and re-slice.
-- **The engine emits two commands stock Klipper does not have.**
-  `SAVE_VELOCITY_LIMIT` and `RESTORE_VELOCITY_LIMIT` bracket every layer (240
-  each in the benchy), and Klipper answers `Unknown command` to all 480. The
-  acceleration changes inside them (`SET_VELOCITY_LIMIT ACCEL=…`) do work, so the
-  print is unaffected in practice — but any intent to *restore* a limit after a
-  feature is silently dropped, and a printer that treats unknown commands as
-  fatal would stop. Emit these only for the firmware dialects that define them.
-- **G-code carries no feature-type comments.** The file has `;LAYER:`, `;Z:` and
-  `;HEIGHT:` and nothing else: no `;TYPE:Perimeter`, no `;TYPE:Infill`. The
-  application's own preview colours by feature, so it cannot colour an HFW
-  slice, and no post-hoc analysis can separate walls from infill in a file.
 - **Arranged objects were packed touching until `96349ea`.** `arrangeOnBed` left
   `Settings::scaled_offset` at zero, so a plate of two objects fused into one part:
   two 20 mm cubes came out as a 40 mm solid sharing a wall face. It now sets the
@@ -64,9 +53,26 @@ complete inventory, this is the part you need before you start a print.
   Klipper has neither, so a benchy log carried 697 of them and the acceleration was
   never actually restored. Klipper now restores with `SET_VELOCITY_LIMIT ACCEL=`,
   Marlin with `M204 S`.
-- **Object exclusion is not emitted.** One `;OBJECT:` marker, no
-  `EXCLUDE_OBJECT_DEFINE`. On a multi-object plate a failing object cannot be
-  cancelled from the front panel without losing the rest of the print.
+- **A settings dump lost 70 settings before the engine saw them, until HFW `b06d9ce`.**
+  OrcaSlicer writes `filament_purge_multiplier` as a list of `{is_percent, value}`
+  objects, and the engine's flattening of a JSON dump read such an object as a bare
+  token: the array swallowed the brace that closed its section, and every setting
+  after it in that section disappeared with no report line. On the Voron preset that
+  was `retract_lift`, `pressure_advance` and `filament_max_volumetric_speed`. A real
+  dump now yields 366 settings where it yielded 296. **This, not a missing preset
+  value, is why `retract_lift: 0.4` produced no Z hop** for three prints.
+- **`;TYPE:` and object cancellation reach the file, since HFW `0c1d24d` and
+  `e112d8e`.** `;TYPE:` used to depend on the verbatim-comment switch, which
+  next-layer sends off, so the preview had nothing to colour by; it is now always
+  written. Every object is defined at its own centre and bracketed by
+  `EXCLUDE_OBJECT_START`/`END`, and a Klipper printer sets `exclude_object` in
+  `SettingsModel::configJson()` -- the settings tree has no such entry because the
+  reference slicers treat it as part of their Klipper output rather than a switch.
+- **A silent setting now says so.** `PrinterConfig::audit()` reports a value a machine
+  limit overrides and a value of zero that switches a feature off; each finding also
+  lands in the G-code header as `; AUDIT:`. The live Voron preset reports nothing
+  today, which is the state worth keeping it in.
+
 - **The calibration suite's band commands were only ever printed by Klipper.**
   Input shaping is Klipper-only by design and refuses on other flavours rather
   than emit commands that do nothing; the Marlin-side equivalents (`M593`) are
