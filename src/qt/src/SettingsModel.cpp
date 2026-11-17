@@ -1513,6 +1513,15 @@ QString SettingsModel::configJson() const
 
     configuration.insert(QStringLiteral("print_settings"), printSettings);
     configuration.insert(QStringLiteral("filament_settings"), filamentSettings);
+    // The engine's object cancellation, which no print profile carries: Klipper
+    // cancels a part from the plate by name, so a file written for it defines every
+    // part. Nothing in the settings tree describes this, because in the reference
+    // slicers it is not a setting -- Klipper's `EXCLUDE_OBJECT_DEFINE` is simply
+    // what those files contain.
+    if (printerSettings.value(QStringLiteral("gcode_flavor")).toString()
+        == QLatin1String("klipper")) {
+        printerSettings.insert(QStringLiteral("exclude_object"), true);
+    }
     configuration.insert(QStringLiteral("printer_settings"), printerSettings);
     root.insert(QStringLiteral("configuration"), configuration);
 
