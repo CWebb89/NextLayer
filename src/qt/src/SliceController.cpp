@@ -4,6 +4,7 @@
 #include "SliceController.hpp"
 
 #include "GcodeBrand.hpp"
+#include "HfwEngine.hpp"
 #include "PlateDocument.hpp"
 #include "PlateThumbnail.hpp"
 #include "SettingsModel.hpp"
@@ -42,6 +43,11 @@ void countGcode(const QString& path, GcodeCounts& counts)
     constexpr char estimatedTimePrefix[] = "; estimated printing time (normal mode) = ";
     constexpr qsizetype filamentUsedLength = qsizetype(sizeof(filamentUsedPrefix) - 1);
     constexpr qsizetype estimatedTimeLength = qsizetype(sizeof(estimatedTimePrefix) - 1);
+    // HFW writes its own footer, in millimetres and with the grams in brackets.
+    constexpr char hfwFilamentPrefix[] = "; filament used = ";
+    constexpr char hfwTimePrefix[] = "; estimated printing time = ";
+    constexpr qsizetype hfwFilamentLength = qsizetype(sizeof(hfwFilamentPrefix) - 1);
+    constexpr qsizetype hfwTimeLength = qsizetype(sizeof(hfwTimePrefix) - 1);
 
     while (!file.atEnd()) {
         const QByteArray line = file.readLine();
@@ -57,6 +63,20 @@ void countGcode(const QString& path, GcodeCounts& counts)
         }
         if (line.startsWith(estimatedTimePrefix)) {
             counts.time = QString::fromUtf8(line.mid(estimatedTimeLength).trimmed());
+            continue;
+        }
+        if (line.startsWith(hfwFilamentPrefix)) {
+            // `; filament used = 1422.2 mm (4.24 g, 3421 mm3)`
+            const QString rest = QString::fromUtf8(line.mid(hfwFilamentLength)).trimmed();
+            const qsizetype open = rest.indexOf(QLatin1Char('('));
+            if (open >= 0) {
+                const QString grams = rest.mid(open + 1).section(QLatin1Char(' '), 0, 0);
+                counts.grams = grams.toDouble();
+            }
+            continue;
+        }
+        if (line.startsWith(hfwTimePrefix)) {
+            counts.time = QString::fromUtf8(line.mid(hfwTimeLength)).trimmed();
             continue;
         }
         if (!line.startsWith("G1 "))
@@ -221,9 +241,12 @@ void SliceController::slice()
         const auto started = std::chrono::steady_clock::now();
 
         QString engineError;
-        const bool sliced = !objects.empty()
-            ? m_runtime.slicePlate(objects, m_configPath, outputPath, engineError, layerGcodes, inLayer)
-            : m_runtime.slice(modelPath, m_configPath, outputPath, engineError);
+        const bool sliced = next_layer::hfwRequested()
+            ? next_layer::sliceWithHfw(objects, m_configPath, outputPath, engineError)
+            : !objects.empty()
+                ? m_runtime.slicePlate(objects, m_configPath, outputPath, engineError, layerGcodes,
+                                       inLayer)
+                : m_runtime.slice(modelPath, m_configPath, outputPath, engineError);
 
         const double elapsedMs =
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
@@ -336,8 +359,10 @@ void SliceController::sliceAll()
             const QString outputPath =
                 m_tempDir->filePath(QStringLiteral("slice-%1-plate-%2.gcode").arg(run).arg(plate + 1));
             QString engineError;
-            const bool ok = m_runtime.slicePlate(perPlate[plate], m_configPath, outputPath,
-                                                 engineError, layerGcodes, inLayer);
+            const bool ok = next_layer::hfwRequested()
+                ? next_layer::sliceWithHfw(perPlate[plate], m_configPath, outputPath, engineError)
+                : m_runtime.slicePlate(perPlate[plate], m_configPath, outputPath, engineError,
+                                       layerGcodes, inLayer);
             const QFileInfo gcode(outputPath);
             GcodeCounts counts;
             if (gcode.exists() && gcode.size() > 0)
