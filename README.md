@@ -97,6 +97,19 @@ Two things worth knowing:
   compiled into the binary. Regenerating it is not enough — rebuild, or the app
   keeps the old page titles and looks like the generator failed.
 
+Two checks run against a built binary rather than against the source:
+
+```sh
+# Every setting the app hands the engine really reached it. Needs a model so the
+# engine gets as far as its intake step.
+tools/config-boundary.py --app upstream/build/src/next-layer-qt/next-layer-qt \
+    --engine /path/to/hfw-cli --preset 'voron 2.4' --model oracle/models/cube_20.stl
+
+# The two engines, compared on one model: layers, filament, time, bbox, moves.
+tools/parity.py --app upstream/build/src/next-layer-qt/next-layer-qt \
+    --printer 'Voron 2.4 350 0.4' --process 'voron 2.4' --filament '2.4 PLA'
+```
+
 The printer catalog is generated, not committed:
 
 ```sh
