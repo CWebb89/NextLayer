@@ -53,10 +53,20 @@ public:
     /// per-object override starts from the value that is actually in force.
     Q_INVOKABLE QVariantList objectSettingDefs(const QString& filter) const;
     Q_INVOKABLE QString tabDump() const;
+    /// Declares settings the active engine cannot apply: they are removed from
+    /// every surface, so no control can be shown whose value never reaches the
+    /// engine. Empty for the engine this application ships with.
+    void setUnsupported(const QStringList& names);
+    /// Every setting currently hidden because the engine cannot apply it.
+    Q_INVOKABLE QStringList unsupported() const;
     Q_INVOKABLE QString settingsJson() const;
     /// Every setting name the sidebar exposes, one per line: the tab tree
     /// measured against the engine's own config instead of a hand-written list.
     Q_INVOKABLE QString nameDump() const;
+    /// True once a resolved preset has seeded this model. A model seeded only from the
+    /// shipped base config carries a nominal machine and another machine's start
+    /// G-code, so a slice from it is refused rather than written.
+    bool hasResolvedConfig() const;
     Q_INVOKABLE QString configJson() const;
     Q_INVOKABLE QString valuesYaml(const QString& tab, bool changedOnly) const;
     Q_INVOKABLE void clearModified();

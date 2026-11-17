@@ -162,7 +162,12 @@ bool sliceWithHfw(const QVector<PlateSliceObject>& objects, const QString& confi
         if (name.isEmpty())
             name = QStringLiteral("object-%1").arg(index);
         const QString stl = work.filePath(QStringLiteral("%1.stl").arg(name));
-        if (!Slic3r::Biz::store_stl(stl.toStdString(), objects[index].mesh, true, "next-layer")) {
+        // `store_stl` reports success without checking that the write landed, so a
+        // scratch directory with no room leaves a zero-byte STL and the engine then
+        // refuses the model with a message about ASCII vertex records. The size is
+        // the only honest answer to "was the object handed over".
+        const bool stored = Slic3r::Biz::store_stl(stl.toStdString(), objects[index].mesh, true, "next-layer");
+        if (!stored || QFileInfo(stl).size() == 0) {
             error = QStringLiteral("could not write object %1 to STL").arg(index + 1);
             return false;
         }

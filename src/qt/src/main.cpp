@@ -206,6 +206,68 @@ void dragTest(QQuickWindow* window, QObject* viewport, Qt::MouseButton button,
 // Drives a preview slider with synthetic pointer events and reports the layer
 // after every intermediate move. Anything other than a one-layer step per
 // pointer move means the slider is not scrubbing layer by layer.
+void runTransformTest(QQuickWindow* window, const QString& tool)
+{
+    QObject* viewport = window->findChild<QObject*>(QStringLiteral("viewport"));
+    auto* viewportItem = qobject_cast<QQuickItem*>(viewport);
+    if (viewportItem == nullptr) {
+        std::fprintf(stderr, "transform test: viewport object not found\n");
+        return;
+    }
+    std::fprintf(stdout, "transform test: begin\n");
+    std::fflush(stdout);
+    QQmlExpression select(qmlContext(viewport), viewport,
+                          QStringLiteral("plateDocument.selectObject(plateDocument.objects[0].id)"));
+    select.evaluate();
+    std::fprintf(stdout, "transform test: selected\n");
+    std::fflush(stdout);
+    viewport->setProperty("gizmoTool", tool);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 200);
+
+    const auto read = [viewport](const QString& expression) {
+        QQmlExpression reader(qmlContext(viewport), viewport, expression);
+        return reader.evaluate().toString();
+    };
+    const QString state = QStringLiteral(
+        "String(Math.round(plateDocument.objectInfo(plateDocument.selectedId).rotation_x * 10) / 10) + '/' + "
+        "String(Math.round(plateDocument.objectInfo(plateDocument.selectedId).rotation_y * 10) / 10) + '/' + "
+        "String(Math.round(plateDocument.objectInfo(plateDocument.selectedId).rotation_z * 10) / 10) + '|' + "
+        "String(Math.round(plateDocument.objectInfo(plateDocument.selectedId).scale * 1000) / 1000)");
+    const QString before = read(state);
+    std::fprintf(stdout, "transform test: state %s\n", before.toUtf8().constData());
+    std::fflush(stdout);
+    const QString grab = read(QStringLiteral("transformProbe()"));
+    if (grab == QLatin1String("none") || grab.isEmpty()) {
+        std::fprintf(stdout, "transform test (%s): no handle on screen\n",
+                     tool.toUtf8().constData());
+        return;
+    }
+    const QStringList parts = grab.split(QLatin1Char(','));
+    const QPointF start = viewportItem->mapToScene(QPointF(parts.at(0).toInt(),
+                                                          parts.at(1).toInt()));
+    QPointF end = start + QPointF(40, 0);
+    int axis = -1;
+    if (parts.size() > 4) {
+        axis = parts.at(4).toInt();
+        end = viewportItem->mapToScene(QPointF(parts.at(2).toInt(), parts.at(3).toInt()));
+        std::fprintf(stdout, "transform test: ring hit axis %d, sweep to a point 90 degrees round\n",
+                     axis);
+    }
+    const QPointF scaled = end - start;
+
+    sendMouse(window, QEvent::MouseButtonPress, Qt::LeftButton, Qt::LeftButton, start);
+    for (int step = 1; step <= 8; ++step)
+        sendMouse(window, QEvent::MouseMove, Qt::NoButton, Qt::LeftButton,
+                  start + scaled * (step / 8.0));
+    sendMouse(window, QEvent::MouseButtonRelease, Qt::LeftButton, Qt::NoButton, start + scaled);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 200);
+
+    std::fprintf(stdout, "transform test (%s): grab %s, %s -> %s\n",
+                 tool.toUtf8().constData(), grab.toUtf8().constData(),
+                 before.toUtf8().constData(), read(state).toUtf8().constData());
+    std::fflush(stdout);
+}
+
 void dragSliderHandle(QQuickWindow* window, QQuickItem* slider, const QPoint& delta, int steps)
 {
     QQmlContext* context = qmlContext(slider);
@@ -788,6 +850,9 @@ int main(int argc, char* argv[])
         "Paint RADIUS mm of every downward-facing facet above the bed on the first object, so a --smoke frame shows the painted overlay.",
         "radius");
     const QCommandLineOption input_test_option("input-test", "Feed synthetic mouse input to the viewport and report the camera state.");
+    const QCommandLineOption transform_test_option("transform-test",
+        "Grab a transform handle with synthetic input and report the object's rotation and scale before and after: rotate or scale.",
+        "tool");
     const QCommandLineOption slider_test_option("slider-test",
         "Drag the preview layer slider with synthetic input and report the layer after every step.");
     const QCommandLineOption shot_option("shot", "Write the rendered frame to a PNG.", "path");
@@ -808,6 +873,11 @@ int main(int argc, char* argv[])
         "Highlight the face under facet N of the first object and report how many triangles it came out as, then exit.", "facet");
     const QCommandLineOption dump_names_option("dump-setting-names",
         "Print every setting name the sidebar exposes and exit.");
+    const QCommandLineOption engine_capabilities_option("engine-capabilities",
+        "Read a JSON file listing settings the active engine cannot apply and remove them from "
+        "every surface, so no control is offered whose value never reaches the engine. Shape: "
+        "{\"engine\": name, \"unsupported\": [setting, ...]}. The shipped engine lists none.",
+        "path");
     const QCommandLineOption dump_subtab_option("dump-subtab", "Print the settings of one sub-tab (TAB/SUBTAB) and exit.", "tab/subtab");
     const QCommandLineOption transform_option("transform",
         "Apply transforms (rotate=x,y,z;scale=f;cut=z;duplicate=n;move=x,y;center;drop) and export STL to OUT.",
@@ -818,6 +888,9 @@ int main(int argc, char* argv[])
     const QCommandLineOption single_layer_option("single-layer", "Show only the current preview layer, not the whole part.");
     const QCommandLineOption view_option("view", "Camera as YAW,PITCH,ZOOM for smoke captures.", "yaw,pitch,zoom");
     const QCommandLineOption camera_view_option("camera-view", "Camera preset: iso, top, bottom, front, rear, left, right.", "name");
+    const QCommandLineOption gizmo_option("gizmo",
+        "Arm a transform tool on the first object and select it, for a smoke capture: move, rotate or scale.",
+        "name");
     const QCommandLineOption ortho_option("ortho", "Start with the orthographic camera.");
     const QCommandLineOption layer_option("layer", "Open the preview at layer N (1-based).", "n");
     const QCommandLineOption layer_from_option("layer-from", "Open the preview with layer N as the first visible layer (1-based).", "n");
@@ -944,11 +1017,12 @@ int main(int argc, char* argv[])
         "file plus the manifest that names its machines. Prints what it wrote.", "dir");
     parser.addOptions({qml_option, smoke_option, shot_option, slice_option, preview_option, dump_config_option,
                        dump_tabs_option, dump_settings_json_option, dump_names_option, dump_subtab_option, dump_plates_option, dump_objects_option, dump_applied_option, transform_option, hide_feature_option,
+                       engine_capabilities_option,
                        view_type_option, hide_option_option,
-                       single_layer_option, layer_option, layer_from_option, moves_option, view_option, camera_view_option,
+                       single_layer_option, layer_option, layer_from_option, moves_option, view_option, camera_view_option, gizmo_option,
                        ortho_option, plates_option,
                        settings_tab_option, paint_test_option, paint_perf_option,
-                       input_test_option, slider_test_option,
+                       input_test_option, transform_test_option, slider_test_option,
                        preset_dialog_option,
                        hover_test_option, panel_left_option, selftest_option, slice_all_option, plate_tools_option, slice_features_option,
                        project_version_test_option, project_test_option, export_project_option, mesh_tools_option, update_option,
@@ -1333,9 +1407,66 @@ int main(int argc, char* argv[])
     auto* presets = new PresetStore;
     presets->setSettings(settings);
 
+    if (parser.isSet(engine_capabilities_option)) {
+        QFile file(parser.value(engine_capabilities_option));
+        if (!file.open(QIODevice::ReadOnly)) {
+            std::fprintf(stderr, "--engine-capabilities: cannot read %s\n",
+                         parser.value(engine_capabilities_option).toUtf8().constData());
+            return 1;
+        }
+        const QJsonObject capabilities = QJsonDocument::fromJson(file.readAll()).object();
+        QStringList unsupported;
+        for (const QJsonValue& value : capabilities.value(QStringLiteral("unsupported")).toArray()) {
+            const QString name = value.toString();
+            if (!name.isEmpty())
+                unsupported.append(name);
+        }
+        settings->setUnsupported(unsupported);
+        std::fprintf(stderr, "engine %s: %d settings not offered\n",
+                     capabilities.value(QStringLiteral("engine")).toString("unnamed")
+                         .toUtf8().constData(),
+                     int(unsupported.size()));
+    }
+
     QObject::connect(presets, &PresetStore::resolved, settings, [settings, presets] {
         settings->seedFromConfigJson(QString::fromUtf8(presets->resolvedConfigJson()));
     });
+
+    // A run that writes G-code for a machine needs a machine. The shipped base config
+    // is a shape, not a printer (see SettingsModel::seedFromProfile): it carries a
+    // nominal bed and whatever start G-code the file was last written with. Slicing
+    // from it produces a file full of another machine's macro calls, which is how a
+    // Prusa core-one start sequence reached a Voron. Resolve the selected presets
+    // here, the way the interface does when it opens, and refuse when there is nothing
+    // to resolve rather than write a plausible-looking wrong file.
+    if (parser.isSet(slice_all_option)) {
+        QString printer = parser.value(preset_printer_option);
+        QString process = parser.value(preset_process_option);
+        QString filament = parser.value(preset_filament_option);
+        // The interface remembers the triple it was last set up with in the
+        // [presets] group, so a headless run of the same machine picks up where the
+        // window left off instead of falling back to whichever printer sorts first.
+        if (printer.isEmpty() || process.isEmpty() || filament.isEmpty()) {
+            QSettings saved;
+            saved.beginGroup(QStringLiteral("presets"));
+            if (printer.isEmpty())
+                printer = saved.value(QStringLiteral("printer")).toString();
+            if (process.isEmpty())
+                process = saved.value(QStringLiteral("process")).toString();
+            if (filament.isEmpty())
+                filament = saved.value(QStringLiteral("filament")).toString();
+            saved.endGroup();
+        }
+        if (!presets->reloadSync(printer, process, filament)) {
+            std::fprintf(stderr, "slice-all: no printable configuration: %s\n",
+                         presets->error().toUtf8().constData());
+            return 1;
+        }
+        std::fprintf(stderr, "slice-all: %s / %s / %s\n",
+                     presets->currentPrinter().toUtf8().constData(),
+                     presets->currentPrint().toUtf8().constData(),
+                     presets->currentFilament().toUtf8().constData());
+    }
 
     if (parser.isSet(dump_object_settings_option)) {
         int count = 0;
@@ -1813,22 +1944,48 @@ int main(int argc, char* argv[])
     // edge of a 235 mm one after the setup flow switches machine.
     auto resolvedModel = std::make_shared<QString>();
     // A tool changer paints by tool, so the palette comes from the printer's own
-    // filament colours: what the overlay shows is what the machine prints.
-    QObject::connect(presets, &PresetStore::resolved, document, [settings, document] {
-        const QVariant value = settings->value(QStringLiteral("filament_colour"));
-        QVariantList colours;
-        const QVariantList entries = value.toList();
-        for (const QVariant& entry : entries) {
-            const QString colour = entry.toString().trimmed();
-            if (!colour.isEmpty())
-                colours.append(colour);
+    // filament colours: what the overlay shows is what the machine prints. Only the
+    // resolved signal writes here: the fallback palette below is not a real
+    // material, and seeding the plate with it at start-up made the tool count of a
+    // project that arrived before the first resolve clamp to its length instead of
+    // the machine's extruders.
+    auto applyToolColours = [settings, presets, document] {
+        // The filament preset leaves `filament_colour` blank in this bundle, while the
+        // project's own `extruder_colour` carries the colour the plate is printed in.
+        // Read the live setting first so an edit in the sidebar still shows up on the
+        // plate, and fall back to the resolved project value, which the sidebar does
+        // not expose as a setting of its own.
+        auto colourList = [](const QVariant& value) {
+            QVariantList colours;
+            auto append = [&colours](const QVariant& entry) {
+                const QString colour = entry.toString().trimmed();
+                if (!colour.isEmpty())
+                    colours.append(colour);
+            };
+            // `filament_colour` reaches the settings model as one string and the
+            // resolved project value as a list; converting the string with toList()
+            // yields its characters, which reads as a plate of one-letter colours.
+            if (value.metaType().id() == QMetaType::QString)
+                append(value);
+            else
+                for (const QVariant& entry : value.toList())
+                    append(entry);
+            return colours;
+        };
+        QVariantList colours = colourList(settings->value(QStringLiteral("filament_colour")));
+        if (colours.isEmpty()) {
+            const QVariantMap project = presets->resolvedConfiguration()
+                                            .value(QStringLiteral("project_settings"))
+                                            .toMap();
+            colours = colourList(project.value(QStringLiteral("extruder_colour")));
         }
         if (colours.isEmpty()) {
             colours = QVariantList{QStringLiteral("#e8583c"), QStringLiteral("#3c8ce8"),
                                    QStringLiteral("#3ce8a0"), QStringLiteral("#e8d53c")};
         }
         document->setToolColours(colours);
-    });
+    };
+    QObject::connect(presets, &PresetStore::resolved, document, applyToolColours);
 
     // A machine's bed is part of where its objects may sit, but the first
     // resolve of a session is not a machine change: it is the preset store
@@ -2151,6 +2308,7 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty("startupMovesFrom", startupMovesMoveFrom);
     engine.rootContext()->setContextProperty("startupMovesTo", startupMovesTo);
     engine.rootContext()->setContextProperty("startupCameraView", parser.value(camera_view_option));
+    engine.rootContext()->setContextProperty("startupGizmo", parser.value(gizmo_option));
     engine.rootContext()->setContextProperty("startupOrthographic", parser.isSet(ortho_option));
     engine.rootContext()->setContextProperty("startupSingleLayer", startupSingleLayer);
     engine.rootContext()->setContextProperty("startupHiddenFeatures", startupHiddenFeatures);
@@ -2202,6 +2360,14 @@ int main(int argc, char* argv[])
         }
     }
 
+    if (parser.isSet(transform_test_option)) {
+        const QString transformTool = parser.value(transform_test_option);
+        QTimer::singleShot(2500, &app, [&app, window, transformTool] {
+            runTransformTest(window, transformTool);
+            app.exit(0);
+        });
+    }
+
     if (parser.isSet(input_test_option)) {
         QTimer::singleShot(1500, &app, [&] { runInputTest(window, geometry); });
         QTimer::singleShot(3200, &app, [&] { runDragTest(window, geometry); });
@@ -2216,7 +2382,7 @@ int main(int argc, char* argv[])
     }
 
     if (!parser.isSet(smoke_option) && !parser.isSet(input_test_option)
-        && !parser.isSet(slider_test_option))
+        && !parser.isSet(transform_test_option) && !parser.isSet(slider_test_option))
         return app.exec();
 
     if (parser.isSet(smoke_option)) {

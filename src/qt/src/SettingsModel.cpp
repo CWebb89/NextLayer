@@ -18,6 +18,7 @@
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QStringList>
+#include <QSet>
 
 #include <algorithm>
 #include <optional>
@@ -694,6 +695,7 @@ struct SettingsModel::Impl
     QHash<QString, int> index;
     QHash<QString, Placement> placement;
     QJsonDocument m_template;
+    bool m_seededFromResolved = false;
 
     // The pages and sections the sidebar shows, which are next-layer's own and
     // not the engine's categories: tools/settings_layout.py writes them from
@@ -848,6 +850,7 @@ struct SettingsModel::Impl
         if (!document.isObject())
             return;
         m_template = document;
+        m_seededFromResolved = true;
         seedFromConfiguration(m_template.object().value(QStringLiteral("configuration")).toObject());
     }
 
@@ -1003,7 +1006,22 @@ struct SettingsModel::Impl
         }
         return applied;
     }
+
+    QSet<QString> unsupported;
 };
+
+void SettingsModel::setUnsupported(const QStringList& names)
+{
+    m_impl->unsupported = QSet<QString>(names.begin(), names.end());
+    emit changed();
+}
+
+QStringList SettingsModel::unsupported() const
+{
+    QStringList names(m_impl->unsupported.begin(), m_impl->unsupported.end());
+    names.sort();
+    return names;
+}
 
 SettingsModel::SettingsModel(QObject* parent)
     : QObject(parent)
@@ -1110,6 +1128,8 @@ QVariantList SettingsModel::groups(const QString& tab, const QString& subtab, co
         if (!tab.isEmpty() && entry.tabKey != tab)
             continue;
         if (!subtab.isEmpty() && entry.subtabKey != subtab)
+            continue;
+        if (m_impl->unsupported.contains(entry.name))
             continue;
         if (!matchesFilter(*entry.def, filter))
             continue;
@@ -1233,6 +1253,11 @@ bool SettingsModel::seedFromConfigJson(const QString& json)
     m_impl->seedFromConfigJson(json);
     emit changed();
     return true;
+}
+
+bool SettingsModel::hasResolvedConfig() const
+{
+    return m_impl->m_seededFromResolved;
 }
 
 void SettingsModel::resetSubtab(const QString& tab, const QString& subtab)
@@ -1506,6 +1531,8 @@ QString SettingsModel::valuesYaml(const QString& tab, bool changedOnly) const
         if (!tab.isEmpty() && entry.tabKey != tab)
             continue;
         if (changedOnly && !entry.modified)
+            continue;
+        if (m_impl->unsupported.contains(entry.name))
             continue;
 
         const QString body = yamlScalarOf(entry.currentValue);

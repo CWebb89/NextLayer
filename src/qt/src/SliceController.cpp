@@ -198,6 +198,14 @@ void SliceController::slice()
         return;
     }
 
+    if (!m_settings->hasResolvedConfig()) {
+        m_status = QStringLiteral("Slice failed: no printer, process and filament are selected, "
+                                  "so there is no machine to write G-code for");
+        emit statusChanged();
+        emit failed(m_status);
+        return;
+    }
+
     if (m_worker.joinable())
         m_worker.join();
 
@@ -297,6 +305,14 @@ void SliceController::sliceAll()
 
     if (m_document == nullptr) {
         m_status = QStringLiteral("Slice failed: no plate is open");
+        emit statusChanged();
+        emit failed(m_status);
+        return;
+    }
+
+    if (!m_settings->hasResolvedConfig()) {
+        m_status = QStringLiteral("Slice failed: no printer, process and filament are selected, "
+                                  "so there is no machine to write G-code for");
         emit statusChanged();
         emit failed(m_status);
         return;
