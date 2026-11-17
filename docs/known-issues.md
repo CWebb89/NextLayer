@@ -42,12 +42,18 @@ complete inventory, this is the part you need before you start a print.
   `Settings::scaled_offset` at zero, so a plate of two objects fused into one part:
   two 20 mm cubes came out as a 40 mm solid sharing a wall face. It now sets the
   3 mm the arrange gizmo and cut gizmo already use, which puts 6 mm between models.
-- **`retract_speed` from the plate does not reach the engine.** After the Voron
-  preset set `retract_length: 0.8` and `retract_speed: 35`, the G-code retracts
-  `G1 E-0.80000 F1500` -- the length crossed, the speed did not, and F1500 is the
-  engine's own 25 mm/s default. The application declares both as print settings and
-  the engine holds both on its printer config, so one of the two names crosses the
-  boundary and the other does not. Not yet diagnosed.
+- **Retraction speed was capped by the machine limit, not lost.** Two objects sliced
+  with `retract_length: 0.8` and `retract_speed: 35` emitted `G1 E-0.80000 F1500`, and
+  the first reading was that the speed never crossed the boundary. It does: the config
+  the app hands over carries `retract_speed: 35`, and the engine's `e_move` clamps every
+  extruder move to `machine_max_feedrate_e`, which the imported Voron printer preset
+  held at 25 mm/s -- a Prusa figure. Set to 120 mm/s, the same plate emits
+  `G1 E-0.80000 F2100`. Worth remembering as a class: a correct setting can still be
+  inoperative because a machine limit masks it.
+- **`retract_lift` was zero, so no Z hop was ever emitted.** Every travel on the
+  two-cube plate ran at exactly the layer height and the only lift in the file was the
+  end-of-print one. The Voron print preset now sets `retract_lift: 0.4`, and each
+  layer's Z max is layer height + 0.4.
 - **Object exclusion is not emitted.** One `;OBJECT:` marker, no
   `EXCLUDE_OBJECT_DEFINE`. On a multi-object plate a failing object cannot be
   cancelled from the front panel without losing the rest of the print.
