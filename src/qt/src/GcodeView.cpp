@@ -37,7 +37,6 @@
 namespace {
 
 constexpr double kReferenceFovY = 30.0;
-constexpr int kSupersample = 2;
 
 // The toolpath shading. `segments.vs` computes `color * (ambient + diffuse*N.L
 // + specular)` per vertex from a small light array, and the engine's defaults
@@ -545,9 +544,6 @@ GcodeView::GcodeView(QQuickItem* parent)
 {
     setRenderTarget(QQuickPaintedItem::Image);
     setOpaquePainting(false);
-    m_qualityTimer.setSingleShot(true);
-    m_qualityTimer.setInterval(150);
-    connect(&m_qualityTimer, &QTimer::timeout, this, &GcodeView::scheduleSettledRender);
     m_renderTimer.setSingleShot(true);
     m_renderTimer.setInterval(0);
     connect(&m_renderTimer, &QTimer::timeout, this, [this] {
@@ -593,14 +589,10 @@ GcodeView::GcodeView(QQuickItem* parent)
         const qreal dpr = window() != nullptr ? window()->devicePixelRatio() : 1.0;
         const int target_width = std::max(1, int(std::lround(this->width() * dpr)));
         const int target_height = std::max(1, int(std::lround(this->height() * dpr)));
-        const int supersample = m_qualityPending ? 1 : kSupersample;
-        QImage frame = m_impl->render(target_width * supersample, target_height * supersample,
-                                      m_cameraEye, m_cameraCenter, m_cameraUp, m_fov);
+        QImage frame = m_impl->render(target_width, target_height, m_cameraEye,
+                                      m_cameraCenter, m_cameraUp, m_fov);
         if (frame.isNull())
             return;
-        if (supersample > 1)
-            frame = frame.scaled(target_width, target_height, Qt::IgnoreAspectRatio,
-                                 Qt::SmoothTransformation);
         frame.setDevicePixelRatio(dpr);
         {
             QMutexLocker lock(&m_frameMutex);
@@ -745,19 +737,6 @@ void GcodeView::clearContents()
 
 void GcodeView::scheduleRender()
 {
-    m_qualityPending = true;
-    m_qualityTimer.start();
-    if (m_renderScheduled)
-        return;
-    m_renderScheduled = true;
-    m_renderTimer.start();
-}
-
-void GcodeView::scheduleSettledRender()
-{
-    if (!m_qualityPending)
-        return;
-    m_qualityPending = false;
     if (m_renderScheduled)
         return;
     m_renderScheduled = true;

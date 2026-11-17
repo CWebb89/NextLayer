@@ -75,7 +75,6 @@ public:
 
 private:
     void scheduleRender();
-    void scheduleSettledRender();
 
     class Impl;
     std::unique_ptr<Impl> m_impl;
@@ -102,8 +101,6 @@ private:
     QImage m_frame;
     mutable QMutex m_frameMutex;
     QTimer m_renderTimer;
-    QTimer m_qualityTimer;
-    bool m_qualityPending = false;
     bool m_initialized = false;
     int m_frameCount = 0;
     bool m_renderScheduled = false;
