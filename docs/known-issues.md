@@ -72,6 +72,21 @@ complete inventory, this is the part you need before you start a print.
   limit overrides and a value of zero that switches a feature off; each finding also
   lands in the G-code header as `; AUDIT:`. The live Voron preset reports nothing
   today, which is the state worth keeping it in.
+- **A wall bead no longer carries a rectangle's worth of plastic.** Both reference
+  slicers subtract the two corners a bead leaves unfilled, `h²(1 − π/4)`, which is
+  10.7% of a 0.4 × 0.2 rectangle; HFW charged the full rectangle, so every perimeter
+  over-extruded by that much against a profile calibrated on libslic3r. Wall beads
+  now follow the references and skin and infill keep the rectangle, because those
+  beads merge into their neighbours and fill the region solid (HFW `2d3f700`).
+  Measured effect on the two-cube plate: filament 1041.9 mm → 988.1 mm against
+  libslic3r's 911.2 mm, so the gap is 7.8% instead of 12.5% and all of it is in
+  infill, not walls. Run `tools/parity.py` before and after any flow change; the
+  oracle in HFW (`scripts/oracle.py`) says whether the references agree.
+- **HFW deposits about a quarter more sparse infill than libslic3r for the same
+  `infill_density`.** On the same plate: 10% requested, 1488 infill moves over
+  9474.9 mm against libslic3r's 1019 moves over 8073.1 mm. Walls match after the fix
+  above and the skin classes agree in total, so the remaining filament difference is
+  this one. Not yet diagnosed.
 
 - **The calibration suite's band commands were only ever printed by Klipper.**
   Input shaping is Klipper-only by design and refuses on other flavours rather
