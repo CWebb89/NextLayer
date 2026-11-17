@@ -18,12 +18,16 @@ the decisions, measured facts, dead ends, and the reasoning behind each.
 
 - `src/` — ours, all of it. `src/qt` is the application; `src/cli` is the
   headless slicing harness the oracle's `app` runner drives.
-- `patches/` — the single patch that makes the engine build our sources. It
-  replaces two `add_subdirectory` lines in the engine's `src/CMakeLists.txt`
-  with two that point here, from outside the engine tree.
+- `patches/` — our entire footprint in the engine, six patches applied in name
+  order. `0001` makes it build our sources (two `add_subdirectory` lines); `0002`,
+  `0004` add the bottom-surface and internal-bridge extrusion roles; `0003`,
+  `0005` add per-role fan speeds; `0006` adds the in-layer extrusion channel the
+  app's own G-code uses. `THIRD-PARTY.md` says what each one changes and which
+  feature depends on it; never drop one as upstream noise without reading that.
 - `upstream/` — the slicing engine, fetched at a pinned commit and patched in
   place by `tools/bootstrap`. Gitignored: it is a dependency, never edited by
-  hand and never committed. The patch is the whole of our footprint in it.
+  hand and never committed. Those six patches are the whole of our footprint in
+  it, and a replacement engine has to carry the same capabilities.
 - `oracle/` — the G-code oracle: model corpus, config profiles, baselines, and
   `oracle.py`. This is the regression harness for the slicing engine.
 

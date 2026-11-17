@@ -20,14 +20,33 @@ in this tree was generated from it.
 | Source | https://github.com/prusa3d/PrusaSlicer |
 
 It is not vendored in this repository. `tools/bootstrap` fetches that commit into
-`upstream/`, which is gitignored, and applies `patches/0001-app-subdirectories.patch`
-— two `add_subdirectory` lines, and nothing else. The engine's own `LICENSE`,
-`AUTHORS.md` and source headers, present in that checkout, are authoritative over
-this summary.
+`upstream/`, which is gitignored, and applies the six patches in `patches/` in name
+order. The engine's own `LICENSE`, `AUTHORS.md` and source headers, present in that
+checkout, are authoritative over this summary.
 
-Our complete corresponding source is this repository plus that patch: the
+### What each patch changes, and what depends on it
+
+| Patch | Touches | What it does | Depends on it |
+|---|---|---|---|
+| `0001-app-subdirectories` | `src/CMakeLists.txt` (+2) | two `add_subdirectory` lines so the engine builds `src/qt` and `src/cli` from outside its tree | the whole application build |
+| `0002-bottom-surface-role` | 7 files (+14 −5) | registers the `"Bottom surface"` role string in libpgcode, `ExtrusionRole`, the preview's role types and libvgcode, so bottom skins are a role rather than "bottom" inside an existing one | per-role cooling and per-role preview colouring of bottom surfaces |
+| `0003-role-aware-fan` | 12 files (+163 −3) | reads `enable_overhang_bridge_fan`, `support_material_interface_fan_speed` and `ironing_fan_speed` into `ExtrudeConfig` and the cooling buffer, and registers the two config keys | the Cooling page's support-interface and ironing fan speeds |
+| `0004-internal-bridge-role` | 9 files (+17 −6) | registers `"Internal bridge infill"` as its own extrusion role end to end, including the filler that emits it | the model's internal-bridge feature and its preview colour |
+| `0005-internal-bridge-fan` | 9 files (+49 −2) | reads `internal_bridge_fan_speed` into `ExtrudeConfig` and the cooling buffer, and registers the key | the Cooling page's internal-bridge fan speed |
+| `0006-in-layer-channel` | 7 files (+107 −0) | adds `Domain::InLayerExtrusions` and emits them at the matching `print_z` inside `GCodeGenerator::process_layer` | **custom G-code per layer that the app inserts itself** — the calibration tests and the toolchange/custom-G-code path |
+
+Our complete corresponding source is this repository plus those six patches: the
 application, the headless harness in `src/cli`, the tooling in `tools/`, and the
-two lines that make the engine build them.
+352 added and 16 removed lines that let them be built and driven. The patches are ours and are
+AGPL-3.0-or-later like the rest of the corresponding source.
+
+**Why the last three matter to the engine replacement:** `0002`/`0003`/`0005` are
+per-role cooling, and `0006` is a channel for G-code the application writes itself.
+A replacement engine has to offer the same three capabilities — a bottom-surface
+role, per-role fan speeds including the internal bridge, and a per-layer hook that
+takes app-authored extrusion at a known `print_z` — or the application loses
+features it has today. They must not be removed or simplified because they look
+like upstream noise.
 
 Two engine pieces are our own code compiled into its build rather than variants of
 its files: `src/qt` (the application) and `src/cli` (the headless slicing
