@@ -88,6 +88,7 @@ std::vector<Placement> arrangeOnBed(const std::vector<PlaceableObject>& objects,
     Settings settings;
     settings.strategy = Slic3r::Biz::Arrange::Strategy::Overfit;
     settings.allow_rotations = allowRotations;
+    settings.scaled_offset = Scaling::scaled(3.0);
 
     std::vector<Slic3r::Biz::Arrange::ArrangeItem> items =
         Slic3r::Biz::Arrange::to_arrange_items(shapes, settings);
