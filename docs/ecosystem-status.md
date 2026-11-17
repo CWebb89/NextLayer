@@ -62,6 +62,22 @@ document goes stale.
 
 ## Confirmed open, in the order the handoff ranks them
 
+**0. The G-code the app produces carries a Prusa COREONE start sequence, not the
+Voron's.** Found 2026-11-17 while checking a file for printing. `--dump-config` shows
+`start_gcode` = the COREONE block (`M862.3 P "COREONE"`, `M555`, `G29` mesh, park at
+`X242 Y211`) and `end_gcode` = its Prusa counterpart, while `printer_model` and
+`max_print_height` in the same file are the Voron's. The selected printer preset
+(`presets/local/next-layer-custom/Custom/preset-printer-voron-2-4-350-0-4-nozzle-copy.yaml`)
+has its own three-line `start_gcode` (`M190`/`M109`/`PRINT_START …`) and it does not
+reach the dump. `src/qt/assets/base-config.json:542,642` is where the COREONE text
+lives, and `SettingsModel::seedFromProfile()` is supposed to have it replaced by the
+resolved preset before anything slices — for these two keys it does not.
+**Consequence: no file the app writes today is safe to print on this machine**
+(Klipper answers `Unknown command:M862`/`M555`, and a 250×220 core-one start on a
+350 bed). Workaround that works now: slice with HFW's own shipped profile,
+`hfw-cli MODEL.stl --profile profiles/voron_klipper.cfg --gcode OUT.gcode`, which
+writes `PRINT_START BED=… EXTRUDER=…` / `PRINT_END` and verifies PASS.
+
 **1. Saving a foreign 3MF changes its toolpath.** Reproducible, documented at
 `docs/known-issues.md`: `--export-project` on a `.3mf` prints *the project slices
 differently from the plate it came from* — same layers, moves and filament total,
