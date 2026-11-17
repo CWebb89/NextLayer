@@ -54,6 +54,16 @@ complete inventory, this is the part you need before you start a print.
   two-cube plate ran at exactly the layer height and the only lift in the file was the
   end-of-print one. The Voron print preset now sets `retract_lift: 0.4`, and each
   layer's Z max is layer height + 0.4.
+- **A brim was drawn on plates that turned it off, until HFW `b575414`.** The engine
+  read `brim_width` and never `brim_type`, so a profile stating `no_brim` with the
+  remembered width of 5 mm got 13 loops: layer 0 of a two-cube plate spanned
+  146.7..203.3 instead of 152.2..197.8. Both the slicer and the writer's skirt margin
+  now ask `PrinterConfig::adhesion_brim_loops()`, which answers `no_brim` first.
+- **Every per-feature acceleration switch printed two unknown commands, until HFW
+  `b575414`.** `SAVE_VELOCITY_LIMIT`/`RESTORE_VELOCITY_LIMIT` are Prusa firmware's and
+  Klipper has neither, so a benchy log carried 697 of them and the acceleration was
+  never actually restored. Klipper now restores with `SET_VELOCITY_LIMIT ACCEL=`,
+  Marlin with `M204 S`.
 - **Object exclusion is not emitted.** One `;OBJECT:` marker, no
   `EXCLUDE_OBJECT_DEFINE`. On a multi-object plate a failing object cannot be
   cancelled from the front panel without losing the rest of the print.
