@@ -62,21 +62,21 @@ document goes stale.
 
 ## Confirmed open, in the order the handoff ranks them
 
-**0. The G-code the app produces carries a Prusa COREONE start sequence, not the
-Voron's.** Found 2026-11-17 while checking a file for printing. `--dump-config` shows
-`start_gcode` = the COREONE block (`M862.3 P "COREONE"`, `M555`, `G29` mesh, park at
-`X242 Y211`) and `end_gcode` = its Prusa counterpart, while `printer_model` and
-`max_print_height` in the same file are the Voron's. The selected printer preset
-(`presets/local/next-layer-custom/Custom/preset-printer-voron-2-4-350-0-4-nozzle-copy.yaml`)
-has its own three-line `start_gcode` (`M190`/`M109`/`PRINT_START …`) and it does not
-reach the dump. `src/qt/assets/base-config.json:542,642` is where the COREONE text
-lives, and `SettingsModel::seedFromProfile()` is supposed to have it replaced by the
-resolved preset before anything slices — for these two keys it does not.
-**Consequence: no file the app writes today is safe to print on this machine**
-(Klipper answers `Unknown command:M862`/`M555`, and a 250×220 core-one start on a
-350 bed). Workaround that works now: slice with HFW's own shipped profile,
-`hfw-cli MODEL.stl --profile profiles/voron_klipper.cfg --gcode OUT.gcode`, which
-writes `PRINT_START BED=… EXTRUDER=…` / `PRINT_END` and verifies PASS.
+**0. [FIXED 2026-11-17, `f07684c`] The app wrote G-code for a machine it never
+resolved.** It sliced from `src/qt/assets/base-config.json`, which carries a Prusa
+Core One start sequence (`M862.3 P "COREONE"`, `M555`, a `G29` window for a 250×220
+bed, park at `X242 Y211`) while its `printer_model` and `max_print_height` were the
+Voron's — so a benchy sliced through the app carried another machine's macro calls.
+Now `SliceController` refuses to slice until a resolved preset has seeded the
+settings, the headless slice resolves `--printer/--process/--filament` (or the triple
+the interface last saved in `[presets]`) and fails rather than falling back, and
+`HfwEngine` checks the staged STL's size because `store_stl` reports success without
+checking that the write landed. Proven: 3dbenchy, 240 layers, 122,684 moves, 9.94 g,
+`M190 S60` / `M109 S215` / `PRINT_START EXTRUDER=215 BED=60` / `PRINT_END`, printed on
+the Voron. **What remains:** `base-config.json` still holds that Core One G-code as
+an unreachable fallback — it should be made genuinely machine-neutral, and
+`/tmp`'s residual quota (a 4 MB file can fail with `EDQUOT` while `df` reports 1.6 GB
+free) is why the staged-STL check exists at all.
 
 **1. Saving a foreign 3MF changes its toolpath.** Reproducible, documented at
 `docs/known-issues.md`: `--export-project` on a `.3mf` prints *the project slices
