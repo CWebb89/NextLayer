@@ -873,6 +873,11 @@ int main(int argc, char* argv[])
         "Highlight the face under facet N of the first object and report how many triangles it came out as, then exit.", "facet");
     const QCommandLineOption dump_names_option("dump-setting-names",
         "Print every setting name the sidebar exposes and exit.");
+    const QCommandLineOption dump_config_json_option("dump-config-json",
+        "Write the settings document the engine is handed (the same JSON a slice writes) to PATH "
+        "and exit, so the boundary between this app's settings and the engine's intake can be "
+        "checked without slicing anything.",
+        "path");
     const QCommandLineOption engine_capabilities_option("engine-capabilities",
         "Read a JSON file listing settings the active engine cannot apply and remove them from "
         "every surface, so no control is offered whose value never reaches the engine. Shape: "
@@ -1016,7 +1021,7 @@ int main(int argc, char* argv[])
         "Write the current printer's whole preset bundle into a directory: every preset "
         "file plus the manifest that names its machines. Prints what it wrote.", "dir");
     parser.addOptions({qml_option, smoke_option, shot_option, slice_option, preview_option, dump_config_option,
-                       dump_tabs_option, dump_settings_json_option, dump_names_option, dump_subtab_option, dump_plates_option, dump_objects_option, dump_applied_option, transform_option, hide_feature_option,
+                       dump_tabs_option, dump_settings_json_option, dump_names_option, dump_config_json_option, dump_subtab_option, dump_plates_option, dump_objects_option, dump_applied_option, transform_option, hide_feature_option,
                        engine_capabilities_option,
                        view_type_option, hide_option_option,
                        single_layer_option, layer_option, layer_from_option, moves_option, view_option, camera_view_option, gizmo_option,
@@ -1837,6 +1842,21 @@ int main(int argc, char* argv[])
     if (parser.isSet(dump_settings_json_option)) {
         const QString json = settings->settingsJson();
         std::fwrite(json.toUtf8().constData(), 1, size_t(json.toUtf8().size()), stdout);
+        return 0;
+    }
+
+    if (parser.isSet(dump_config_json_option)) {
+        const QString path = parser.value(dump_config_json_option);
+        const QByteArray json = settings->configJson().toUtf8();
+        QFile file(path);
+        const bool written = file.open(QIODevice::WriteOnly | QIODevice::Truncate)
+                          && file.write(json) == json.size();
+        if (!written) {
+            std::fprintf(stderr, "could not write %s\n", path.toUtf8().constData());
+            return 1;
+        }
+        std::printf("wrote %s (%lld bytes)\n", path.toUtf8().constData(),
+                    static_cast<long long>(json.size()));
         return 0;
     }
 
