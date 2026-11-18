@@ -62,7 +62,7 @@ Item {
     }
 
     function openPresetEditor(tab) {
-        presetEditor.openOn(tab)
+        presetEditor.openOn(tab, root.activeSubtab)
     }
 
     function selectSubtab(key) {

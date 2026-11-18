@@ -189,16 +189,25 @@ complete inventory, this is the part you need before you start a print.
 
 ## Interface
 
-- **A preset edited from the settings panel has no obvious way to be saved.** Reported
-  2026-11-17 after switching supports off in the process tab: the header's "Save preset"
-  opens the preset editor, whose `Save` button answers "This preset ships with the engine,
-  so it cannot be overwritten. Give it your own name to save a copy" and then stops. The
-  route that works is `Save as` with a typed name, but nothing on screen points at it, so
-  the reading is that the change cannot be saved at all. Two things to check before
-  choosing the fix: whether the header button opens the editor on the tab that actually
-  holds the change (`openPresetEditor(settingsPanel.activeTab)`), and whether `Save`
-  should be hidden rather than refused for a non-user preset. `modifiedCount(tab)` is
-  per tab, so a change in one tab leaves `Save` disabled in another.
+- **FIXED 2026-11-17: a saved preset was invisible until the app restarted.**
+  `PresetStore::saveUserPreset` wrote the file and never re-read the engine's preset
+  bundle, so the copy was not in the picker, `reload` resolved the parent it inherited
+  instead, and the window said "saved" while the settings jumped back to their preset
+  values. `renameUserPreset` and `deleteUserPreset` had the same gap. All three now call
+  `SliceRuntime::reloadPresets()`, which the import path already did. Verified through
+  the window: supports off on "2.4", header "Save preset", `Save as my preset` with the
+  offered name — the picker switched to "2.4 copy", the value stayed off, and a fresh
+  `--dump-config-json` for that preset reports `support_material: none`.
+- **FIXED 2026-11-17: the editor refused a save it could have offered.** For a preset
+  that ships with the engine, `Save` answered "this preset ships with the engine … give
+  it your own name" and stopped, while the route that works (`Save as`) was the
+  unlabelled second button. `Save` is now hidden for a non-user preset, the copy button
+  is the primary one and reads "Save as my preset", and the name field opens filled with
+  a free name ("2.4 copy"). The window also opens on the category the caller was
+  looking at instead of always the first, so a change made on Support is on screen
+  rather than one tab away. A copy may no longer be saved under an existing preset's
+  name: that writes a second preset with the same name, and the engine resolves such a
+  pair to whichever it read first.
 - **A machine saved with "Save as" is written but cannot be chosen.** The copy
   lands in `presets/user/…/printer-<name>.yaml` with the whole value set, and the
   window reports it saved, but the machine list the window offers is built from the

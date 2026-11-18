@@ -132,15 +132,50 @@ Popup {
     padding: 0
     closePolicy: Popup.CloseOnEscape
 
-    function openOn(tabKey) {
+    function openOn(tabKey, subTabKey) {
         root.tab = tabKey
-        root.subTab = root.firstCategory()
+        root.subTab = root.categoryFor(subTabKey)
         root.filterText = ""
         root.message = ""
         root.showAddPrinter = false
-        root.nameField = root.currentName
+        root.nameField = root.currentIsUser ? root.currentName : root.freeCopyName(root.currentName)
         root.refresh()
         root.open()
+    }
+
+    /// The category the window opens on: the one the caller was looking at, else
+    /// the first that holds a change (which is what the header's "Save preset"
+    /// deserves after an edit made on a tab the window does not start on), else
+    /// the first of the preset's categories.
+    function categoryFor(preferred) {
+        const categories = root.categories
+        for (let i = 0; i < categories.length; ++i) {
+            if (categories[i].key === preferred)
+                return preferred
+        }
+        for (let i = 0; i < categories.length; ++i) {
+            if (categories[i].modified > 0)
+                return categories[i].key
+        }
+        return categories.length > 0 ? categories[0].key : ""
+    }
+
+    /// A name that is free among this kind's presets, so a preset that ships with
+    /// the engine can be saved with one click. Its own name cannot be reused: that
+    /// writes a second preset with the same name, and the engine resolves such a
+    /// pair to the one that came first, so the saved edit disappears.
+    function freeCopyName(base) {
+        const taken = {}
+        const choices = root.tabChoices
+        for (let i = 0; i < choices.length; ++i)
+            taken[choices[i].value] = true
+        let candidate = base + " copy"
+        let suffix = 2
+        while (taken[candidate]) {
+            candidate = base + " copy " + suffix
+            ++suffix
+        }
+        return candidate
     }
 
     function showSubtab(tabKey, subTabKey) {
@@ -213,6 +248,19 @@ Popup {
         // reading it here twice in a row would say "nothing changed" the second
         // time, because nothing had.
         const copy = name !== root.currentName
+        if (!copy && !root.currentIsUser) {
+            root.message = "This preset ships with the engine, so a copy needs a name of its own"
+            return
+        }
+        if (copy) {
+            const choices = root.tabChoices
+            for (let i = 0; i < choices.length; ++i) {
+                if (choices[i].value === name) {
+                    root.message = "A preset named " + name + " already exists. Give the copy a name of its own."
+                    return
+                }
+            }
+        }
         const error = presetStore.saveUserPreset(root.presetKind, name, root.tab, !copy)
         root.message = error.length > 0 ? error
                                        : (copy ? "saved " + name : "saved " + root.currentName)
@@ -378,6 +426,10 @@ Popup {
                 }
 
                 Button {
+                    // A preset that ships with the engine cannot be overwritten, so
+                    // it offers no Save at all: a button whose only answer is a
+                    // refusal is worse than no button. Saving is the copy below.
+                    visible: root.currentIsUser
                     text: "Save"
                     hint: "Write the changed values into this preset"
                     primary: true
@@ -386,8 +438,12 @@ Popup {
                 }
 
                 Button {
-                    text: "Save as"
-                    hint: "Save these values under the name in the field"
+                    text: root.currentIsUser ? "Save as" : "Save as my preset"
+                    hint: root.currentIsUser
+                          ? "Save these values under the name in the field"
+                          : "This preset ships with the engine: save your changes as a preset of your own, under the name in the field"
+                    primary: !root.currentIsUser
+                    enabled: root.currentIsUser || root.modified > 0
                     onClicked: root.saveAs()
                 }
             }
