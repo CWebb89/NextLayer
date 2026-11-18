@@ -883,6 +883,12 @@ QString PresetStore::saveUserPreset(const QString& kind, const QString& name,
     if (!writeFile(path, presetDocument(kind, name, parent, condition, merged, presetIdIn(path))))
         return QStringLiteral("Could not write %1").arg(path);
 
+    // The bundle loaded at start-up cannot see a file written after it was read,
+    // so a saved preset stayed invisible to the picker and a reload resolved the
+    // parent it inherited instead of the copy: the window said "saved" and the
+    // settings went back to where they started.
+    next_layer::SliceRuntime::instance().reloadPresets();
+
     // The saved values become the new baseline, so the panel stops reporting
     // them as changed while the engine is reloading the preset.
     m_settings->clearModified();
@@ -929,6 +935,7 @@ QString PresetStore::renameUserPreset(const QString& kind, const QString& oldNam
     if (!writeFile(newPath, lines.join(QLatin1Char('\n'))))
         return QStringLiteral("Could not write %1").arg(newPath);
     QFile::remove(oldPath);
+    next_layer::SliceRuntime::instance().reloadPresets();
     return {};
 }
 
@@ -943,6 +950,7 @@ QString PresetStore::deleteUserPreset(const QString& kind, const QString& name)
         return QStringLiteral("%1 is not a user preset").arg(name);
     if (!QFile::remove(path))
         return QStringLiteral("Could not remove %1").arg(path);
+    next_layer::SliceRuntime::instance().reloadPresets();
     return {};
 }
 
