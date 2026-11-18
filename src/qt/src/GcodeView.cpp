@@ -22,6 +22,7 @@
 #include <GL/glew.h>
 
 #include <QColor>
+#include <QDateTime>
 #include <QGuiApplication>
 #include <QOffscreenSurface>
 #include <QOpenGLContext>
@@ -76,6 +77,15 @@ Slic3r::App::Scene::Lights toolpathLights()
 
 using Slic3r::App::libvgcode::ViewType;
 using Slic3r::Biz::libpgcode::OptionType;
+
+// Time budget for a frame drawn while the camera is moving. The interactive
+// resolution is derived from it and from how fast this machine actually draws,
+// measured on the last full size frame: a GPU renders the viewport well inside
+// the budget and never gets a reduced frame, while a slow path (or a machine
+// whose driver has fallen back to software GL) trades sharpness for a frame the
+// pointer can keep up with.
+constexpr qreal K_INTERACTIVE_BUDGET_MS = 40.0;
+constexpr qreal K_INTERACTIVE_MIN_SCALE = 0.25;
 
 struct ViewTypeEntry
 {
@@ -546,8 +556,22 @@ GcodeView::GcodeView(QQuickItem* parent)
     setOpaquePainting(false);
     m_renderTimer.setSingleShot(true);
     m_renderTimer.setInterval(0);
+    // A camera drag fires tens of updates a second. The low resolution frame the
+    // drag renders is enough to follow the pointer; this timer draws the sharp one
+    // once the camera has stopped moving.
+    m_settleTimer.setSingleShot(true);
+    m_settleTimer.setInterval(180);
+    connect(&m_settleTimer, &QTimer::timeout, this, [this] { scheduleRender(); });
     connect(&m_renderTimer, &QTimer::timeout, this, [this] {
         m_renderScheduled = false;
+        // The pending frame is only allowed to be coarse if the camera is the only
+        // thing that changed since the last one. Anything else -- a new toolpath, a
+        // layer range, a visibility toggle -- is a one-off the user is waiting on,
+        // so it renders at full size straight away.
+        const bool coarse = m_interactive && !m_pendingInput && !m_clearPending
+                            && !m_layerDirty && !m_moveDirty && !m_rolesDirty
+                            && !m_viewTypeDirty && !m_optionsDirty;
+        m_interactive = false;
         if (!m_impl->ensureInitialized())
             return;
         if (!m_initialized) {
@@ -564,6 +588,8 @@ GcodeView::GcodeView(QQuickItem* parent)
             m_pendingInput.reset();
             m_viewTypeDirty = true;
             m_legendDirty = true;
+            m_rolesDirty = true;
+            m_optionsDirty = true;
             emit contentsLoaded();
         }
         if (m_layerDirty) {
@@ -575,22 +601,49 @@ GcodeView::GcodeView(QQuickItem* parent)
             m_impl->setVisibleMoveRange(m_moveMin, m_moveMax);
             m_moveDirty = false;
         }
-        m_impl->applyVisibility(m_hiddenRoles);
+        // These take the desktop GL context to talk to libvgcode, so they run only
+        // after something that changes them, never on every camera step.
+        if (m_rolesDirty) {
+            m_impl->applyVisibility(m_hiddenRoles);
+            m_rolesDirty = false;
+        }
         if (m_viewTypeDirty) {
             m_impl->applyViewType(m_viewTypeName);
             m_viewTypeDirty = false;
         }
-        m_impl->applyOptionVisibility(m_hiddenOptions);
+        if (m_optionsDirty) {
+            m_impl->applyOptionVisibility(m_hiddenOptions);
+            m_optionsDirty = false;
+        }
         if (m_legendDirty) {
             m_legendDirty = false;
             emit legendChanged();
         }
 
         const qreal dpr = window() != nullptr ? window()->devicePixelRatio() : 1.0;
-        const int target_width = std::max(1, int(std::lround(this->width() * dpr)));
-        const int target_height = std::max(1, int(std::lround(this->height() * dpr)));
+        int target_width = std::max(1, int(std::lround(this->width() * dpr)));
+        int target_height = std::max(1, int(std::lround(this->height() * dpr)));
+        const qint64 render_started = QDateTime::currentMSecsSinceEpoch();
+        if (coarse) {
+            // Pixels the budget allows, from what a full frame cost here. Below
+            // the measured rate nothing else in the path is worth trading for:
+            // the draw, the resolve and the readback all scale with pixels.
+            const qreal fullPixels = qreal(target_width) * qreal(target_height);
+            if (m_pixelsPerMs > 0.0 && fullPixels > 0.0) {
+                const qreal affordable = K_INTERACTIVE_BUDGET_MS * m_pixelsPerMs;
+                if (affordable < fullPixels) {
+                    const qreal scale = std::clamp(std::sqrt(affordable / fullPixels),
+                                                   K_INTERACTIVE_MIN_SCALE, 1.0);
+                    target_width = std::max(1, int(std::lround(target_width * scale)));
+                    target_height = std::max(1, int(std::lround(target_height * scale)));
+                }
+            }
+        }
         QImage frame = m_impl->render(target_width, target_height, m_cameraEye,
                                       m_cameraCenter, m_cameraUp, m_fov);
+        const qint64 elapsed_ms = std::max<qint64>(1, QDateTime::currentMSecsSinceEpoch() - render_started);
+        if (!coarse)
+            m_pixelsPerMs = (qreal(target_width) * qreal(target_height)) / qreal(elapsed_ms);
         if (frame.isNull())
             return;
         frame.setDevicePixelRatio(dpr);
@@ -601,6 +654,8 @@ GcodeView::GcodeView(QQuickItem* parent)
         }
         update();
         emit frameCountChanged();
+        if (coarse)
+            m_settleTimer.start();
     });
 }
 
@@ -612,9 +667,13 @@ void GcodeView::paint(QPainter* painter)
     if (m_frame.isNull())
         return;
     painter->save();
-    painter->translate(0.0, m_frame.height());
+    // The frame can be smaller than the item -- an interactive frame is capped on
+    // its long edge -- so it is drawn into the item's own rectangle and scaled by
+    // the draw itself, not at the size the last render happened to use.
+    painter->setRenderHint(QPainter::SmoothPixmapTransform, true);
+    painter->translate(0.0, height());
     painter->scale(1.0, -1.0);
-    painter->drawImage(QRectF(0.0, 0.0, m_frame.width(), m_frame.height()), m_frame);
+    painter->drawImage(QRectF(0.0, 0.0, width(), height()), m_frame);
     painter->restore();
 }
 
@@ -629,7 +688,7 @@ void GcodeView::setCameraEye(const QVector3D& eye)
     if (eye == m_cameraEye)
         return;
     m_cameraEye = eye;
-    scheduleRender();
+    scheduleRender(true);
 }
 
 void GcodeView::setCameraCenter(const QVector3D& center)
@@ -637,7 +696,7 @@ void GcodeView::setCameraCenter(const QVector3D& center)
     if (center == m_cameraCenter)
         return;
     m_cameraCenter = center;
-    scheduleRender();
+    scheduleRender(true);
 }
 
 void GcodeView::setCameraUp(const QVector3D& up)
@@ -645,7 +704,7 @@ void GcodeView::setCameraUp(const QVector3D& up)
     if (up == m_cameraUp)
         return;
     m_cameraUp = up;
-    scheduleRender();
+    scheduleRender(true);
 }
 
 void GcodeView::setFov(qreal fov)
@@ -653,7 +712,7 @@ void GcodeView::setFov(qreal fov)
     if (qFuzzyCompare(fov, m_fov))
         return;
     m_fov = fov;
-    scheduleRender();
+    scheduleRender(true);
 }
 
 void GcodeView::setInput(Slic3r::App::libvgcode::FdmViewerInputData&& input)
@@ -684,6 +743,7 @@ void GcodeView::setRoleVisibility(int role, bool visible)
         m_hiddenRoles.remove(role);
     else
         m_hiddenRoles.insert(role);
+    m_rolesDirty = true;
     scheduleRender();
 }
 
@@ -703,6 +763,7 @@ void GcodeView::setOptionVisible(const QString& name, bool visible)
         m_hiddenOptions.remove(name);
     else
         m_hiddenOptions.insert(name);
+    m_optionsDirty = true;
     m_legendDirty = true;
     scheduleRender();
 }
@@ -735,8 +796,12 @@ void GcodeView::clearContents()
     scheduleRender();
 }
 
-void GcodeView::scheduleRender()
+void GcodeView::scheduleRender(bool interactive)
 {
+    if (interactive)
+        m_interactive = true;
+    else
+        m_interactive = false;
     if (m_renderScheduled)
         return;
     m_renderScheduled = true;

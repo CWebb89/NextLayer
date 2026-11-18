@@ -74,7 +74,10 @@ public:
     void clearContents();
 
 private:
-    void scheduleRender();
+    // `interactive` marks a render caused by the camera moving: those run at a
+    // reduced resolution so the frame keeps up with the pointer, and a full
+    // resolution frame follows once the camera stops.
+    void scheduleRender(bool interactive = false);
 
     class Impl;
     std::unique_ptr<Impl> m_impl;
@@ -95,13 +98,20 @@ private:
     QSet<QString> m_hiddenOptions;
     QString m_viewTypeName;
     bool m_viewTypeDirty = false;
+    bool m_rolesDirty = true;
+    bool m_optionsDirty = true;
     bool m_legendDirty = false;
     bool m_clearPending = false;
 
     QImage m_frame;
     mutable QMutex m_frameMutex;
     QTimer m_renderTimer;
+    QTimer m_settleTimer;
     bool m_initialized = false;
     int m_frameCount = 0;
     bool m_renderScheduled = false;
+    bool m_interactive = false;
+    // Pixels a full size frame buys per millisecond on this machine, measured on
+    // the last one, which is what sizes an interactive frame.
+    qreal m_pixelsPerMs = 0.0;
 };
