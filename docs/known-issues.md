@@ -189,6 +189,16 @@ complete inventory, this is the part you need before you start a print.
 
 ## Interface
 
+- **A preset edited from the settings panel has no obvious way to be saved.** Reported
+  2026-11-17 after switching supports off in the process tab: the header's "Save preset"
+  opens the preset editor, whose `Save` button answers "This preset ships with the engine,
+  so it cannot be overwritten. Give it your own name to save a copy" and then stops. The
+  route that works is `Save as` with a typed name, but nothing on screen points at it, so
+  the reading is that the change cannot be saved at all. Two things to check before
+  choosing the fix: whether the header button opens the editor on the tab that actually
+  holds the change (`openPresetEditor(settingsPanel.activeTab)`), and whether `Save`
+  should be hidden rather than refused for a non-user preset. `modifiedCount(tab)` is
+  per tab, so a change in one tab leaves `Save` disabled in another.
 - **A machine saved with "Save as" is written but cannot be chosen.** The copy
   lands in `presets/user/…/printer-<name>.yaml` with the whole value set, and the
   window reports it saved, but the machine list the window offers is built from the
