@@ -84,7 +84,6 @@ add_executable(next-layer-qt
     src/Arranger.hpp
     src/Paint.cpp
     src/Paint.hpp
-    src/ProjectFile.cpp
     src/ProjectFile.hpp
     src/GlewWrap.cpp
     src/Toolpath.cpp

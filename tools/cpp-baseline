@@ -41,7 +41,6 @@ PreviewData.cpp
 PreviewData.hpp
 PrinterLink.cpp
 PrinterLink.hpp
-ProjectFile.cpp
 ProjectFile.hpp
 QtPlatform.cpp
 QtPlatform.hpp

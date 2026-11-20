@@ -7,10 +7,104 @@
 
 pub use crate::mesh::Mesh;
 
+pub use ffi::{
+    ProjectMarkerRecord, ProjectMetadataRecord, ProjectObjectRecord, ProjectOutcome, ProjectPaint,
+    ProjectPaintOutcome, ProjectSetting, ProjectVolumeRecord,
+};
+
 use cxx::CxxString;
 
 #[cxx::bridge(namespace = "next_layer")]
 mod ffi {
+    /// One paint channel: the triangles the engine split, the state bitstream it
+    /// walked, and which states the channel uses.
+    struct ProjectPaint {
+        /// Flat (triangle index, bitstream start) pairs.
+        triangles: Vec<i64>,
+        /// The bitstream as text, one `0` or `1` per bit.
+        bitstream: String,
+        /// The state numbers the channel sets.
+        states: Vec<u32>,
+    }
+
+    /// One overridden setting, discriminated by `kind` so a `QVariant` never has to
+    /// cross the bridge.
+    struct ProjectSetting {
+        name: String,
+        /// 0 text, 1 boolean, 2 integer, 3 number, 4 the `{value, is_percent}` object.
+        kind: u8,
+        truth: bool,
+        number: f64,
+        text: String,
+    }
+
+    /// A volume attached to an object: geometry in the object's own frame, its own
+    /// transform, and the role it plays in the slice.
+    struct ProjectVolumeRecord {
+        name: String,
+        kind: String,
+        visible: bool,
+        /// Sixteen `f64`, row-major, four rows of four.
+        matrix: Vec<f64>,
+        /// The mesh as binary STL bytes.
+        mesh: Vec<u8>,
+    }
+
+    /// One object as a project file stores it.
+    struct ProjectObjectRecord {
+        name: String,
+        source: String,
+        plate: i32,
+        visible: bool,
+        /// Sixteen `f64`, row-major, four rows of four.
+        matrix: Vec<f64>,
+        /// The mesh as binary STL bytes.
+        mesh: Vec<u8>,
+        volumes: Vec<ProjectVolumeRecord>,
+        settings: Vec<ProjectSetting>,
+        /// Flat (z, layer height) pairs.
+        layer_heights: Vec<f64>,
+        support_paint: ProjectPaint,
+        seam_paint: ProjectPaint,
+        tool_paint: ProjectPaint,
+    }
+
+    /// A marker on the plate's timeline, stored with the plate because the engine
+    /// applies it to the bed instance rather than to any one object.
+    struct ProjectMarkerRecord {
+        z: f64,
+        kind: String,
+        text: String,
+    }
+
+    /// The state the engine has no concept of and the project keeps for itself.
+    struct ProjectMetadataRecord {
+        application: String,
+        printer: String,
+        process: String,
+        filament: String,
+        active_plate: i32,
+        plate_count: i32,
+        plate_names: Vec<String>,
+        plate_locked: Vec<bool>,
+        tool_colours: Vec<String>,
+        markers: Vec<ProjectMarkerRecord>,
+    }
+
+    /// What a project file turned out to hold, or why it held nothing.
+    struct ProjectOutcome {
+        ok: bool,
+        error: String,
+        objects: Vec<ProjectObjectRecord>,
+        metadata: ProjectMetadataRecord,
+    }
+
+    /// One paint channel as text, and back.
+    struct ProjectPaintOutcome {
+        ok: bool,
+        paint: ProjectPaint,
+    }
+
     unsafe extern "C++" {
         include!("next-layer-app/include/next-layer-qt.hpp");
 
@@ -126,6 +220,24 @@ mod ffi {
         /// The foreign name and value a setting is written under, or nothing when
         /// that slicer has neither.
         fn foreign_name_for(engine_key: &str, engine_value: &str) -> Vec<String>;
+
+        /// The document, as the bytes of a project file.
+        fn serialise_project(
+            objects: &[ProjectObjectRecord],
+            metadata: &ProjectMetadataRecord,
+        ) -> Vec<u8>;
+
+        /// The document a project file holds, or why it could not be read.
+        fn parse_project(body: &[u8]) -> ProjectOutcome;
+
+        /// The project file version this build writes and the newest it will read.
+        fn project_format_version() -> i32;
+
+        /// One paint channel as text.
+        fn paint_to_text(paint: &ProjectPaint) -> Vec<u8>;
+
+        /// One paint channel read back from text.
+        fn paint_from_text(text: &[u8]) -> ProjectPaintOutcome;
     }
 }
 
@@ -272,6 +384,29 @@ fn canonical_foreign_source(engine_key: &str) -> String {
 
 fn foreign_name_for(engine_key: &str, engine_value: &str) -> Vec<String> {
     flatten(crate::ForeignSettings::foreign_name_for(engine_key, engine_value))
+}
+
+fn serialise_project(
+    objects: &[ProjectObjectRecord],
+    metadata: &ProjectMetadataRecord,
+) -> Vec<u8> {
+    crate::ProjectFile::serialise_project(objects, metadata)
+}
+
+fn parse_project(body: &[u8]) -> ProjectOutcome {
+    crate::ProjectFile::parse_project(body)
+}
+
+fn project_format_version() -> i32 {
+    crate::ProjectFile::format_version()
+}
+
+fn paint_to_text(paint: &ProjectPaint) -> Vec<u8> {
+    crate::ProjectFile::paint_to_text(paint)
+}
+
+fn paint_from_text(text: &[u8]) -> ProjectPaintOutcome {
+    crate::ProjectFile::paint_from_text(text)
 }
 
 fn flatten(pair: Option<(String, String)>) -> Vec<String> {

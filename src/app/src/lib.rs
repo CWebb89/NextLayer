@@ -66,11 +66,14 @@ pub mod Palette;
 #[allow(non_snake_case)]
 pub mod PlateThumbnail;
 #[allow(non_snake_case)]
+pub mod ProjectFile;
+#[allow(non_snake_case)]
 pub mod Resources;
 #[allow(non_snake_case)]
 pub mod Scratch;
 #[allow(non_snake_case)]
 pub mod Updater;
+pub mod base64;
 pub mod bridge;
 pub mod hfw;
 pub mod mesh;

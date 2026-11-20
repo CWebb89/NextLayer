@@ -50,7 +50,7 @@ the header and its two lines, not writing a replacement.
 | PrinterLink | 638 | PresetStore | 22 | 12 props / 8 invokables / 3 signals, singleton | port, phase 0 | PresetStore |
 | ThreeMfProject | 637 | miniz only | 0 | 0 | port, phase 6 | — |
 | Toolpath | 613 | PreviewData, GcodeView | 2 | 21 props / 14 invokables / 1 signal, singleton | port, phase 4 | PreviewData, GcodeView |
-| ProjectFile | 497 | Paint✝, Scratch↻ | 14 | 0 | port, phase 6 | — |
+| ProjectFile | 497 | Paint✝, Scratch↻ | 14 | 0 | **landed 2026-11-21** — logic in `src/app/src/ProjectFile.rs`, the header is the adapter | — |
 | Paint ✝ | 481 | — | 19 | 0 | **delete, phase 7** | shared types move first |
 | ForeignSettings | 416 | — | 0 | 0 | port, phase 3 | — |
 | QtPlatform | 391 | — | 19 | 0 | port, phase 0 | SliceRuntime✝ (its install site) |
@@ -153,6 +153,26 @@ into a Rust module first and let the five become five separate ports. The
 shared-type track is `PlateDocument` + `ProjectFile`, which is why `ProjectFile`
 (level 0, 497 lines, a closed pair of functions) goes first and proves the
 vocabulary the other four are waiting on.
+
+### The vocabulary ProjectFile settled (2026-11-21)
+
+`cxx` will not put `TriangleMesh`, `Transformation`, `QVariantMap` or
+`TriangleSplittingData` in a shared struct, so porting `ProjectFile` meant choosing
+what the five files in the cycle will speak when they arrive. The choice, now in
+`src/app/src/bridge.rs` and used by `ProjectFile.hpp`:
+
+| concept | the form that crosses | why this one |
+| --- | --- | --- |
+| geometry | binary STL bytes, `Vec<u8>` (`ProjectObjectRecord.mesh`) | the project file already stores exactly these bytes, so the port added no format; `store_stl`/`load_stl` stay in the C++ adapter because the engine's mesh is still there, and they disappear into `mesh::Mesh` when `PlateDocument` lands |
+| transform | sixteen `f64`, row-major 4×4 (`matrix`) | the file's own array, so nothing is reinterpreted; flattened because cxx carries `Vec<f64>` inside a shared struct, not `[f64; 16]` |
+| paint channel | flat `(triangle index, bitstream start)` `i64` pairs, the bitstream as `0`/`1` text, and the state numbers the channel sets (`ProjectPaint`) | it is the file's encoding, engine-free; `used_states` is sized from `TRIANGLE_STATE_TYPE_COUNT` in the adapter, which is the only side that knows the count |
+| layer height profile | flat `(z, height)` `f64` pairs | same reason as the matrix |
+| settings | a discriminated record: `kind` 0 text / 1 bool / 2 int / 3 number / 4 `{value, is_percent}`, plus `truth`, `number`, `text` | a `QVariant` cannot cross, and these five are the only shapes the app stores |
+| names | `ProjectObjectRecord`, `ProjectVolumeRecord`, `ProjectMetadataRecord`, `ProjectMarkerRecord` | `next_layer::ProjectObject` is taken by the C++ struct its callers still build, so the shared structs carry a `Record` suffix rather than a second name for the same thing |
+
+One consequence worth stating: after this, `PlateDocument.cpp` still owns the STL
+round trip, because its meshes are engine meshes. That conversion is the last
+engine-shaped thing in the project file path and it leaves with `PlateDocument`.
 
 ## The deletions
 

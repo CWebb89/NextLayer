@@ -395,7 +395,12 @@ lookups are `src/app/src/ForeignSettings.rs`, and the choice of which foreign
 spelling a value goes out under is now table order rather than `QHash` iteration
 order — which was seeded per process, so the old writer's choice was not stable
 across runs even though its own comment claimed it was. `--dump-foreign-settings`
-still prints the same 109 rows in the same order. They proved the shape every
-later port reuses — one `#[cxx::bridge]` in `src/app/src/bridge.rs`, the C++ header
-kept as inline Qt adapters, the `.cpp` deleted — and `tools/rust-port` now reads
-**6 of 67** backend files replaced, 11 Rust files, 2,893 lines.
+still prints the same 109 rows in the same order. `ProjectFile` landed next (phase
+6): the format is `src/app/src/ProjectFile.rs` and the header is the adapter; the
+vocabulary it settled — geometry as binary STL bytes, a transform as sixteen `f64`
+row-major, paint as the file's own bitstream record, settings as a discriminated
+record — is written down in `docs/port-graph.md` under the cycle, because that is
+what the five files in the cycle will speak. They proved the shape every later port
+reuses — one `#[cxx::bridge]` in `src/app/src/bridge.rs`, the C++ header kept as
+inline Qt adapters, the `.cpp` deleted — and `tools/rust-port` now reads **7 of 66**
+backend files replaced, 13 Rust files, 3,815 lines.
