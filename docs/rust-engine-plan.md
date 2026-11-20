@@ -17,7 +17,7 @@ repository that stops calling the C++ engine; it has not started.
 | Repository | What it is | Size | State |
 | --- | --- | --- | --- |
 | `HFW` | The slicing engine, Rust, clean-room | 45,788 lines, 15 crates | Slices plates, writes G-code, verifies its own output. Gate green (`fish scripts/test-hfw.fish`, 82 sections + two-reference oracle). Every crate this plan named has landed. |
-| `next-layer` | The application, Qt/QML with a cxx-qt backend | 26,786 C++ lines in 75 files, 38 Rust lines, 20,156 QML lines | Slices through HFW's command line; **0 of 75** backend files have a Rust replacement. `src/app` is a crate skeleton with one QML singleton. |
+| `next-layer` | The application, Qt/QML with a cxx-qt backend | 26,550 C++ lines in 72 files, 917 Rust lines, 20,156 QML lines | Slices through HFW's command line; **3 of 72** backend files have a Rust replacement (`Resources`, `GcodeBrand`, `Scratch`), with the C++→Rust bridge (`src/app/src/bridge.rs`) proved end to end. |
 | `next-layer/upstream` | A restructured PrusaSlicer, the engine | 605,785 lines, 28 modules | Linked today: `src/qt/CMakeLists.txt` still names `slic3r-app-cli`, `slic3r-biz-arrange`, `libpgcode`, `miniz`, `OCCTWrapper`. Not part of the application's git history. |
 
 The application is 43 files away from owning nothing but its own interface. Those
