@@ -330,3 +330,11 @@ to stop calling the C++ engine for.
 | 5 — plate operations | **Landed 2026-11-20**: duplicate/rotate/mirror/arrange in `crates/plate` | **Not started**: `Arranger.cpp`, `Orient.cpp`, `TransformController.cpp` still slice with the C++ engine's geometry |
 | 6 — project files | **Landed 2026-11-20**: `hfw_plate_project_bytes`/`hfw_plate_open_project` | **Not started**: `.3mf` still round-trips through `ProjectFile.cpp`/`ThreeMfProject.cpp` |
 | 7 — optional features | **Settled 2026-11-20**: seven `capabilities` rows, `docs/SCOPE.md` | **Not started**: the thirteen files are deleted, not ported |
+
+Outside the phases, because they needed no engine at all, five shell files are
+already Rust and deleted from `src/qt/src`: `Resources`, `GcodeBrand`, `Scratch`,
+`Palette` and `Updater` (the last as a cxx-qt QML singleton over `ureq`). They
+proved the shape every later port reuses — one `#[cxx::bridge]` in
+`src/app/src/bridge.rs`, the C++ header kept as inline Qt adapters, the `.cpp`
+deleted — and `tools/rust-port` now reads **4 of 69** backend files replaced, 8 Rust
+files, 1,639 lines.
