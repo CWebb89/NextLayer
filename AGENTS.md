@@ -1,10 +1,10 @@
 # next-layer
 
 A 3D printer slicer of our own. Slicing runs on **HFW**, our Rust engine in
-`~/dev/HFW`, reached as a subprocess today and as a C library in phase 1 of
-`docs/rust-engine-plan.md`. The C++ engine under `upstream/` is still linked for the
-plate model, settings, arrange, preview and project files, and that plan is how it
-leaves. `docs/engine-boundary.md` is the generated file-by-file measure of the
+`~/dev/HFW`, through its C library (`hfw.h`): a slice builds the plate in this
+process and never spawns a binary. The C++ engine under `upstream/` is still linked
+for the plate model, settings, arrange, preview and project files, and
+`docs/rust-engine-plan.md` is how it leaves. `docs/engine-boundary.md` is the generated file-by-file measure of the
 remaining work; `tools/engine-boundary.py --check` runs in `tools/check`.
 
 When a turn touches the engine boundary — a new `Slic3r::` use, a new HFW call, a
@@ -64,6 +64,23 @@ accepts the current QML warnings as known, and must be followed by reading the
 diff of `tools/qmllint-baseline`. `docs/testing.md` is the manual walkthrough that
 sits on top of it.
 
+**A full run is minutes, so pick the small one while working.** Every gate
+launches the application — 78 times, most of them a slice on every core — which
+is where the wall time goes. Nothing in `tools/check` compiles.
+
+- `tools/check --fast` while working. It skips the oracle, the byte-exact half
+  and the slowest part of the run.
+- The full `tools/check` once, against the tree about to be committed.
+- One check at a time. Two concurrent runs starve each other of cores, share
+  `/tmp/nl-check-*`, and both rewrite the same baseline artifacts, so a run
+  started beside another can report a failure that does not exist. Wait for any
+  running check — a build too — to finish before starting yours.
+
+The `oracle/baseline/gcode/*.actual.gcode` files are written only when a case
+mismatches, as the target of the diff the failure prints. They are not baseline
+data: restore them with `git checkout -- oracle/baseline/gcode` instead of
+committing them.
+
 **Reference the real thing before writing UI.** A checkout of a mature reference
 slicer, its source and its profile bundle are recorded in the memory store under
 "Reference checkouts"; read its settings UI, its G-code viewer and its plate
@@ -83,19 +100,23 @@ Slicing parity (the important one):
 
 ```sh
 cd ~/dev/next-layer
-python3 oracle/oracle.py capture                                    # stock engine → baselines
-python3 oracle/oracle.py verify --runner app \
-    --bin upstream/build/src/next-layer-cli/next-layer-spike        # spike binary vs baselines
 python3 oracle/oracle.py verify --runner qt \
     --bin upstream/build/src/next-layer-qt/next-layer-qt            # app binary vs baselines
+python3 oracle/oracle.py capture --runner qt \
+    --bin upstream/build/src/next-layer-qt/next-layer-qt            # replace the baselines
 ```
 
 `verify` exits 0 only when every case is byte-identical after header
-normalisation. Current state: 12/12 on both binaries (the twelfth case resolves a
-printer/process/filament triple, so preset resolution is covered too). The `qt`
-runner is the one that matters for the GUI: it slices through the same `--slice`
-path the app uses, so a regression in the settings model or the slice controller
-shows up here before it reaches a window.
+normalisation. Current state: 12/12 (the twelfth case resolves a
+printer/process/filament triple, so preset resolution is covered too). Only the
+`qt` runner can match: the baselines are HFW output, and `src/qt` is the only
+place HFW is wired in. `src/cli` contains no HFW code, so
+`--runner app --bin next-layer-spike` slices with the C++ engine and reports 0/11
+against those baselines — measured 2026-11-20; it is not a regression and no
+amount of rebuilding the spike changes it. `qt` is also the runner that matters
+for the GUI: it slices through the same `--slice` path the app uses, so a
+regression in the settings model or the slice controller shows up here before it
+reaches a window.
 
 `verify` compares the sha256 in `oracle/baseline/manifest.json`. The `.gcode`
 files in that directory are the human-readable copy a CHANGED report tells you to

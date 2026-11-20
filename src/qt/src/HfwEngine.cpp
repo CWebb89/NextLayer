@@ -6,36 +6,14 @@
 #include "Paint.hpp"
 #include "hfw.h"
 
-#include <QCoreApplication>
-#include <QDir>
 #include <QFile>
-#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonValue>
-#include <QProcess>
-#include <QProcessEnvironment>
-#include <QStandardPaths>
-#include <QStringList>
-#include <QTemporaryDir>
-
-#include <cstdio>
 
 namespace next_layer {
 namespace {
-
-QString developmentBinary()
-{
-    return QStringLiteral("/home/cwebb/dev/HFW/target/release/hfw-cli");
-}
-
-QString tail(const QString& text, int lines)
-{
-    const QStringList all = text.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
-    const int first = std::max(0, int(all.size()) - lines);
-    return all.mid(first).join(QLatin1Char('\n')).trimmed();
-}
 
 /// The engine's own words for why the call that just failed did.
 QString engineError()
@@ -759,41 +737,6 @@ QByteArray projectBytes(HfwPlate* plate)
 
 } // namespace
 
-QString hfwBinary()
-{
-    const QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
-    const QString configured = environment.value(QStringLiteral("NEXT_LAYER_HFW"));
-    if (!configured.isEmpty())
-        return QFileInfo::exists(configured) ? configured : QString();
-
-    // An installed copy keeps the engine in its own directory beside the
-    // executable, so the two travel together through a package.
-    const QString beside =
-        QDir(QCoreApplication::applicationDirPath() + QStringLiteral("/../libexec/next-layer"))
-            .filePath(QStringLiteral("hfw-cli"));
-    if (QFileInfo(beside).isExecutable())
-        return beside;
-
-    const QString found = QStandardPaths::findExecutable(QStringLiteral("hfw-cli"));
-    if (!found.isEmpty())
-        return found;
-
-    return QFileInfo(developmentBinary()).isExecutable() ? developmentBinary() : QString();
-}
-
-QString hfwUnavailableReason()
-{
-    if (!hfwBinary().isEmpty())
-        return {};
-    const QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
-    if (!environment.value(QStringLiteral("NEXT_LAYER_HFW")).isEmpty())
-        return QStringLiteral("NEXT_LAYER_HFW points at a file that is not there");
-    return QStringLiteral("hfw-cli was not found beside the application, on PATH or in the "
-                          "development build tree; set NEXT_LAYER_HFW to its path");
-}
-
-/// Reads a plate back and rebuilds it, to prove a document survives being handed
-/// to the engine.
 bool roundTripPlate(const QVector<PlateSliceObject>& objects,
                     const QVector<PlateLayerGcode>& layerGcodes,
                     const QVector<PlateInLayerPolyline>& inLayer, QString& report,
@@ -1001,42 +944,6 @@ bool readPlateSnapshot(const QVector<PlateSliceObject>& objects,
     return true;
 }
 
-bool writePlateFile(const QVector<PlateSliceObject>& objects,
-                    const QVector<PlateLayerGcode>& layerGcodes,
-                    const QVector<PlateInLayerPolyline>& inLayer, const QString& path,
-                    QString& error)
-{
-    if (objects.isEmpty()) {
-        error = QStringLiteral("no object on the plate");
-        return false;
-    }
-
-    PlateHandle plate;
-    if (plate.get() == nullptr) {
-        error = QStringLiteral("the engine could not create a plate: %1").arg(engineError());
-        return false;
-    }
-    if (!fillPlate(plate.get(), objects, layerGcodes, inLayer, error))
-        return false;
-
-    size_t length = 0;
-    char* bytes = hfw_plate_project_bytes(plate.get(), &length);
-    if (bytes == nullptr) {
-        error = QStringLiteral("the engine could not write the plate: %1").arg(engineError());
-        return false;
-    }
-    QFile file(path);
-    const bool opened = file.open(QIODevice::WriteOnly | QIODevice::Truncate);
-    const qint64 written = opened ? file.write(bytes, qint64(length)) : -1;
-    file.close();
-    hfw_string_free(bytes);
-    if (!opened || written != qint64(length)) {
-        error = QStringLiteral("could not write %1").arg(path);
-        return false;
-    }
-    return true;
-}
-
 bool sliceWithHfw(const QVector<PlateSliceObject>& objects, const QString& configPath,
                   const QString& gcodePath, QString& error,
                   const QVector<PlateLayerGcode>& layerGcodes,
@@ -1055,64 +962,40 @@ bool sliceWithHfw(const QVector<PlateSliceObject>& objects, const QString& confi
             return false;
         }
     }
-    const QString binary = hfwBinary();
-    if (binary.isEmpty()) {
-        error = hfwUnavailableReason();
+
+    PlateHandle plate;
+    if (plate.get() == nullptr) {
+        error = QStringLiteral("the engine could not create a plate: %1").arg(engineError());
         return false;
     }
-
-    QTemporaryDir work;
-    if (!work.isValid()) {
-        error = QStringLiteral("could not create a scratch directory");
+    if (!fillPlate(plate.get(), objects, layerGcodes, inLayer, error))
+        return false;
+    const QByteArray profile = configPath.toUtf8();
+    HfwGcode* gcode = placeOnBed
+        ? hfw_plate_slice_placed(plate.get(), profile.constData(), 0.0, 0.0)
+        : hfw_plate_slice(plate.get(), profile.constData(), 0.0, 0.0);
+    if (gcode == nullptr) {
+        error = QStringLiteral("the engine would not slice the plate: %1").arg(engineError());
         return false;
     }
-
-    const QString platePath = work.filePath(QStringLiteral("plate.hfw"));
-    if (!writePlateFile(objects, layerGcodes, inLayer, platePath, error))
-        return false;
-
-    QStringList arguments;
-    arguments << QStringLiteral("--plate") << platePath << QStringLiteral("--preset") << configPath
-              << QStringLiteral("--gcode") << gcodePath;
-    if (placeOnBed)
-        arguments << QStringLiteral("--place");
-
-    QProcess process;
-    process.setProcessChannelMode(QProcess::MergedChannels);
-    process.start(binary, arguments);
-    if (!process.waitForStarted(15000)) {
-        error = QStringLiteral("could not start %1").arg(binary);
-        return false;
-    }
-    if (!process.waitForFinished(-1)) {
-        process.kill();
-        error = QStringLiteral("%1 did not finish").arg(binary);
-        return false;
-    }
-
-    const QString output = QString::fromLocal8Bit(process.readAll());
-    // What the engine did with the document, which is otherwise the one thing about a
-    // slice this application cannot show: what the file carried, and whether a stroke
-    // landed on a printed layer.
-    for (const QString& line : output.split(QLatin1Char('\n'))) {
-        if (line.contains(QLatin1String("warning:")) || line.contains(QLatin1String("Carries:")))
-            std::fprintf(stderr, "%s\n", line.trimmed().toUtf8().constData());
-    }
-    const bool wrote = QFileInfo(gcodePath).size() > 0;
-    const bool verified = output.contains(QStringLiteral("verify RESULT PASS"));
-    if (process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0 && wrote && verified)
-        return true;
-
-    if (!wrote) {
-        error = QStringLiteral("hfw wrote no G-code: %1").arg(tail(output, 6));
+    const char* text = hfw_gcode_text(gcode);
+    const size_t length = hfw_gcode_len(gcode);
+    QFile file(gcodePath);
+    const bool opened = text != nullptr && file.open(QIODevice::WriteOnly | QIODevice::Truncate);
+    const qint64 written = opened ? file.write(text, qint64(length)) : -1;
+    file.close();
+    const bool verified = hfw_gcode_verified(gcode) == 1;
+    hfw_gcode_free(gcode);
+    if (!opened || written != qint64(length)) {
+        error = QStringLiteral("could not write %1").arg(gcodePath);
         return false;
     }
     if (!verified) {
-        error = QStringLiteral("the file failed HFW's own verifier: %1").arg(tail(output, 6));
+        error = QStringLiteral("the engine's verifier refused the G-code it wrote, and the file "
+                              "is there to be looked at rather than printed");
         return false;
     }
-    error = tail(output, 6);
-    return false;
+    return true;
 }
 
 } // namespace next_layer

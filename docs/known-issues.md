@@ -14,8 +14,8 @@ complete inventory, this is the part you need before you start a print.
   All of them now convert, measured at 0 unconverted of 360 keys; the two gates that
   covered it (supports and arcs) pass.
 - **The plate goes to HFW as a plate file, and paint is the one thing still left
-  behind.** `SliceController` writes HFW's own project document and slices it with
-  `hfw-cli --plate`, so per-object settings, volumes with their kinds and modifier
+  behind.** `SliceController` builds HFW's own plate in this process and slices it
+  through the C ABI, so per-object settings, volumes with their kinds and modifier
   settings, per-object layer heights, the timeline markers and the in-layer
   calibration strokes and the painted facets all reach the file as of 2026-11-20.
   **Paint costs resolution on the way**: the brush splits the triangles it touches and

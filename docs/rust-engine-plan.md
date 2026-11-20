@@ -17,7 +17,7 @@ repository that stops calling the C++ engine; it has not started.
 | Repository | What it is | Size | State |
 | --- | --- | --- | --- |
 | `HFW` | The slicing engine, Rust, clean-room | 45,788 lines, 15 crates | Slices plates, writes G-code, verifies its own output. Gate green (`fish scripts/test-hfw.fish`, 82 sections + two-reference oracle). Every crate this plan named has landed. |
-| `next-layer` | The application, Qt/QML with a cxx-qt backend | 26,550 C++ lines in 72 files, 917 Rust lines, 20,156 QML lines | Slices through HFW's command line; **3 of 72** backend files have a Rust replacement (`Resources`, `GcodeBrand`, `Scratch`), with the C++→Rust bridge (`src/app/src/bridge.rs`) proved end to end. |
+| `next-layer` | The application, Qt/QML with a cxx-qt backend | 26,550 C++ lines in 72 files, 917 Rust lines, 20,156 QML lines | Slices through HFW's C library; **3 of 72** backend files have a Rust replacement (`Resources`, `GcodeBrand`, `Scratch`), with the C++→Rust bridge (`src/app/src/bridge.rs`) proved end to end. |
 | `next-layer/upstream` | A restructured PrusaSlicer, the engine | 605,785 lines, 28 modules | Linked today: `src/qt/CMakeLists.txt` still names `slic3r-app-cli`, `slic3r-biz-arrange`, `libpgcode`, `miniz`, `OCCTWrapper`. Not part of the application's git history. |
 
 The application is 43 files away from owning nothing but its own interface. Those
@@ -151,21 +151,24 @@ the engine instead of being silently dropped.
 
 ### Phase 1 — A library boundary (the decision that shapes the rest)
 
-HFW is a **subprocess** today: the application writes STLs and a config, runs
-`hfw-cli`, reads G-code back. That is right for slicing and wrong for everything
-interactive, because the viewport needs mesh data sixty times a second and a
-process boundary cannot carry it.
+HFW was a **subprocess** when this phase was written: the application wrote STLs
+and a config, ran `hfw-cli`, read G-code back. That is right for slicing and wrong
+for everything interactive, because the viewport needs mesh data sixty times a
+second and a process boundary cannot carry it.
 
 HFW grows a **C ABI crate** — `crates/capi` — with a flat, versioned surface:
 
 ```
 hfw_mesh_load_file   hfw_mesh_from_bytes   hfw_mesh_transform   hfw_mesh_bounds
-hfw_mesh_free        hfw_plate_slice       hfw_gcode_free       hfw_last_error
+hfw_mesh_free        hfw_plate_slice       hfw_plate_slice_placed  hfw_gcode_free
+hfw_last_error
 ```
 
 Handles, not Rust types, cross the boundary. `hfw-cli` keeps working and is how
-the engine is tested; the application uses the ABI. The application keeps the
-subprocess call only for `--slice-all`-style batch work, if at all.
+the engine is tested; the application uses the ABI and no longer spawns anything.
+`hfw_plate_slice_placed` is the command line's `--place` in the ABI: `hfw_plate_slice`
+keeps the document's coordinates, so a caller with bare geometry and no document has
+no other way to ask for the centring.
 
 **Delivers:** the application can hold a mesh without a process, and phases 2–6
 become possible.
@@ -308,7 +311,7 @@ for. They are not details — each is a shipped feature:
 | three `TriangleSelector` paint channels (support, seam, tool) | **support and seam done 2026-11-20**: `hfw_mesh_paint_set`, `hfw_plate_object_paint`, consumed by `supports::seed_masks` and by the writer's seam chooser, both carried in the project; only the tool channel has no call | support and seam painting work through the ABI; per-tool paint does not, and cannot until multi-material is real |
 | `volumes`: part, negative, modifier, support blocker/enforcer | **part, negative, support blocker and support enforcer done 2026-11-20** (`hfw_plate_object_add_volume`): the first two through the kernel's ring booleans on every layer's outline, the last two through the same mask a painted facet drives | modifier volumes still have no call, because a layer under one carries two settings at once and the planner does not split a layer into regions |
 | plate-file transport (`hfw-cli --plate`) | **done 2026-11-20** (HFW `4de43eb` + `52c802e`): a plate file is sliced through `hfw_plate::Plate`; the run reports what the document carried and warns about a stroke whose Z matches no layer. `crates/cli/tests/plate.rs` drives the binary end to end | — |
-| the app writes that plate file | **done 2026-11-20**: `SliceController` builds an `HfwPlate` through the C ABI (`hfw_mesh_new`, `hfw_plate_object_set`, volumes, layer heights, markers, strokes), writes the project with `hfw_plate_project_bytes`, and slices it with `hfw-cli --plate`. The app links HFW's static library now (`src/qt/CMakeLists.txt` builds `hfw-capi` with cargo); `tools/check`'s plate-transport gate slices a document with a modifier, a marker and a stroke and reads all three back out of the G-code | — but paint is reduced on the way: the app's split triangles become one state per facet (area majority), so a painted edge lands on a facet boundary |
+| the app holds that plate | **done 2026-11-20**: `SliceController` builds an `HfwPlate` through the C ABI (`hfw_mesh_new`, `hfw_plate_object_set`, volumes, layer heights, markers, strokes) and slices it in process with `hfw_plate_slice` — no file, no subprocess (since 2026-11-20 late); `hfw_plate_project_bytes` writes the same plate when the caller wants to save it. The app links HFW's static library (`src/qt/CMakeLists.txt` builds `hfw-capi` with cargo); `tools/check`'s plate-transport gate slices a document with a modifier, a marker and a stroke and reads all three back out of the G-code | — but paint is reduced on the way: the app's split triangles become one state per facet (area majority), so a painted edge lands on a facet boundary |
 | modifier volumes (settings scoped to a region) | **done 2026-11-20** (`5c42493`): `VolumeKind::Modifier`; the plan is split into settings groups, each planned over the object's own slicing planes and folded together; settings arrive as key/value rows through `hfw_plate_volume_set`, stored in project format version 7 and resolved over the object's own at slice time | nothing: this closes the list of things the C++ plate hands the slicer |
 | in-layer polylines (the calibration channel) | **done 2026-11-20**: `hfw_plate_set_in_layer` / `_count` / `_get`, carried in project format version 6, printed as real beads under `;TYPE:Custom` at the end of the layer they name, with their own width, height, speed and a G-code prefix; `hfw-cli --in-layer` reads the same list from a file | nothing: this is the last calibration band |
 | plate timeline markers (custom G-code, pause, colour change at Z) | **done 2026-11-20**: `hfw_plate_set_markers` / `_count` / `_get`, carried in project format version 5 and written at the layer that reaches the height, merged with the profile's own pause and colour-change heights; `hfw-cli --markers` reads the same list from a file. A **tool-change** marker is refused, not emitted: HFW has one extruder | nothing for the three kinds that exist; the tool-change row waits on multi-material |
@@ -357,7 +360,7 @@ to stop calling the C++ engine for.
 | Phase | Engine half (HFW) | Application half (this repo) |
 | --- | --- | --- |
 | 0 — one engine, one switch | n/a | **Landed 2026-11-18**; the C++ slice branches are gone, HFW's ledger hides 175 settings, `tools/check` was green |
-| 1 — C ABI | **Landed 2026-11-20**: `crates/capi` v1, `include/hfw.h`, exercised from C | **Not started**: `HfwEngine.cpp` still shells out to `hfw-cli` |
+| 1 — C ABI | **Landed 2026-11-20**: `crates/capi` v1, `include/hfw.h`, exercised from C | **Landed 2026-11-20 (transport)**: `HfwEngine.cpp` slices through `hfw_plate_slice` / `hfw_plate_slice_placed` and writes the text itself; the `hfw-cli` subprocess, the temporary plate file, `hfwBinary()` and its start-up check are gone, and `tools/check` is green with the oracle at 12/12 byte-identical. The file itself is still C++, and porting it is blocked on the mesh types `SliceRuntime.hpp` carries (`Slic3r::Domain::TriangleMesh`, `Transformation`, `ModelVolumeType`, `TriangleSelector`) |
 | 2 — document model | **Engine half done 2026-11-20** (HFW `d5cea38`): `crates/plate` plus a *read-back* surface — object ids, name, placement, enabled flag, settings JSON, geometry with its paint, and each volume's kind/geometry/settings — so a document round-trips through the engine byte for byte. `tools/check`'s `--plate-readback-test` builds a plate from a document, reads every field back through the ABI, rebuilds a second plate from what it read and requires the two project files to be identical (13,650 bytes) | **Unblocked, not started**: `PlateDocument.cpp` (3,543 lines) is still the plate. Everything it hands the slicer has an ABI call in both directions now. What it still owns is the *view's* state — undo, plates and plate names, selection, tool colours, per-volume visibility, and each object's source path. **The view direction is proved too**: `--plate-document-test` slices a document, reads the engine's plate back into a second document that never saw the first, and requires both to print the same 647,349 bytes |
 | 3 — settings | **Landed 2026-11-20**: settings surface JSON + `hfw_plate_object_set` | **Not started**: `SettingsModel.cpp` (1,568) still reads the C++ `ConfigContainer` |
 | 4 — preview | **Landed 2026-11-20**: `hfw_plate_preview_json` + threaded job | **Not started**: `GcodeView`/`PreviewData` still borrow libvgcode/libpgcode types |

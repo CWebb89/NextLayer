@@ -1105,10 +1105,6 @@ int main(int argc, char* argv[])
 
     initEngine();
 
-    const QString engineGap = next_layer::hfwUnavailableReason();
-    if (!engineGap.isEmpty())
-        std::fprintf(stderr, "engine: %s\n", engineGap.toUtf8().constData());
-
     if (parser.isSet(vgcode_shot_option)) {
         const QStringList parts = parser.value(vgcode_shot_option).split(',');
         if (parts.size() != 2) {
