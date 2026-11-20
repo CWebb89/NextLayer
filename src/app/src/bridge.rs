@@ -7,6 +7,8 @@
 
 pub use crate::mesh::Mesh;
 
+use cxx::CxxString;
+
 #[cxx::bridge(namespace = "next_layer")]
 mod ffi {
     unsafe extern "C++" {
@@ -77,6 +79,18 @@ mod ffi {
 
         /// Removes scratch directories whose owning process is gone.
         fn sweep_scratch_dirs();
+
+        /// The two edges a plate thumbnail is rendered at, in the order the blocks
+        /// are written.
+        fn thumbnail_edges() -> Vec<u32>;
+
+        /// Replaces any `; thumbnail` block in a G-code file, at the top of it;
+        /// empty on success, else why the file could not be rewritten.
+        fn embed_plate_thumbnails(
+            path: &str,
+            png_primary: &CxxString,
+            png_secondary: &CxxString,
+        ) -> String;
 
         /// The resolved matugen palette, as one JSON object.
         fn palette_json() -> String;
@@ -205,4 +219,20 @@ fn scratch_template() -> String {
 
 fn sweep_scratch_dirs() {
     crate::Scratch::sweep_scratch_dirs();
+}
+
+fn thumbnail_edges() -> Vec<u32> {
+    crate::PlateThumbnail::edges()
+}
+
+fn embed_plate_thumbnails(
+    path: &str,
+    png_primary: &CxxString,
+    png_secondary: &CxxString,
+) -> String {
+    crate::PlateThumbnail::embed_plate_thumbnails(
+        path,
+        png_primary.as_bytes(),
+        png_secondary.as_bytes(),
+    )
 }

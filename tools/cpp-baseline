@@ -31,7 +31,6 @@ PlateDocument.cpp
 PlateDocument.hpp
 PlateScene.cpp
 PlateScene.hpp
-PlateThumbnail.cpp
 PlateThumbnail.hpp
 PresetFiles.hpp
 PresetImport.cpp

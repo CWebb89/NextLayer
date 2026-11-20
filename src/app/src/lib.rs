@@ -62,6 +62,8 @@ pub mod GcodeBrand;
 #[allow(non_snake_case)]
 pub mod Palette;
 #[allow(non_snake_case)]
+pub mod PlateThumbnail;
+#[allow(non_snake_case)]
 pub mod Resources;
 #[allow(non_snake_case)]
 pub mod Scratch;

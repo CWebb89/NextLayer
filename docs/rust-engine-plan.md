@@ -384,9 +384,12 @@ to stop calling the C++ engine for.
 | 7 — optional features | **Settled 2026-11-20**: seven `capabilities` rows, `docs/SCOPE.md` | **Not started**: the thirteen files are deleted, not ported |
 
 Outside the phases, because they needed no engine at all, five shell files are
-already Rust and deleted from `src/qt/src`: `Resources`, `GcodeBrand`, `Scratch`,
-`Palette` and `Updater` (the last as a cxx-qt QML singleton over `ureq`). They
-proved the shape every later port reuses — one `#[cxx::bridge]` in
-`src/app/src/bridge.rs`, the C++ header kept as inline Qt adapters, the `.cpp`
-deleted — and `tools/rust-port` now reads **4 of 69** backend files replaced, 8 Rust
-files, 1,639 lines.
+already Rust and out of `src/qt/src`: `Resources`, `GcodeBrand`, `Scratch`,
+`Palette` and `Updater` (the last as a cxx-qt QML singleton over `ureq`).
+`PlateThumbnail` followed them on 2026-11-21: its `.cpp` is gone and the
+`; thumbnail` block writer, the base64 encoder and the streamed file rewrite are
+`src/app/src/PlateThumbnail.rs`, with the `QImage` scaling left in the header
+because a `QImage` is Qt's. They proved the shape every later port reuses — one
+`#[cxx::bridge]` in `src/app/src/bridge.rs`, the C++ header kept as inline Qt
+adapters, the `.cpp` deleted — and `tools/rust-port` now reads **5 of 68** backend
+files replaced, 10 Rust files, 2,417 lines.
