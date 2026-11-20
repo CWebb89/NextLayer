@@ -22,6 +22,19 @@ complete inventory, this is the part you need before you start a print.
   where it is, so a model opened from the command line is sliced where its own
   coordinates put it rather than centred on the bed. Arrange, auto-orient and
   place-on-face still come from the C++ engine's geometry and are unaffected.
+- **`print_sequence = by object` is now refused unless the profile states the
+  toolhead.** HFW requires `gantry_height` (as before) and
+  `extruder_clearance_radius` (new, 2026-11-20): every object must fit under the
+  gantry, and two objects printed one after the other must be at least the head's
+  own radius apart. A profile that does not state the radius is refused with a
+  message naming the setting rather than sliced with a guess; the Orca and Prusa
+  profiles both carry it. The check now also runs through the C ABI, which used to
+  ignore the setting and slice the plate layer by layer.
+- **`oracle/engine_capabilities_check.py --from-ledger` cannot be trusted.** It
+  stops parsing at the first `###` subsection heading, so it reports 70 unapplied
+  settings where the ledger holds 364 rows and the shipped list holds 175. Running
+  it would silently un-hide 105 settings the engine cannot apply. Fix the parse
+  before regenerating that file; nothing else reads it.
 
 ## Unverified on hardware
 

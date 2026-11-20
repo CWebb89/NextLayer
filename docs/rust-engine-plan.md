@@ -298,6 +298,34 @@ From `docs/engine-boundary.md` at the time of writing:
 Files overlap across phases; the union is 43 of 76. The count that matters is the
 union going to zero.
 
+## Phase 2 cannot start as written, and why (measured 2026-11-20)
+
+`PlateDocument::sliceObjectsFor` hands the slicer five things the C ABI has no call
+for. They are not details — each is a shipped feature:
+
+| the app passes | ABI | what stops working |
+| --- | --- | --- |
+| three `TriangleSelector` paint channels (support, seam, tool) | nothing | painting supports, seams and per-tool interfaces |
+| `volumes`: part, negative, modifier, support blocker/enforcer | nothing | modifier geometry, cuts and blockers inside a sliced object |
+| per-object `ZHeightPairs` layer heights | nothing per object; `Settings.layer_profile` is job-wide | per-object variable layer height |
+| `layerGcodes`: custom G-code, pause, tool change at Z | nothing on the plate | pause markers and calibration's own G-code |
+| `inLayer` polylines: calibration labels and bands | nothing | every calibration test's band text and pattern |
+
+Two ways forward, and the choice is a product one, not an implementation one:
+
+1. **Grow the ABI to carry all five.** Paint is the expensive one: HFW has no
+triangle-state model and its `capabilities` list declines paint, text, cut and
+hollow outright, so this is engine work with a real cost, not a mapping.
+2. **Split the document.** Geometry, placement, settings, arrange and slice move to
+`crates/plate`; paint, volumes, cut and text stay in this application as features
+of their own, with an explicit boundary that says so. That is honest and shippable,
+and it contradicts `docs/rust-engine-plan.md`'s "one engine, one switch" only in
+letter — the switch is about *slicing*, which HFW already owns.
+
+Until one is chosen, phase 1's application half is blocked too: `HfwEngine.cpp`
+cannot be replaced by `hfw_job_start` without losing the same five, because it is
+the file that hands them over.
+
 ## Risks
 
 - **Phase 1 is irreversible in shape.** A C ABI is a compatibility promise. Get the
@@ -324,7 +352,7 @@ to stop calling the C++ engine for.
 | --- | --- | --- |
 | 0 — one engine, one switch | n/a | **Landed 2026-11-18**; the C++ slice branches are gone, HFW's ledger hides 175 settings, `tools/check` was green |
 | 1 — C ABI | **Landed 2026-11-20**: `crates/capi` v1, `include/hfw.h`, exercised from C | **Not started**: `HfwEngine.cpp` still shells out to `hfw-cli` |
-| 2 — document model | **Landed 2026-11-20**: `crates/plate` | **Not started**: `PlateDocument.cpp` (3,543 lines) is still the plate |
+| 2 — document model | **Landed 2026-11-20**: `crates/plate` | **Blocked, measured 2026-11-20**: `PlateDocument.cpp` (3,543 lines) is still the plate, and `hfw_plate_*` cannot yet carry what it holds — no paint, no volumes, no per-object layer heights, no custom-G-code markers, no in-layer polylines. Porting today would delete painting, modifier geometry, support blockers, per-object variable layer height, and every calibration band. See *Phase 2 cannot start as written* below |
 | 3 — settings | **Landed 2026-11-20**: settings surface JSON + `hfw_plate_object_set` | **Not started**: `SettingsModel.cpp` (1,568) still reads the C++ `ConfigContainer` |
 | 4 — preview | **Landed 2026-11-20**: `hfw_plate_preview_json` + threaded job | **Not started**: `GcodeView`/`PreviewData` still borrow libvgcode/libpgcode types |
 | 5 — plate operations | **Landed 2026-11-20**: duplicate/rotate/mirror/arrange in `crates/plate` | **Not started**: `Arranger.cpp`, `Orient.cpp`, `TransformController.cpp` still slice with the C++ engine's geometry |
