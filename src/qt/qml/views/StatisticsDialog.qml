@@ -5,6 +5,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
+import NextLayer 1.0
 import "../theme"
 import "../components"
 
@@ -19,10 +20,10 @@ Popup {
     focus: true
 
     property int objectId: 0
-    property var stats: objectId > 0 ? plateDocument.objectStatistics(objectId) : ({})
+    property var stats: objectId > 0 ? PlateDocument.objectStatistics(objectId) : ({})
 
     readonly property real density: {
-        const value = settingsModel.value("filament_density")
+        const value = SettingsModel.value("filament_density")
         return value === undefined || value === null ? 1.24 : Number(value)
     }
 

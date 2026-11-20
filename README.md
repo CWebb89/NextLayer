@@ -17,9 +17,10 @@ version of these claims as of the `0.1.0` audit, with the code behind each one.
 ## Where the engine work is
 
 The application slices with **HFW**, the Rust engine in the sibling `HFW`
-repository (`NEXT_LAYER_ENGINE=hfw`). It still links the C++ engine under
-`upstream/` for the plate model, settings, arrange, preview and project files.
-Retiring that completely is planned phase by phase in
+repository, and only with HFW: there is no engine switch, no environment variable
+and no fallback path, so a machine without `hfw-cli` slices nothing and says why.
+It still links the C++ engine for the plate model, settings, arrange, preview and
+project files. Retiring that completely is planned phase by phase in
 [`docs/rust-engine-plan.md`](docs/rust-engine-plan.md), and
 [`docs/engine-boundary.md`](docs/engine-boundary.md) is the generated, file-by-file
 measure of how far along it is. Read those two before deciding anything about the

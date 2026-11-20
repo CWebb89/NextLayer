@@ -85,7 +85,7 @@ QString applicationVersion()
     return QStringLiteral(NEXT_LAYER_VERSION);
 }
 
-int brandGcode(const QString& path)
+int brandGcode(const QString& path, const QString& configurationJson)
 {
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
@@ -114,6 +114,22 @@ int brandGcode(const QString& path)
 
     if (!layerCountWritten && layers > 0) {
         rewritten.append(QStringLiteral("%1%2").arg(QLatin1String(kLayerCountKey)).arg(layers));
+        ++changed;
+    }
+
+    // A print file has to record what it was sliced with. The engine this
+    // application prints through writes only the header lines, so the settings
+    // document the slice was handed is appended here, in the same one-block shape
+    // the config dumps of the other slicers use, under this application's name.
+    const QString metadata = configurationJson.trimmed();
+    if (!metadata.isEmpty()) {
+        rewritten.append(QStringLiteral("; next-layer_config = begin"));
+        rewritten.append(QStringLiteral("; next-layer_config = %1")
+                             .arg(QStringLiteral("{\"producer\": \"next-layer\", "
+                                                 "\"producer_version\": \"%1\", "
+                                                 "\"configuration\": %2}")
+                                      .arg(applicationVersion(), metadata)));
+        rewritten.append(QStringLiteral("; next-layer_config = end"));
         ++changed;
     }
 

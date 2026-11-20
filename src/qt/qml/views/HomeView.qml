@@ -4,6 +4,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
+import NextLayer 1.0
 import "../theme"
 import "../components"
 
@@ -48,7 +49,7 @@ Item {
     readonly property string pitchEyebrow: "LOCAL SLICING, END TO END"
     readonly property string pitchHeadline: "Slice on your own machine."
     readonly property string pitchBody: "A slicer of our own: this interface, an open slicing "
-                                        + "engine, and every toolpath calculated here. Your models, "
+                                        + "engine, and every Toolpath calculated here. Your models, "
                                         + "your settings and your G-code stay on this disk, in "
                                         + "formats another slicer can read."
     readonly property string stackBlurb: "next-layer plans the paths. The two projects below run "
@@ -60,9 +61,9 @@ Item {
     /// page nobody opens.
     readonly property var promises: ["No account", "No telemetry", "G-code on your disk"]
 
-    readonly property string printerName: presetStore.currentPrinter
-    readonly property string processName: presetStore.currentPrint
-    readonly property string filamentName: presetStore.currentFilament
+    readonly property string printerName: PresetStore.currentPrinter
+    readonly property string processName: PresetStore.currentPrint
+    readonly property string filamentName: PresetStore.currentFilament
 
     /// The home page is a landing screen, not a file manager: six entries is what
     /// fits beside the aside, and the rest are one `Ctrl+Shift+O` away.
@@ -401,9 +402,9 @@ Item {
 
                     Text {
                         width: parent.width
-                        text: presetStore.printers.length + " printers · "
-                              + presetStore.printProfiles.length + " processes · "
-                              + presetStore.filamentProfiles.length + " filaments available, "
+                        text: PresetStore.printers.length + " printers · "
+                              + PresetStore.printProfiles.length + " processes · "
+                              + PresetStore.filamentProfiles.length + " filaments available, "
                               + "from the engine's bundle and your own presets"
                         wrapMode: Text.WordWrap
                         font.family: Type.family

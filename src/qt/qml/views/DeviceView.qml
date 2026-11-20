@@ -6,6 +6,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import NextLayer 1.0
 import "../theme"
 import "../components"
 
@@ -46,9 +47,9 @@ Item {
     }
 
     function addressForPrinter() {
-        if (!printerLink.configured)
+        if (!PrinterLink.configured)
             return ""
-        const host = printerLink.host
+        const host = PrinterLink.host
         if (host.length === 0)
             return ""
         return normalized(host)
@@ -64,18 +65,18 @@ Item {
         const colon = bare.lastIndexOf(":")
         const host = colon > 0 ? bare.slice(0, colon) : bare
         const port = colon > 0 ? bare.slice(colon + 1) : ""
-        printerLink.host = host
+        PrinterLink.host = host
         // The page address and the API port are separate: a host typed without a
         // port is the front end on 80, and the upload still goes to 7125.
         if (port.length > 0)
-            printerLink.port = port
-        printerLink.save()
-        printerLink.deviceUrl = address
+            PrinterLink.port = port
+        PrinterLink.save()
+        PrinterLink.deviceUrl = address
         root.url = address
         addressField.text = address
         if (root.page !== null)
             root.page.url = address
-        root.stateLine = printerLink.printerState()
+        root.stateLine = PrinterLink.printerState()
     }
 
     function reload() {
@@ -87,7 +88,7 @@ Item {
         running: root.visible
         repeat: true
         triggeredOnStart: true
-        onTriggered: root.stateLine = printerLink.printerState()
+        onTriggered: root.stateLine = PrinterLink.printerState()
     }
 
     onVisibleChanged: {
@@ -99,7 +100,7 @@ Item {
             addressField.placeholderText = root.url.length > 0
                     ? root.url.replace("http://", "").replace(/\/$/, "")
                     : "10.0.0.22  ·  printer hostname, Mainsail, Fluid, or any page"
-        root.stateLine = printerLink.printerState()
+        root.stateLine = PrinterLink.printerState()
     }
 
     // The view sits over the plate, which is still there and still drawing: without
@@ -158,9 +159,9 @@ Item {
 
             Button {
                 text: "Printer's page"
-                enabled: printerLink.configured
+                enabled: PrinterLink.configured
                 onClicked: {
-                    printerLink.deviceUrl = ""
+                    PrinterLink.deviceUrl = ""
                     root.reload()
                     addressField.text = root.url
                     root.connect(root.url)
@@ -228,7 +229,7 @@ Item {
                         const opened = root.page.url.toString()
                         if (opened.length > 0) {
                             root.url = opened
-                            printerLink.deviceUrl = opened
+                            PrinterLink.deviceUrl = opened
                         }
                     })
                     root.page.loadEnded.connect((ok, reason) => {
@@ -296,7 +297,7 @@ Item {
                     Layout.fillWidth: true
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.WordWrap
-                    text: printerLink.configured
+                    text: PrinterLink.configured
                           ? "Type the printer's address above and press Connect. Mainsail, Fluid and anything else the host serves loads here."
                           : "No printer is connected yet. Type its address above, or use File ▸ Send to printer… and this tab then opens its page."
                     font.family: Type.family
@@ -310,14 +311,14 @@ Item {
 
                     Button {
                         text: "Mainsail"
-                        enabled: printerLink.configured
-                        onClicked: root.connect(root.normalized(printerLink.host))
+                        enabled: PrinterLink.configured
+                        onClicked: root.connect(root.normalized(PrinterLink.host))
                     }
 
                     Button {
                         text: "Fluid"
-                        enabled: printerLink.configured
-                        onClicked: root.connect(root.normalized(printerLink.host + "/?_fl=fluid"))
+                        enabled: PrinterLink.configured
+                        onClicked: root.connect(root.normalized(PrinterLink.host + "/?_fl=fluid"))
                     }
                 }
             }

@@ -1,0 +1,40 @@
+//! The application backend, in Rust, behind the QML front end.
+//!
+//! QML keeps its own spelling for the objects it reads; every object it reaches
+//! is declared here as a QML singleton in the `NextLayer` module. The module's
+//! types are registered by `register_qml_types`, which the entry point calls
+//! once before the engine loads anything.
+
+#[cxx_qt::bridge]
+pub mod qobject {
+    unsafe extern "C++" {
+        include!("cxx-qt-lib/qstring.h");
+        type QString = cxx_qt_lib::QString;
+    }
+
+    unsafe extern "RustQt" {
+        #[qobject]
+        #[qml_element = "Runtime"]
+        #[qml_singleton]
+        #[qproperty(QString, version)]
+        type Runtime = super::RuntimeRust;
+    }
+
+    impl cxx_qt::Initialize for Runtime {}
+}
+
+use core::pin::Pin;
+use cxx_qt_lib::QString;
+
+pub mod hfw;
+
+#[derive(Default)]
+pub struct RuntimeRust {
+    version: QString,
+}
+
+impl cxx_qt::Initialize for qobject::Runtime {
+    fn initialize(mut self: Pin<&mut Self>) {
+        self.as_mut().set_version(QString::from(env!("CARGO_PKG_VERSION")));
+    }
+}

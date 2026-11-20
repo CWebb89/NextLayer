@@ -5,6 +5,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import NextLayer 1.0
 import "../theme"
 import "../components"
 
@@ -43,7 +44,7 @@ Popup {
         root.message = ""
         root.points = []
         const name = item.name === undefined || item.name === null ? "" : String(item.name)
-        const flat = settingsModel.points(name)
+        const flat = SettingsModel.points(name)
         const next = []
         for (let i = 0; i + 1 < flat.length; i += 2)
             next.push([Number(flat[i]), Number(flat[i + 1])])
@@ -83,7 +84,7 @@ Popup {
                                          : "Add at least one point"
             return
         }
-        settingsModel.setValue(root.settingName, root.points)
+        SettingsModel.setValue(root.settingName, root.points)
         root.close()
     }
 

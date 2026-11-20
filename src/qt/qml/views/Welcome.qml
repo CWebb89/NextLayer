@@ -4,6 +4,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtCore
+import NextLayer 1.0
 import "../theme"
 import "../components"
 
@@ -68,7 +69,7 @@ Item {
 
     function runImport(directory) {
         importError = ""
-        importResult = presetStore.importSlicerPresets(directory)
+        importResult = PresetStore.importSlicerPresets(directory)
         if (!importResult.ok) {
             importError = importResult.error
             return
@@ -120,7 +121,7 @@ Item {
             }
 
             Repeater {
-                model: presetStore.slicerSources()
+                model: PresetStore.slicerSources()
 
                 delegate: Item {
                     id: sourceRow
@@ -170,7 +171,7 @@ Item {
             }
 
             Text {
-                visible: presetStore.slicerSources().length === 0
+                visible: PresetStore.slicerSources().length === 0
                 width: parent.width
                 text: "None found under " + root.guessSlicerDirectory() + ". Set up a printer instead, or type a folder below."
                 wrapMode: Text.WordWrap
@@ -614,7 +615,7 @@ Item {
 
                 Repeater {
                     model: [
-                        { label: presetStore.printers.length + " printers",
+                        { label: PresetStore.printers.length + " printers",
                           text: "every one with its real bed, extruders and limits" },
                         { label: "STL · 3MF · STEP",
                           text: "plus OBJ in, G-code out, layer-by-layer preview" },

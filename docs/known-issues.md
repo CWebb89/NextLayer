@@ -4,6 +4,25 @@ What is wrong, missing, or unverified in `0.1.2`, in the order it is likely to b
 hit. This is the user-facing half of `docs/features.md`; that ledger is the
 complete inventory, this is the part you need before you start a print.
 
+## The engine boundary (HFW is the only slicer as of 2026-11-18)
+
+- **HFW's config reader now accepts the dialect's spellings, including the
+  support switch.** Until 2026-11-18 it rejected 15 values as "value spelling this
+  engine rejects" — `support_material = everywhere`, `arc_fitting = emit_center`,
+  `ironing_type = top`, every `15%` written where a plain number belongs — and the
+  consequence was a print: a plate asking for supports everywhere sliced with none.
+  All of them now convert, measured at 0 unconverted of 360 keys; the two gates that
+  covered it (supports and arcs) pass.
+- **No G-code carries a Z-height marker or an in-layer path.** HFW reads the
+  objects, their own settings and the plate's config; a custom G-code snippet, a
+  pause, a colour change at a Z height, or a calibration label drawn inside a layer
+  has no channel into it. A plate carrying one is refused with a message rather than
+  sliced without it, so calibration prints do not work until HFW grows the feature.
+- **The plate is not arranged.** HFW is told `--no-arrange` and keeps every model
+  where it is, so a model opened from the command line is sliced where its own
+  coordinates put it rather than centred on the bed. Arrange, auto-orient and
+  place-on-face still come from the C++ engine's geometry and are unaffected.
+
 ## Unverified on hardware
 
 - **The in-app updater does not replace an AppImage.** An AppImage runs from a
@@ -19,14 +38,13 @@ complete inventory, this is the part you need before you start a print.
 - **One printer has printed anything.** A Voron 2.4 R2 350 on Klipper +
   Moonraker. Marlin, RepRapFirmware, PrusaLink and OctoPrint are implemented
   against their documented APIs and untested against a real machine.
-- **The retraction the engine prints is PrusaSlicer's default, not the machine's.**
-  The first benchy through the whole chain printed `G1 E-2.00000 F1500` 481 times:
-  2 mm at 25 mm/s, which is `retract_length`'s PrusaSlicer default. The Voron
-  printer preset has no `retract_length`, `retract_speed` or
-  `retract_restart_extra` at all, so nothing overrode it, and 2 mm on a direct
-  drive is roughly three times what the machine wants. It printed without
-  obvious artefacts, which is exactly why it has to be measured rather than
-  eyeballed — set the retraction in the printer preset and re-slice.
+- **The retraction the engine prints is the profile chain's, and a printer preset
+  does not carry it.** `retract_length` lives in the print settings: putting it in the
+  printer preset is ignored by the resolver, which is how the first benchy through the
+  whole chain printed 2 mm at 25 mm/s 481 times — PrusaSlicer's bowden-era default,
+  roughly three times what a direct drive wants. A machine created by this
+  application now writes 0.5 mm / 40 mm/s / 0.2 mm lift into its process preset;
+  a machine added before that needs the values in its process preset by hand.
 - **Arranged objects were packed touching until `96349ea`.** `arrangeOnBed` left
   `Settings::scaled_offset` at zero, so a plate of two objects fused into one part:
   two 20 mm cubes came out as a 40 mm solid sharing a wall face. It now sets the

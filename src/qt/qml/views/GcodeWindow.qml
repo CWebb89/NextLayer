@@ -3,12 +3,13 @@
 
 import QtQuick
 import QtQuick.Layouts
+import NextLayer 1.0
 import "../theme"
 import "../components"
 
 // The G-code around the move the preview is stopped at: numbered monospace lines,
 // the line that produced the current
-// move boxed, and the neighbouring lines for context. It is how a toolpath that
+// move boxed, and the neighbouring lines for context. It is how a Toolpath that
 // looks wrong is traced back to the line that asked for it.
 Card {
     id: root
@@ -17,8 +18,8 @@ Card {
     property bool collapsed: false
     property real maxHeight: Number.POSITIVE_INFINITY
 
-    readonly property var lines: toolpath.gcodeWindow !== undefined && toolpath.gcodeWindow !== null
-                                 ? toolpath.gcodeWindow : []
+    readonly property var lines: Toolpath.gcodeWindow !== undefined && Toolpath.gcodeWindow !== null
+                                 ? Toolpath.gcodeWindow : []
     readonly property int rowHeight: Math.round(Type.sizeCaption * 1.45)
 
     // As many lines as fit, always keeping the current line in the middle: the
@@ -38,7 +39,7 @@ Card {
 
     width: 330
     implicitHeight: Math.min(stack.implicitHeight + Metrics.panelPadding * 2, root.maxHeight)
-    visible: root.active && toolpath.loaded && root.lines.length > 0
+    visible: root.active && Toolpath.loaded && root.lines.length > 0
 
     Column {
         id: stack

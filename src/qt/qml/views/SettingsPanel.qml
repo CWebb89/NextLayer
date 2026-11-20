@@ -5,6 +5,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtCore
+import NextLayer 1.0
 import "../theme"
 import "../components"
 
@@ -44,7 +45,7 @@ Item {
     readonly property string activeTab: "process"
     readonly property var currentTab: root.tabData(root.activeTab)
     readonly property var currentSubtabs: root.currentTab ? root.currentTab.subtabs : []
-    readonly property int modifiedTotal: settingsModel.modifiedCount(root.activeTab)
+    readonly property int modifiedTotal: SettingsModel.modifiedCount(root.activeTab)
 
     function tabData(key) {
         for (let i = 0; i < root.tabs.length; ++i)
@@ -96,14 +97,14 @@ Item {
     }
 
     function refresh() {
-        root.tabs = settingsModel.tabList()
+        root.tabs = SettingsModel.tabList()
         root.ensureSubtab()
         root.visibleGroups = root.filtering
-                ? settingsModel.groups("", "", root.filterText)
-                : settingsModel.groups(root.activeTab, root.activeSubtab, "")
+                ? SettingsModel.groups("", "", root.filterText)
+                : SettingsModel.groups(root.activeTab, root.activeSubtab, "")
     }
 
-    /// The machine remembered from the last session is not in the bundle any
+    /// The machine remembered from the last Session is not in the bundle any
     /// more, so nothing resolved and the app has no bed. Named rather than
     /// silent: a regenerated printer catalog renames machines, and this is the
     /// normal way to arrive at that state.
@@ -135,14 +136,14 @@ Item {
             root.activeSubtab = parts[1]
         }
         root.refresh()
-        presetStore.refreshPrinters()
+        PresetStore.refreshPrinters()
         const dialog = typeof startupPresetDialog !== "undefined" ? String(startupPresetDialog) : ""
         if (dialog.length > 0)
             presetEditor.openOn(dialog)
     }
 
     Connections {
-        target: presetStore
+        target: PresetStore
 
         // Restore the machine last sliced with, and nothing else. There is no
         // default printer: on a fresh install nothing is chosen, the panel stays
@@ -151,7 +152,7 @@ Item {
         function onPrintersChanged() {
             if (presetBar.printer.length > 0)
                 return
-            const printers = presetStore.printers
+            const printers = PresetStore.printers
             if (printers.length === 0)
                 return
             const wanted = rememberedSetup.printer
@@ -168,23 +169,23 @@ Item {
         }
 
         function onResolved() {
-            rememberedSetup.printer = presetStore.currentPrinter
-            rememberedSetup.process = presetStore.currentPrint
-            rememberedSetup.filament = presetStore.currentFilament
+            rememberedSetup.printer = PresetStore.currentPrinter
+            rememberedSetup.process = PresetStore.currentPrint
+            rememberedSetup.filament = PresetStore.currentFilament
         }
 
         function onCurrentPrinterChanged() {
-            if (presetBar.printer.length === 0 && presetStore.currentPrinter.length > 0)
-                presetBar.printer = presetStore.currentPrinter
-            if (presetBar.printProfile.length === 0 && presetStore.currentPrint.length > 0)
-                presetBar.printProfile = presetStore.currentPrint
-            if (presetBar.filament.length === 0 && presetStore.currentFilament.length > 0)
-                presetBar.filament = presetStore.currentFilament
+            if (presetBar.printer.length === 0 && PresetStore.currentPrinter.length > 0)
+                presetBar.printer = PresetStore.currentPrinter
+            if (presetBar.printProfile.length === 0 && PresetStore.currentPrint.length > 0)
+                presetBar.printProfile = PresetStore.currentPrint
+            if (presetBar.filament.length === 0 && PresetStore.currentFilament.length > 0)
+                presetBar.filament = PresetStore.currentFilament
         }
     }
 
     Connections {
-        target: settingsModel
+        target: SettingsModel
 
         function onChanged() {
             root.refresh()
@@ -225,7 +226,7 @@ Item {
 
         readonly property var printerChoices: {
             const out = []
-            const printers = presetStore.userPrinters
+            const printers = PresetStore.userPrinters
             for (let i = 0; i < printers.length; ++i)
                 out.push({ value: printers[i].name, label: printers[i].name })
             // The machine in force is always listed: it may be one from the
@@ -243,7 +244,7 @@ Item {
         }
 
         readonly property int toolCount: {
-            const printers = presetStore.printers
+            const printers = PresetStore.printers
             for (let i = 0; i < printers.length; ++i)
                 if (printers[i].name === presetBar.printer)
                     return Math.max(1, printers[i].extruders)
@@ -254,7 +255,7 @@ Item {
         // single list is the machine's own; a second tool is a second row here
         // and a second entry in the slice's filament list.
         function filamentFor(tool) {
-            return presetStore.filaments.length > tool ? presetStore.filaments[tool] : presetBar.filament
+            return PresetStore.filaments.length > tool ? PresetStore.filaments[tool] : presetBar.filament
         }
 
         function chooseFilament(tool, value) {
@@ -263,13 +264,13 @@ Item {
                 presetBar.resolveIfReady()
                 return
             }
-            presetStore.setFilamentForTool(tool + 1, value)
+            PresetStore.setFilamentForTool(tool + 1, value)
         }
 
         function resolveIfReady() {
             if (presetBar.printer.length > 0 && presetBar.printProfile.length > 0
                     && presetBar.filament.length > 0)
-                presetStore.resolve(presetBar.printer, presetBar.printProfile, presetBar.filament)
+                PresetStore.resolve(presetBar.printer, presetBar.printProfile, presetBar.filament)
         }
 
         function choosePrinter(name) {
@@ -279,17 +280,17 @@ Item {
             presetBar.printProfile = ""
             presetBar.filament = ""
             presetBar.autoResolve = true
-            presetStore.selectPrinter(name)
+            PresetStore.selectPrinter(name)
         }
 
         Connections {
-            target: presetStore
+            target: PresetStore
 
             function onResolved() {
                 presetBar.autoResolve = false
-                presetBar.printer = presetStore.currentPrinter
-                presetBar.printProfile = presetStore.currentPrint
-                presetBar.filament = presetStore.currentFilament
+                presetBar.printer = PresetStore.currentPrinter
+                presetBar.printProfile = PresetStore.currentPrint
+                presetBar.filament = PresetStore.currentFilament
             }
 
             // Picking a printer clears the two dependent presets; this is what
@@ -300,7 +301,7 @@ Item {
                     return
                 presetBar.autoResolve = false
 
-                const profiles = presetStore.printProfiles
+                const profiles = PresetStore.printProfiles
                 if (profiles.length === 0)
                     return   // the engine has not answered yet; another signal will
 
@@ -310,7 +311,7 @@ Item {
                         print = profiles[i]
                 presetBar.printProfile = print
 
-                const filaments = presetStore.filamentProfiles
+                const filaments = PresetStore.filamentProfiles
                 let filament = filaments.length > 0 ? filaments[0] : ""
                 for (let i = 0; i < filaments.length; ++i)
                     if (filaments[i] === rememberedSetup.filament)
@@ -388,7 +389,7 @@ Item {
                 ComboBox {
                     width: parent.width - presetBar.presetLabelWidth - processGear.width - Metrics.sm * 2
                     enabled: presetBar.printer.length > 0
-                    choices: presetStore.printProfiles
+                    choices: PresetStore.printProfiles
                     currentValue: presetBar.printProfile
                     searchable: true
                     popupWidth: Math.min(460, root.width)
@@ -438,7 +439,7 @@ Item {
                         width: parent.width - presetBar.presetLabelWidth - Metrics.controlHeight
                                - Metrics.sm * 2
                         enabled: presetBar.printer.length > 0
-                        choices: presetStore.filamentProfiles
+                        choices: PresetStore.filamentProfiles
                         currentValue: filamentRow.presetName
                         searchable: true
                         popupWidth: Math.min(460, root.width)
@@ -580,7 +581,7 @@ Item {
                 icon: "restart_alt"
                 hint: "Reset every change in this process"
                 enabled: root.modifiedTotal > 0
-                onClicked: settingsModel.resetTab(root.activeTab)
+                onClicked: SettingsModel.resetTab(root.activeTab)
             }
 
             ToolButton {

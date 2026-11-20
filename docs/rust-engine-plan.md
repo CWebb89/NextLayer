@@ -7,40 +7,106 @@ but still links a 605,785-line C++ engine for everything else. `docs/engine-boun
 is the measured worklist that goes with this document; it is generated from `src/`
 and is the honest measure of progress.
 
+The plan has **two halves that move at different speeds**, and the ledger at the
+bottom of this file keeps them apart since 2026-11-20. The engine half is the
+crates HFW must gain; it landed. The application half is the code in this
+repository that stops calling the C++ engine; it has not started.
+
 ## Where the code is
 
 | Repository | What it is | Size | State |
 | --- | --- | --- | --- |
-| `HFW/HFW-final` | The slicing engine, Rust, clean-room | 32,071 lines, 12 crates | Slices plates, writes G-code, verifies its own output. Engine gate green. |
-| `next-layer` | The application, C++/Qt/QML | 26,505 lines, 76 files | Slices through HFW when asked; 43 files still reach into the C++ engine. |
-| `next-layer/upstream` | A restructured PrusaSlicer, the engine | 605,785 lines, 28 modules | Linked today. Not part of the application's git history. |
+| `HFW` | The slicing engine, Rust, clean-room | 45,788 lines, 15 crates | Slices plates, writes G-code, verifies its own output. Gate green (`fish scripts/test-hfw.fish`, 82 sections + two-reference oracle). Every crate this plan named has landed. |
+| `next-layer` | The application, Qt/QML with a cxx-qt backend | 26,786 C++ lines in 75 files, 38 Rust lines, 20,156 QML lines | Slices through HFW's command line; **0 of 75** backend files have a Rust replacement. `src/app` is a crate skeleton with one QML singleton. |
+| `next-layer/upstream` | A restructured PrusaSlicer, the engine | 605,785 lines, 28 modules | Linked today: `src/qt/CMakeLists.txt` still names `slic3r-app-cli`, `slic3r-biz-arrange`, `libpgcode`, `miniz`, `OCCTWrapper`. Not part of the application's git history. |
 
 The application is 43 files away from owning nothing but its own interface. Those
-43 files are the whole of this plan.
+43 files are the whole of this plan, and `tools/rust-port` is the bar: it counts
+the C++ files in `src/qt/src` against the `.rs` files in `src/app/src` that
+shadow them by name.
 
 ## The rule this plan follows
 
 **No C++ engine. No translated C++. No vendored engine.** Every capability the
-application needs is either:
+application needs is written in Rust — in HFW behind the ABI when the engine is the
+right owner, in this repository's own `src/app` crate when the application is.
 
-1. written in Rust, in HFW, behind a stable C ABI, or
-2. written in C++ in the application, as its own code.
+**Amended 2026-11-20.** The rule as first written allowed a second category, C++ in
+the application as its own code, and left ~30 files there. That was the expensive
+kind of compromise: two languages, one QML surface declared twice, and a port that
+can stop half-done without anyone noticing. The decision is now that the whole
+backend becomes Rust, and the only C++ left in this repository is what `upstream/`
+compiles until the linker line stops naming it.
 
 There is no third category. "Take it from upstream" is not an option that survives
 this plan, and a partial port is worse than either kind of full one, because a
 second dependency graph is what makes this project hard to hold in your head.
 
+### How a file is ported
+
+The C++ is deleted in the same step its Rust replacement lands — the rule the
+risks section states, made mechanical:
+
+1. the replacement goes into `src/app/src/<Name>.rs`;
+2. the `.cpp` leaves the source list in `src/qt/CMakeLists.txt`, and the header
+   stays only while a not-yet-ported C++ file still includes it;
+3. QML keeps its own spelling: every object it reaches is re-declared as a cxx-qt
+   QML element or singleton, so no `.qml` file changes for the port;
+4. `tools/rust-port` moves by one and `tools/check` stays green in the same step.
+
+Where Rust has to call code that is still C++, the bridge is `cxx`; where it calls
+the engine, it is HFW's C ABI (`crates/capi/include/hfw.h`), so the engine boundary
+stays the one promise both repositories agree on.
+
+### What is deleted rather than ported
+
+Phase 7's thirteen files — `Paint`, `Text`, `Cut`, `Hollow` and the feature gates
+in `SliceRuntime.cpp` and `SceneSelftest.cpp` that drive them — are **deleted**, not
+rewritten: the settings surface already carries their seven `capabilities` rows, so
+the panel can render "unavailable" from one document. `SceneSelftest.cpp` (2,527
+lines) and `SliceRuntime.cpp` (987 lines, 109 engine references between them) are the
+largest single deletion in this plan and need no replacement at all.
+
+### What the two reference harnesses lose with `upstream/`
+
+- `oracle/oracle.py capture` re-slices with the stock engine to rewrite the
+  baselines. After `upstream/` goes it can never run again: the twelve files in
+  `oracle/baseline/` become frozen goldens and `verify` becomes a regression gate
+  against them, not a comparison with another engine.
+- `tools/parity.py` drives the C++ engine's own launcher as its reference arm. Its
+  own message — "there is no second engine to compare against" — is the retirement
+  notice; the arm goes with `upstream/`.
+
+Both decisions belong in the commit that removes `upstream/`, so nothing keeps
+looking for a reference arm that no longer exists.
+
 ## What is being replaced, in the order it must be done
 
 ### Phase 0 — One engine, one switch (done when the legacy path is unreachable by default)
 
-HFW is currently reached through `NEXT_LAYER_ENGINE=hfw`, a boolean that chooses
-between two complete paths. That switch is the seam, and it is where future
-divergence grows. It becomes a `SliceEngine` interface with exactly one
-implementation. The legacy path is deleted, not deprecated — `SliceRuntime.cpp`
-(987 lines) mostly exists to drive the C++ engine's CLI, and it goes with it.
+**Landed 2026-11-18.** The switch is gone: `hfwRequested()` was deleted, both
+libslic3r branches in `SliceController` were deleted with it, and `--slice`
+(run by the import, file, filament and catalog gates) now goes through
+`sliceWithHfw` rather than the C++ CLI. `SliceRuntime::slice`/`slicePlate` remain
+only as the entry points `SceneSelftest`'s feature gates drive, and they go with
+the features phase 7 puts out of scope.
 
-**Delivers:** one slice path, and the 987-line runtime that drove the other one removed.
+The two settings surfaces that had to change with it: the settings HFW's ledger
+records as not applied are now **hidden by default** (shipped as
+`src/qt/assets/engine-capabilities.json`, `--engine-capabilities none` to switch
+the filter off), and the print file records the settings it was sliced with,
+because HFW writes header lines and no config block.
+
+Two defects were found and fixed on the way, both older than the swap:
+`--selftest-slice` and `--slice-all` emitted their verdict before the event loop
+started, so a refusal hung the process with a session bus present; and neither
+resolved the remembered printer/process/filament, so a headless slice of a set-up
+machine refused itself.
+
+Still open in this phase: nothing. HFW's config intake converts every spelling a
+preset in this application's bundle hands it — 0 of 360 keys unconverted on the
+Voron configuration, measured 2026-11-18 — so supports, arcs and ironing now reach
+the engine instead of being silently dropped.
 
 ### Phase 1 — A library boundary (the decision that shapes the rest)
 
@@ -88,6 +154,13 @@ in the engine's output.
 
 ### Phase 4 — Preview
 
+**Landed 2026-11-20.** `hfw_plate_preview_json` returns every planned bead per
+layer with position, per-vertex width, flow and the writer's own `;TYPE:` label, so the
+viewer can be written against the engine instead of `libvgcode`. A long job runs on its
+own thread (`hfw_job_start`/`_poll`/`_cancel`/`_wait`/`_take_gcode`), so the UI keeps
+drawing and a plate edit can cancel work in flight; progress is polled rather than
+pushed, and cancellation is observed between objects and before the file is written.
+
 `GcodeView` already parses G-code itself; what it borrows from the engine is types
 (`libvgcode::FdmViewerInputData`, `GCodeExtrusionRole`). HFW can emit every path
 with its role (`--json-paths`), and the G-code already carries `;TYPE:` markers.
@@ -97,6 +170,12 @@ The preview is a small, self-contained replacement — days, not weeks.
 
 ### Phase 5 — Plate operations
 
+**Landed 2026-11-20.** The plate document and the ABI carry duplicate, turn about the
+object's centre, mirror in place, delete, and a bed arrange; scale, translate and any
+composed placement are `hfw_plate_object_placement`. The arranging packer moved from
+`cli` into `crates/plate` so the panel and the command line share it. Shelf layout
+only — the nesting arranger stays out of scope, as this section says.
+
 Load, scale, rotate, translate, mirror, delete, duplicate: HFW's mesh API plus its
 own geometry. Arrange: HFW has shelf layout (`--spacing`, `--no-arrange`); a nesting
 arranger is a project of its own and is **not** in this plan's definition of done.
@@ -105,6 +184,14 @@ One plate of parts is shelf layout; that is what gets used.
 **Delivers:** `Arranger.cpp`, `Orient.cpp`, `TransformController.cpp` deleted.
 
 ### Phase 6 — Project files
+
+**Landed 2026-11-20.** A plate saves as a `.3mf` (`hfw_plate_project_bytes`) and
+reopens as the same plate (`hfw_plate_open_project`), slicing to byte-identical
+G-code. The layout is a standard model part; the enabled flags and each object's
+settings are in `Metadata/hfw_project.xml`, written by inverting the settings parser
+(`Settings::key_value`) so a value we save always loads. Still open: plate-wide
+settings in the project part, instances, and `ProjectFile.cpp`'s extra UI state,
+which is the application's to keep.
 
 The application writes a `.3mf` carrying the plate and each object's settings. HFW
 already *reads* that format. The writer belongs to HFW (`crates/threemf` grows a
@@ -185,13 +272,17 @@ union going to zero.
 Update this table as phases land; it is the one thing in this document that should
 change every time something is finished.
 
-| Phase | State |
-| --- | --- |
-| 0 — one engine, one switch | Not started |
-| 1 — C ABI | Not started |
-| 2 — document model | Not started |
-| 3 — settings | Not started |
-| 4 — preview | Not started |
-| 5 — plate operations | Not started |
-| 6 — project files | Not started |
-| 7 — optional features | Out of scope |
+Two tables, because the two halves are not the same work and were being read as
+one. "Engine" is what HFW had to grow; "application" is what this repository had
+to stop calling the C++ engine for.
+
+| Phase | Engine half (HFW) | Application half (this repo) |
+| --- | --- | --- |
+| 0 — one engine, one switch | n/a | **Landed 2026-11-18**; the C++ slice branches are gone, HFW's ledger hides 175 settings, `tools/check` was green |
+| 1 — C ABI | **Landed 2026-11-20**: `crates/capi` v1, `include/hfw.h`, exercised from C | **Not started**: `HfwEngine.cpp` still shells out to `hfw-cli` |
+| 2 — document model | **Landed 2026-11-20**: `crates/plate` | **Not started**: `PlateDocument.cpp` (3,543 lines) is still the plate |
+| 3 — settings | **Landed 2026-11-20**: settings surface JSON + `hfw_plate_object_set` | **Not started**: `SettingsModel.cpp` (1,568) still reads the C++ `ConfigContainer` |
+| 4 — preview | **Landed 2026-11-20**: `hfw_plate_preview_json` + threaded job | **Not started**: `GcodeView`/`PreviewData` still borrow libvgcode/libpgcode types |
+| 5 — plate operations | **Landed 2026-11-20**: duplicate/rotate/mirror/arrange in `crates/plate` | **Not started**: `Arranger.cpp`, `Orient.cpp`, `TransformController.cpp` still slice with the C++ engine's geometry |
+| 6 — project files | **Landed 2026-11-20**: `hfw_plate_project_bytes`/`hfw_plate_open_project` | **Not started**: `.3mf` still round-trips through `ProjectFile.cpp`/`ThreeMfProject.cpp` |
+| 7 — optional features | **Settled 2026-11-20**: seven `capabilities` rows, `docs/SCOPE.md` | **Not started**: the thirteen files are deleted, not ported |

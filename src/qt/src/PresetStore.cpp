@@ -1237,6 +1237,14 @@ QString PresetStore::createPrinter(const QString& name, double bedWidth, double 
     };
     m_settings->setValue(QStringLiteral("bed_shape"), bed);
     m_settings->setValue(QStringLiteral("max_print_height"), bedDepth);
+    // A machine created here is a modern direct-drive printer, and the engine's
+    // inherited retraction is PrusaSlicer's bowden-era 2 mm, which a direct drive
+    // turns into a clog. Write the retraction instead of inheriting the default,
+    // so no machine this application creates prints with a guess.
+    m_settings->setValue(QStringLiteral("retract_length"), 0.5);
+    m_settings->setValue(QStringLiteral("retract_speed"), 40.0);
+    m_settings->setValue(QStringLiteral("retract_lift"), 0.2);
+    m_settings->setValue(QStringLiteral("retract_restart_extra"), 0.0);
 
     const auto writePreset = [&dir](const QString& fileName, const QString& kind,
                                     const QString& presetName, const QString& condition,

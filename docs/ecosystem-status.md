@@ -52,9 +52,10 @@ claim above is about generated G-code, not about plastic on a bed.
 
 ## Where next-layer stands
 
-Built, slices through HFW behind `NEXT_LAYER_ENGINE=hfw`, and prints on one machine:
-a Voron 2.4 R2 350 over Klipper/Moonraker. Two real prints recorded
-(`docs/real-prints.md`), both produced by the old engine.
+Built, slices through HFW and only HFW (no engine switch, no fallback), and prints
+on one machine: a Voron 2.4 R2 350 over Klipper/Moonraker. Two real prints recorded
+(`docs/real-prints.md`), both produced by the old engine — a print out of HFW through
+the application is the milestone still open.
 
 43 of 76 files under `src/` reach into the C++ engine. `engine-boundary.md` lists
 them, sorted by the phase that retires them, and `tools/check` now fails when that

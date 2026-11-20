@@ -3,6 +3,7 @@
 
 import QtQuick
 import QtQuick.Controls
+import NextLayer 1.0
 import "../theme"
 import "../components"
 
@@ -14,8 +15,8 @@ import "../components"
 Rectangle {
     id: root
 
-    readonly property var objects: plateDocument.objects
-    readonly property int selectedId: plateDocument.selectedId
+    readonly property var objects: PlateDocument.objects
+    readonly property int selectedId: PlateDocument.selectedId
 
     signal closeRequested()
     /// The list stowed into its chip rather than closed: the same hide, but it leaves
@@ -52,7 +53,7 @@ Rectangle {
 
         Text {
             anchors.verticalCenter: parent.verticalCenter
-            text: plateDocument.count
+            text: PlateDocument.count
             font.family: Type.family
             font.pixelSize: Type.sizeCaption
             color: Colors.textMuted
@@ -93,10 +94,10 @@ Rectangle {
 
         Text {
             width: parent.width
-            text: plateDocument.selectedCount > 1
-                  ? plateDocument.selectedCount + " objects selected"
-                  : plateDocument.selectedCount === 1
-                    ? (plateDocument.objectInfo(plateDocument.selectedId).name || "")
+            text: PlateDocument.selectedCount > 1
+                  ? PlateDocument.selectedCount + " objects selected"
+                  : PlateDocument.selectedCount === 1
+                    ? (PlateDocument.objectInfo(PlateDocument.selectedId).name || "")
                     : "no object selected"
             elide: Text.ElideMiddle
             font.family: Type.family
@@ -112,21 +113,21 @@ Rectangle {
                 icon: "filter_center_focus"
                 label: "Centre"
                 hint: "Centre the selection on the bed"
-                onClicked: plateDocument.centreSelection()
+                onClicked: PlateDocument.centreSelection()
             }
 
             ToolButton {
                 icon: "vertical_align_bottom"
                 label: "Drop"
                 hint: "Drop the selection onto the bed"
-                onClicked: plateDocument.dropSelection()
+                onClicked: PlateDocument.dropSelection()
             }
 
             ToolButton {
                 icon: "content_copy"
                 label: "Duplicate"
                 hint: "Duplicate the selection"
-                onClicked: plateDocument.duplicateSelection()
+                onClicked: PlateDocument.duplicateSelection()
             }
 
             ToolButton {
@@ -134,7 +135,7 @@ Rectangle {
                 label: "Delete"
                 hint: "Delete the selection"
                 danger: true
-                onClicked: plateDocument.removeSelection()
+                onClicked: PlateDocument.removeSelection()
             }
         }
     }
@@ -190,7 +191,7 @@ Rectangle {
             // convention object lists share.
             TapHandler {
                 acceptedModifiers: Qt.NoModifier
-                onTapped: plateDocument.selectObject(row.modelData.id)
+                onTapped: PlateDocument.selectObject(row.modelData.id)
                 onDoubleTapped: {
                     nameField.text = row.modelData.name
                     nameField.visible = true
@@ -200,11 +201,11 @@ Rectangle {
             }
             TapHandler {
                 acceptedModifiers: Qt.ControlModifier
-                onTapped: plateDocument.selectObject(row.modelData.id, true)
+                onTapped: PlateDocument.selectObject(row.modelData.id, true)
             }
             TapHandler {
                 acceptedModifiers: Qt.ShiftModifier
-                onTapped: plateDocument.selectRange(row.modelData.id)
+                onTapped: PlateDocument.selectRange(row.modelData.id)
             }
 
             Column {
@@ -226,16 +227,16 @@ Rectangle {
                         width: Metrics.controlHeight
                         height: Metrics.controlHeight
                         radius: Metrics.radiusSmall
-                        visible: plateDocument.toolCount > 1
+                        visible: PlateDocument.toolCount > 1
                         color: toolMouse.containsMouse ? Colors.hoverFill : "transparent"
                         border.width: Metrics.borderWidth
-                        border.color: plateDocument.objectTool(row.modelData.id) > 1
-                                      ? plateDocument.toolColour(plateDocument.objectTool(row.modelData.id))
+                        border.color: PlateDocument.objectTool(row.modelData.id) > 1
+                                      ? PlateDocument.toolColour(PlateDocument.objectTool(row.modelData.id))
                                       : Colors.outlineVariant
 
                         Text {
                             anchors.centerIn: parent
-                            text: "T" + plateDocument.objectTool(row.modelData.id)
+                            text: "T" + PlateDocument.objectTool(row.modelData.id)
                             font.family: Type.family
                             font.pixelSize: Type.sizeSmall
                             font.bold: true
@@ -248,8 +249,8 @@ Rectangle {
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
-                                const next = plateDocument.objectTool(row.modelData.id) % plateDocument.toolCount + 1
-                                plateDocument.setObjectTool(row.modelData.id, next)
+                                const next = PlateDocument.objectTool(row.modelData.id) % PlateDocument.toolCount + 1
+                                PlateDocument.setObjectTool(row.modelData.id, next)
                             }
                         }
                     }
@@ -260,7 +261,7 @@ Rectangle {
                         icon: row.modelData.visible ? "visibility" : "visibility_off"
                         label: row.modelData.visible ? "Hide" : "Show"
                         hint: row.modelData.visible ? "Hide this object" : "Show this object"
-                        onClicked: plateDocument.setVisible(row.modelData.id, !row.modelData.visible)
+                        onClicked: PlateDocument.setVisible(row.modelData.id, !row.modelData.visible)
                     }
 
                     // Double-click the name to rename the object: the name is the
@@ -291,7 +292,7 @@ Rectangle {
                         selectionColor: Colors.accent
 
                         Keys.onReturnPressed: {
-                            plateDocument.renameObject(row.modelData.id, nameField.text)
+                            PlateDocument.renameObject(row.modelData.id, nameField.text)
                             nameField.visible = false
                         }
                         Keys.onEscapePressed: nameField.visible = false
@@ -332,7 +333,7 @@ Rectangle {
                                                      : modelData.type === "blocker" ? "#9a5ce8"
                                                      : "#54c96a"
                         readonly property bool selected:
-                            plateDocument.selectedVolume === modelData.id
+                            PlateDocument.selectedVolume === modelData.id
 
                         Rectangle {
                             anchors.fill: parent
@@ -343,7 +344,7 @@ Rectangle {
 
                         MouseArea {
                             anchors.fill: parent
-                            onClicked: plateDocument.selectVolume(row.modelData.id,
+                            onClicked: PlateDocument.selectVolume(row.modelData.id,
                                                                   volumeRow.modelData.id)
                         }
 
@@ -391,7 +392,7 @@ Rectangle {
                             label: "Delete volume"
                             hint: "Delete this " + volumeRow.modelData.type + " volume"
                             danger: true
-                            onClicked: plateDocument.removeVolume(row.modelData.id,
+                            onClicked: PlateDocument.removeVolume(row.modelData.id,
                                                                   volumeRow.modelData.id)
                         }
                     }
@@ -404,7 +405,7 @@ Rectangle {
                 onClicked: (mouse) => {
                     const point = row.mapToItem(null, mouse.x, mouse.y)
                     root.contextRequested(row.modelData.id, point.x, point.y)
-                    plateDocument.selectObject(row.modelData.id)
+                    PlateDocument.selectObject(row.modelData.id)
                 }
             }
         }

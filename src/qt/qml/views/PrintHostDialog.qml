@@ -6,6 +6,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import NextLayer 1.0
 import "../theme"
 import "../components"
 
@@ -35,7 +36,7 @@ Popup {
 
     onOpened: {
         root.message = ""
-        printerLink.load()
+        PrinterLink.load()
     }
 
     function report(text) {
@@ -95,15 +96,15 @@ Popup {
                     id: hostField
                     Layout.fillWidth: true
                     Layout.preferredHeight: Metrics.controlHeight
-                    text: printerLink.host
+                    text: PrinterLink.host
                     placeholderText: "voron-24.local"
                     font.family: Type.family
                     font.pixelSize: Type.sizeSmall
                     color: Colors.textPrimary
                     selectByMouse: true
                     onTextChanged: {
-                        printerLink.host = text
-                        printerLink.save()
+                        PrinterLink.host = text
+                        PrinterLink.save()
                     }
                 }
 
@@ -116,20 +117,20 @@ Popup {
 
                 ComboBox {
                     Layout.fillWidth: true
-                    choices: printerLink.kinds().map((entry) => entry.label)
+                    choices: PrinterLink.kinds().map((entry) => entry.label)
                     currentValue: {
-                        const kinds = printerLink.kinds()
+                        const kinds = PrinterLink.kinds()
                         for (let i = 0; i < kinds.length; ++i)
-                            if (kinds[i].id === printerLink.kind)
+                            if (kinds[i].id === PrinterLink.kind)
                                 return kinds[i].label
                         return kinds.length > 0 ? kinds[0].label : ""
                     }
                     onSelected: (value) => {
-                        const kinds = printerLink.kinds()
+                        const kinds = PrinterLink.kinds()
                         for (let i = 0; i < kinds.length; ++i) {
                             if (kinds[i].label === value) {
-                                printerLink.kind = kinds[i].id
-                                printerLink.save()
+                                PrinterLink.kind = kinds[i].id
+                                PrinterLink.save()
                             }
                         }
                     }
@@ -145,7 +146,7 @@ Popup {
                 TextField {
                     Layout.fillWidth: true
                     Layout.preferredHeight: Metrics.controlHeight
-                    text: printerLink.apiKey
+                    text: PrinterLink.apiKey
                     placeholderText: "from moonraker.asvc, if one is set"
                     font.family: Type.family
                     font.pixelSize: Type.sizeSmall
@@ -153,8 +154,8 @@ Popup {
                     echoMode: TextInput.Password
                     selectByMouse: true
                     onTextChanged: {
-                        printerLink.apiKey = text
-                        printerLink.save()
+                        PrinterLink.apiKey = text
+                        PrinterLink.save()
                     }
                 }
 
@@ -175,9 +176,9 @@ Popup {
 
                     Repeater {
                         model: [
-                            { axis: "X", value: printerLink.offsetX },
-                            { axis: "Y", value: printerLink.offsetY },
-                            { axis: "Z", value: printerLink.offsetZ }
+                            { axis: "X", value: PrinterLink.offsetX },
+                            { axis: "Y", value: PrinterLink.offsetY },
+                            { axis: "Z", value: PrinterLink.offsetZ }
                         ]
 
                         delegate: RowLayout {
@@ -203,12 +204,12 @@ Popup {
                                 isLength: true
                                 onEdited: (value) => {
                                     if (offsetField.modelData.axis === "X")
-                                        printerLink.offsetX = value
+                                        PrinterLink.offsetX = value
                                     else if (offsetField.modelData.axis === "Y")
-                                        printerLink.offsetY = value
+                                        PrinterLink.offsetY = value
                                     else
-                                        printerLink.offsetZ = value
-                                    printerLink.save()
+                                        PrinterLink.offsetZ = value
+                                    PrinterLink.save()
                                 }
                             }
                         }
@@ -225,8 +226,8 @@ Popup {
                 Text {
                     Layout.fillWidth: true
                     Layout.columnSpan: 2
-                    visible: printerLink.hasOffsets
-                    text: "Written into the G-code as " + printerLink.offsetsLine
+                    visible: PrinterLink.hasOffsets
+                    text: "Written into the G-code as " + PrinterLink.offsetsLine
                           + " before the first extrusion. Klipper applies it; other "
                           + "firmware ignores the command."
                     wrapMode: Text.WordWrap
@@ -258,25 +259,25 @@ Popup {
                 Button {
                     text: "Test"
                     hint: "Ask the printer for its version"
-                    enabled: printerLink.configured
-                    onClicked: root.report(printerLink.test())
+                    enabled: PrinterLink.configured
+                    onClicked: root.report(PrinterLink.test())
                 }
 
                 Item { Layout.fillWidth: true }
 
                 Button {
                     text: "Send"
-                    hint: sliceController.gcodePath
+                    hint: SliceController.gcodePath
                     primary: true
-                    enabled: printerLink.configured && sliceController.gcodePath.length > 0
-                    onClicked: root.report(printerLink.upload(sliceController.gcodePath, false))
+                    enabled: PrinterLink.configured && SliceController.gcodePath.length > 0
+                    onClicked: root.report(PrinterLink.upload(SliceController.gcodePath, false))
                 }
 
                 Button {
                     text: "Send and print"
                     hint: "Upload, then start the job on the machine"
-                    enabled: printerLink.configured && sliceController.gcodePath.length > 0
-                    onClicked: root.report(printerLink.upload(sliceController.gcodePath, true))
+                    enabled: PrinterLink.configured && SliceController.gcodePath.length > 0
+                    onClicked: root.report(PrinterLink.upload(SliceController.gcodePath, true))
                 }
             }
     

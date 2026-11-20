@@ -13,16 +13,16 @@ Item {
     property string lastError: ""
     property bool haveResult: false
 
-    readonly property bool slicing: sliceController.busy
-    readonly property bool hasLayers: toolpath.layerCount > 0
+    readonly property bool slicing: SliceController.busy
+    readonly property bool hasLayers: Toolpath.layerCount > 0
 
     readonly property string statusText: {
         if (root.slicing)
             return "Slicing..."
         if (root.lastError.length > 0)
             return root.lastError
-        if (session.error.length > 0)
-            return session.error
+        if (Session.error.length > 0)
+            return Session.error
         if (!root.haveResult)
             return ""
 
@@ -30,17 +30,17 @@ Item {
         // much plastic, and then the numbers that are only interesting when
         // something looks wrong.
         const parts = []
-        if (sliceController.estimatedTime.length > 0)
-            parts.push(sliceController.estimatedTime)
-        if (sliceController.filamentGrams > 0)
-            parts.push(sliceController.filamentGrams.toFixed(1) + " g")
-        parts.push(sliceController.layerCount + " layers")
-        parts.push(sliceController.moveCount + " moves")
-        parts.push(Math.round(sliceController.elapsedMs) + " ms")
+        if (SliceController.estimatedTime.length > 0)
+            parts.push(SliceController.estimatedTime)
+        if (SliceController.filamentGrams > 0)
+            parts.push(SliceController.filamentGrams.toFixed(1) + " g")
+        parts.push(SliceController.layerCount + " layers")
+        parts.push(SliceController.moveCount + " moves")
+        parts.push(Math.round(SliceController.elapsedMs) + " ms")
         return parts.join("  ·  ")
     }
 
-    readonly property color statusColor: root.lastError.length > 0 || session.error.length > 0
+    readonly property color statusColor: root.lastError.length > 0 || Session.error.length > 0
                                          ? Colors.error : Colors.textSecondary
 
     signal sliceRequested()
@@ -52,7 +52,7 @@ Item {
         root.lastError = ""
         root.haveResult = false
         root.sliceRequested()
-        sliceController.slice()
+        SliceController.slice()
     }
 
     function startSliceAll() {
@@ -61,21 +61,21 @@ Item {
         root.lastError = ""
         root.haveResult = false
         root.sliceRequested()
-        sliceController.sliceAll()
+        SliceController.sliceAll()
     }
 
     Connections {
-        target: sliceController
+        target: SliceController
 
         function onFinished() {
             root.haveResult = true
-            // A slice-all leaves one toolpath per plate; the window decides which
+            // A slice-all leaves one Toolpath per plate; the window decides which
             // of them the viewport shows, because it is the one that knows which
             // plate is active.
-            if (sliceController.slicedAll)
+            if (SliceController.slicedAll)
                 return
-            if (toolpath.load(sliceController.gcodePath) && toolpath.layerCount > 0) {
-                toolpath.setLayer(toolpath.layerCount - 1)
+            if (Toolpath.load(SliceController.gcodePath) && Toolpath.layerCount > 0) {
+                Toolpath.setLayer(Toolpath.layerCount - 1)
                 root.previewReady()
             }
         }
@@ -124,7 +124,7 @@ Item {
             Layout.preferredWidth: 92
             horizontalAlignment: Text.AlignRight
             visible: root.hasLayers
-            text: toolpath.layerZ.toFixed(2) + " mm Z"
+            text: Toolpath.layerZ.toFixed(2) + " mm Z"
             font.family: Type.family
             font.pixelSize: Type.sizeCaption
             font.bold: true

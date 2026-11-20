@@ -5,6 +5,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import NextLayer 1.0
 import "../theme"
 import "../components"
 
@@ -48,17 +49,17 @@ Popup {
     readonly property bool volumeMode: volumeId > 0
 
     property var overrides: volumeMode && objectId > 0
-                            ? plateDocument.volumeSettings(objectId, volumeId)
-                            : objectId > 0 ? plateDocument.objectSettings(objectId) : ({})
+                            ? PlateDocument.volumeSettings(objectId, volumeId)
+                            : objectId > 0 ? PlateDocument.objectSettings(objectId) : ({})
 
-    readonly property var info: objectId > 0 ? plateDocument.objectInfo(objectId) : ({})
-    readonly property var definitions: objectId > 0 ? settingsModel.objectSettingDefs("") : []
-    readonly property var profile: objectId > 0 ? plateDocument.layerHeightProfile(objectId) : []
+    readonly property var info: objectId > 0 ? PlateDocument.objectInfo(objectId) : ({})
+    readonly property var definitions: objectId > 0 ? SettingsModel.objectSettingDefs("") : []
+    readonly property var profile: objectId > 0 ? PlateDocument.layerHeightProfile(objectId) : []
     /// Settings the object's file carried that this engine cannot apply. They are
     /// kept in the document and written back out on export, so what this list says
     /// is "not used here" and never "lost": the object's file still holds them.
     readonly property var keptForeign: objectId > 0 && !volumeMode
-                                      ? plateDocument.objectForeignSettings(objectId) : ({})
+                                      ? PlateDocument.objectForeignSettings(objectId) : ({})
 
     function overrideValue(name, fallback) {
         const value = root.overrides[name]
@@ -68,22 +69,22 @@ Popup {
     function refresh() {
         root.refreshVersion++
         root.overrides = root.volumeMode && objectId > 0
-                         ? plateDocument.volumeSettings(objectId, volumeId)
-                         : objectId > 0 ? plateDocument.objectSettings(objectId) : ({})
+                         ? PlateDocument.volumeSettings(objectId, volumeId)
+                         : objectId > 0 ? PlateDocument.objectSettings(objectId) : ({})
     }
 
     function setOverride(name, value) {
         if (root.volumeMode)
-            plateDocument.setVolumeSetting(root.objectId, root.volumeId, name, value)
+            PlateDocument.setVolumeSetting(root.objectId, root.volumeId, name, value)
         else
-            plateDocument.setObjectSetting(root.objectId, name, value)
+            PlateDocument.setObjectSetting(root.objectId, name, value)
     }
 
     function clearOverride(name) {
         if (root.volumeMode)
-            plateDocument.clearVolumeSetting(root.objectId, root.volumeId, name)
+            PlateDocument.clearVolumeSetting(root.objectId, root.volumeId, name)
         else
-            plateDocument.clearObjectSetting(root.objectId, name)
+            PlateDocument.clearObjectSetting(root.objectId, name)
     }
 
     property int refreshVersion: 0
@@ -110,18 +111,18 @@ Popup {
         // The document paints with its own copy of the brush, so the panel writes
         // it before telling the viewport anything: a slider that only moved the
         // ring would be a size setting that does not size the paint.
-        plateDocument.brushRadius = root.brushRadius
-        plateDocument.brushShape = root.brushShape
-        plateDocument.brushOverhangOnly = root.overhangOnly
-        plateDocument.brushHighlightAngle = root.highlightAngle
+        PlateDocument.brushRadius = root.brushRadius
+        PlateDocument.brushShape = root.brushShape
+        PlateDocument.brushOverhangOnly = root.overhangOnly
+        PlateDocument.brushHighlightAngle = root.highlightAngle
         root.paintRequested(root.painting ? root.objectId : 0, root.paintKind,
                             root.brushRadius, root.paintMode, root.paintTool)
     }
 
     function labelsForKind(kind) {
         if (kind === "tool")
-            return plateDocument.paintedFacetCount(root.objectId, "tool") + " painted triangle(s)"
-        return plateDocument.paintedFacetCount(root.objectId, kind) + " painted triangle(s)"
+            return PlateDocument.paintedFacetCount(root.objectId, "tool") + " painted triangle(s)"
+        return PlateDocument.paintedFacetCount(root.objectId, kind) + " painted triangle(s)"
     }
 
     width: Math.min(720, parent.width - Metrics.xl * 2)
@@ -262,9 +263,9 @@ Popup {
                         if (root.volumeMode) {
                             const keys = Object.keys(root.overrides)
                             for (let i = 0; i < keys.length; ++i)
-                                plateDocument.clearVolumeSetting(root.objectId, root.volumeId, keys[i])
+                                PlateDocument.clearVolumeSetting(root.objectId, root.volumeId, keys[i])
                         } else {
-                            plateDocument.clearObjectSettings(root.objectId)
+                            PlateDocument.clearObjectSettings(root.objectId)
                         }
                         root.refresh()
                     }
@@ -517,7 +518,7 @@ Popup {
                         text: "Apply to the band"
                         primary: true
                         onClicked: {
-                            const applied = plateDocument.setLayerHeightRange(root.objectId,
+                            const applied = PlateDocument.setLayerHeightRange(root.objectId,
                                                                               bandFrom.value,
                                                                               bandTo.value,
                                                                               layerHeight.value)
@@ -528,7 +529,7 @@ Popup {
                     Button {
                         text: "Back to uniform"
                         enabled: root.profile.length > 0
-                        onClicked: plateDocument.clearLayerHeights(root.objectId)
+                        onClicked: PlateDocument.clearLayerHeights(root.objectId)
                     }
 
                     Item { Layout.fillWidth: true }
@@ -776,7 +777,7 @@ Popup {
                     visible: root.paintKind === "tool"
 
                     Repeater {
-                        model: plateDocument.toolColours
+                        model: PlateDocument.toolColours
 
                         delegate: Rectangle {
                             id: swatch
@@ -825,7 +826,7 @@ Popup {
                     Button {
                         text: "Erase all"
                         onClicked: {
-                            plateDocument.clearPaint(root.objectId, root.paintKind)
+                            PlateDocument.clearPaint(root.objectId, root.paintKind)
                             root.refresh()
                         }
                     }

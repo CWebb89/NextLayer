@@ -41,26 +41,25 @@ So two rules hold here permanently:
 
 ## How the no-dead-control rule is enforced
 
-`--engine-capabilities <file>` takes `{"engine": name, "unsupported": [setting,
-...]}` and removes those settings from every surface: the sidebar, the per-object
-editor and the value dump. The engine this application ships with lists none, so
-the plain sidebar stays at 352 settings; a different engine hides what it cannot
-apply.
-
-`oracle/engine_capabilities_check.py` drives the app twice — once plain, once
-with a capability list — and requires that every listed name really is a setting
-the sidebar shows (a typo would otherwise silently do nothing), that none of
-them survive the filter, and that the counts differ by exactly the number listed.
-`tools/check` runs it against `oracle/engine-capabilities-hfw.json`, generated
-from HFW's ledger:
+`src/qt/assets/engine-capabilities.json` lists `{"engine": name, "unsupported":
+[setting, ...]}` — every setting HFW's own ledger records as one it cannot apply —
+and is read at start-up, removing those settings from every surface: the sidebar,
+the per-object editor and the value dump. It is generated from HFW's ledger, so
+the two numbers are the same measurement from opposite ends:
 
 ```sh
 python3 oracle/engine_capabilities_check.py --from-ledger
-python3 oracle/engine_capabilities_check.py --check oracle/engine-capabilities-hfw.json
+python3 oracle/engine_capabilities_check.py --check src/qt/assets/engine-capabilities.json
 ```
 
-Measured 2026-11-16: **352 settings offered with this engine, 175 with HFW's
-capability list (177 hidden)** — the same 175 HFW's own ledger records as applied.
-The two numbers are the same measurement from opposite ends, which is why a swap
-cannot quietly overstate what the engine does. The figure moves whenever HFW's
-ledger does: regenerate the list, then run the gate.
+`--engine-capabilities <file>` overrides the shipped list and
+`--engine-capabilities none` offers every setting, which is how the gate compares
+three states: list off, list passed on the command line, and the shipped default.
+It requires that every listed name really is a setting the sidebar shows (a typo
+would otherwise silently do nothing), that none of them survive the filter, that
+the counts differ by exactly the number listed, and that the shipped default hides
+exactly what the file it was generated from hides.
+
+Measured 2026-11-18: **352 settings offered with the list off, 177 with it — 175
+hidden**, the 175 HFW's ledger records as not applied. The figure moves whenever
+HFW's ledger does: regenerate the list, then run the gate.

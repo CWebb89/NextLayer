@@ -17,7 +17,7 @@ Window {
     readonly property string modelMode: "model"
     readonly property string previewMode: "preview"
 
-    property string mode: toolpath.loaded ? root.previewMode : root.modelMode
+    property string mode: Toolpath.loaded ? root.previewMode : root.modelMode
     readonly property string deviceMode: "device"
     readonly property string homeMode: "home"
     property bool panelOnLeft: false
@@ -35,14 +35,14 @@ Window {
     property bool objectPanelChipVisible: false
     property int objectPanelChipObject: 0
 
-    readonly property bool hasModel: session.hasModel
+    readonly property bool hasModel: Session.hasModel
 
     /// The one selected object, out of the document's own list: the card in the
     /// viewport shows its name, size and position, and there is nothing to show when
     /// the selection is empty or several parts are selected at once.
     readonly property var selectedObject: {
-        const objects = plateDocument.objects
-        const id = plateDocument.selectedId
+        const objects = PlateDocument.objects
+        const id = PlateDocument.selectedId
         for (let i = 0; i < objects.length; ++i) {
             if (objects[i].id === id)
                 return objects[i]
@@ -83,7 +83,7 @@ Window {
 
     readonly property var objectMenuEntries: {
         const id = root.objectMenuObjectId
-        const object = id > 0 ? plateDocument.objectInfo(id) : ({})
+        const object = id > 0 ? PlateDocument.objectInfo(id) : ({})
         return [
             { id: "objSettings", label: "Per-object settings…", hint: "layer height, walls, infill" },
             { id: "objSettingsReset", label: "Drop every override" },
@@ -94,7 +94,7 @@ Window {
             { id: "objShowAll", label: "Show all" },
             { id: "objStatistics", label: "Statistics…", hint: "volume, area, mass" },
             { id: "objHollow", label: "Hollow…", hint: "an inner wall" },
-            { id: "objMerge", label: "Merge selection", disabled: plateDocument.selectedCount < 2 },
+            { id: "objMerge", label: "Merge selection", disabled: PlateDocument.selectedCount < 2 },
             { id: "objSplit", label: "Split into parts" },
             { id: "objSep2", label: "" },
             { id: "objCentre", label: "Centre on the bed" },
@@ -112,7 +112,7 @@ Window {
 
     // The window's close guard reads these two: unsavedChanges decides whether
     // there is a question to ask, allowClose is set once it has been answered.
-    readonly property bool unsavedChanges: plateDocument.modified
+    readonly property bool unsavedChanges: PlateDocument.modified
     property bool allowClose: false
     property bool closeGuardOpen: false
 
@@ -127,7 +127,7 @@ Window {
     }
 
     function saveThenClose() {
-        const path = plateDocument.projectPath
+        const path = PlateDocument.projectPath
         if (path.length === 0) {
             root.closeGuardOpen = false
             saveProjectDialog.open()
@@ -171,12 +171,12 @@ Window {
         { id: "plateRename", label: "Rename plate\u2026", hint: "" },
         { id: "plateDuplicate", label: "Duplicate plate", hint: "keeps objects" },
         { id: "plateLock",
-          label: plateDocument.plateLocked(root.plateMenuIndex) ? "Unlock plate" : "Lock plate",
+          label: PlateDocument.plateLocked(root.plateMenuIndex) ? "Unlock plate" : "Lock plate",
           hint: "read-only" },
         { id: "plateClear", label: "Clear the plate", hint: "keep it" },
         { id: "sep1" },
         { id: "plateDelete", label: "Delete plate", hint: "",
-          disabled: plateDocument.plateCount <= 1 }
+          disabled: PlateDocument.plateCount <= 1 }
     ]
 
     property real layerMenuX: 0
@@ -207,9 +207,9 @@ Window {
         { id: "open", icon: "folder_open", label: "Add model", hint: "Add a model to this plate (Ctrl+O)",
           enabled: true },
         { id: "undo", icon: "undo", label: "Undo", hint: "Undo the last change (Ctrl+Z)",
-          enabled: plateDocument.canUndo },
+          enabled: PlateDocument.canUndo },
         { id: "redo", icon: "redo", label: "Redo", hint: "Redo the last undone change (Ctrl+Shift+Z)",
-          enabled: plateDocument.canRedo },
+          enabled: PlateDocument.canRedo },
         { id: "objects", icon: "list", label: "Object list", hint: "Show the objects on this plate (Ctrl+L)",
           enabled: root.hasModel },
         { id: "delete", icon: "delete", label: "Delete", hint: "Delete the selected object",
@@ -361,7 +361,7 @@ Window {
         case "exportConfig": exportConfigDialog.open(); break
         case "exportPresets": exportPresetsDialog.open(); break
         case "importConfig": importConfigDialog.open(); break
-        case "calibration": root.calibrationVisible = true; break
+        case "Calibration": root.calibrationVisible = true; break
         case "sendToPrinter": printHostDialog.open(); break
         case "preferences": preferencesDialog.openWithCurrent(); break
         case "shortcuts": shortcutMap.openWithCurrent(); break
@@ -374,11 +374,11 @@ Window {
             root.runAction("redo")
             break
         }
-        case "delete": plateDocument.removeSelection(); break
-        case "duplicate": plateDocument.duplicateSelection(); break
-        case "selectAll": plateDocument.selectAll(); break
-        case "isolate": plateDocument.isolateSelection(); break
-        case "showAll": plateDocument.showAll(); break
+        case "delete": PlateDocument.removeSelection(); break
+        case "duplicate": PlateDocument.duplicateSelection(); break
+        case "selectAll": PlateDocument.selectAll(); break
+        case "isolate": PlateDocument.isolateSelection(); break
+        case "showAll": PlateDocument.showAll(); break
         case "objects": root.showObjectList(!root.objectListVisible); break
         case "arrange": root.runAction("arrange"); break
         case "orient": root.runAction("orient"); break
@@ -387,8 +387,8 @@ Window {
         case "measure": root.runTool("measure"); break
         case "diff": presetDiffDialog.openFor(root.mode === root.previewMode ? "print" : ""); break
         case "objectPanel":
-            if (plateDocument.selectedId > 0)
-                objectPanel.openFor(plateDocument.selectedId)
+            if (PlateDocument.selectedId > 0)
+                objectPanel.openFor(PlateDocument.selectedId)
             else
                 root.setStatus("select an object first")
             break
@@ -459,20 +459,20 @@ Window {
 
     // Plates belong to the document -- count, names and locks -- because the
     // viewport draws a bed per plate and has to agree with the bar above it. The
-    // toolpath each plate last sliced is the slice controller's, one per plate, so
+    // Toolpath each plate last sliced is the slice controller's, one per plate, so
     // switching plates shows what was sliced rather than the last run's output.
 
     readonly property var plates: {
-        const source = plateDocument.plates
+        const source = PlateDocument.plates
         // Reading the version is what makes this re-evaluate when a plate is
         // sliced: the toolpaths live in the slice controller, which owns them.
-        const version = sliceController.gcodeVersion
+        const version = SliceController.gcodeVersion
         const list = []
         for (let i = 0; i < source.length; ++i) {
             const entry = source[i]
             // The bar shows how many objects each plate holds: the only signal
             // that an empty plate is empty rather than broken.
-            entry.gcode = version >= 0 ? sliceController.plateGcode(i) : ""
+            entry.gcode = version >= 0 ? SliceController.plateGcode(i) : ""
             entry.label = entry.count > 0 ? entry.name + " \u00b7 " + entry.count : entry.name
             list.push(entry)
         }
@@ -561,14 +561,14 @@ Window {
         const models = []
         const sliced = []
         for (let i = 0; i < paths.length; ++i) {
-            if (plateDocument.isPreSlicedFile(paths[i]))
+            if (PlateDocument.isPreSlicedFile(paths[i]))
                 sliced.push(paths[i])
             else
                 models.push(paths[i])
         }
         let added = 0
         if (models.length > 0) {
-            added = session.addModels(models)
+            added = Session.addModels(models)
             if (added > 0) {
                 root.mode = root.modelMode
                 // A model that lands somewhere the camera is not looking is a model
@@ -577,8 +577,8 @@ Window {
                 for (let i = 0; i < models.length; ++i)
                     root.noteRecent(models[i], "model")
                 root.setStatus(added === 1 ? "added 1 model" : "added " + added + " models")
-            } else if (session.error.length > 0) {
-                root.setStatus(session.error)
+            } else if (Session.error.length > 0) {
+                root.setStatus(Session.error)
             }
         }
         // A print somebody already sliced opens last, so a drop holding both a model
@@ -589,11 +589,11 @@ Window {
     }
 
     function openNewModel(path) {
-        if (plateDocument.isPreSlicedFile(path)) {
+        if (PlateDocument.isPreSlicedFile(path)) {
             root.openPreSliced(path)
             return
         }
-        if (session.open(path)) {
+        if (Session.open(path)) {
             root.mode = root.modelMode
             root.noteRecent(path, "model")
         }
@@ -603,13 +603,13 @@ Window {
     /// files — is not something that can be sliced again: what it holds is
     /// toolpaths, so it opens in the preview that reads them.
     function openPreSliced(path) {
-        const extracted = sliceController.scratchPath("pre-sliced.gcode")
-        if (extracted.length === 0 || !plateDocument.extractPreSlicedGcode(path, extracted)) {
+        const extracted = SliceController.scratchPath("pre-sliced.gcode")
+        if (extracted.length === 0 || !PlateDocument.extractPreSlicedGcode(path, extracted)) {
             root.setStatus("that file holds no G-code this app can read")
             return
         }
-        if (toolpath.load(extracted)) {
-            toolpath.setLayer(toolpath.layerCount - 1)
+        if (Toolpath.load(extracted)) {
+            Toolpath.setLayer(Toolpath.layerCount - 1)
             root.mode = root.previewMode
             root.setStatus("already sliced — showing its toolpaths, not a model to slice")
         } else {
@@ -618,37 +618,37 @@ Window {
     }
 
     function moveObjectTo(centreX, centreY) {
-        const id = plateDocument.selectedId
-        const info = id > 0 ? plateDocument.objectInfo(id) : null
+        const id = PlateDocument.selectedId
+        const info = id > 0 ? PlateDocument.objectInfo(id) : null
         if (info === null || info.x === undefined)
             return
-        plateDocument.setPosition(id, Qt.vector3d(centreX, centreY, info.z))
+        PlateDocument.setPosition(id, Qt.vector3d(centreX, centreY, info.z))
     }
 
     function rotateSelected(x, y, z) {
-        const id = plateDocument.selectedId
+        const id = PlateDocument.selectedId
         if (id > 0)
-            plateDocument.setRotation(id, Qt.vector3d(x, y, z))
+            PlateDocument.setRotation(id, Qt.vector3d(x, y, z))
     }
 
     function scaleSelected(factor) {
-        const id = plateDocument.selectedId
+        const id = PlateDocument.selectedId
         if (id > 0)
-            plateDocument.setScale(id, Qt.vector3d(factor, factor, factor))
+            PlateDocument.setScale(id, Qt.vector3d(factor, factor, factor))
     }
 
     function duplicateSelected(count) {
-        const id = plateDocument.selectedId
+        const id = PlateDocument.selectedId
         if (id <= 0)
             return
         for (let i = 0; i < Math.max(1, count); ++i)
-            plateDocument.duplicateObject(id)
+            PlateDocument.duplicateObject(id)
     }
 
     // Plates live in the document, not in the window: every plate is a set of
     // objects on its own bed, and switching plates only changes which set the
     // viewport, the object list and the slice all read. Each plate keeps its own
-    // toolpath so switching back shows what was sliced.
+    // Toolpath so switching back shows what was sliced.
     function switchPlate(index) {
         if (index < 0 || index >= root.plates.length)
             return
@@ -662,48 +662,48 @@ Window {
         viewport.measureActive = false
         viewport.layOnFaceActive = false
         viewport.paintActive = false
-        plateDocument.setActivePlate(index)
+        PlateDocument.setActivePlate(index)
         // The camera follows the plate: switching tabs frames the plate you
         // switched to, wherever it sits in the scene.
         viewport.fitPlate()
 
         const plate = root.plates[index]
-        const gcode = sliceController.plateGcode(index)
-        if (plate !== undefined && gcode.length > 0 && toolpath.load(gcode)) {
-            toolpath.setLayer(toolpath.layerCount - 1)
+        const gcode = SliceController.plateGcode(index)
+        if (plate !== undefined && gcode.length > 0 && Toolpath.load(gcode)) {
+            Toolpath.setLayer(Toolpath.layerCount - 1)
             root.mode = root.previewMode
         } else {
-            toolpath.clear()
+            Toolpath.clear()
             root.mode = root.modelMode
         }
     }
 
     function addPlate() {
-        const index = plateDocument.addPlate()
-        sliceController.shiftPlateGcodes(index, 1)
+        const index = PlateDocument.addPlate()
+        SliceController.shiftPlateGcodes(index, 1)
         root.switchPlate(index)
         root.setStatus("added plate " + (index + 1))
     }
 
     function removePlate(index) {
-        if (plateDocument.plateCount <= 1)
+        if (PlateDocument.plateCount <= 1)
             return
-        plateDocument.removePlate(index)
-        sliceController.shiftPlateGcodes(index, -1)
-        root.activePlate = Math.min(index, plateDocument.plateCount - 1)
+        PlateDocument.removePlate(index)
+        SliceController.shiftPlateGcodes(index, -1)
+        root.activePlate = Math.min(index, PlateDocument.plateCount - 1)
         root.switchPlate(root.activePlate)
     }
 
     function duplicatePlate(index) {
-        const target = plateDocument.duplicatePlate(index)
-        sliceController.duplicatePlateGcode(index, target)
+        const target = PlateDocument.duplicatePlate(index)
+        SliceController.duplicatePlateGcode(index, target)
         root.switchPlate(target)
         root.setStatus("cloned plate " + (index + 1) + " as plate " + (target + 1))
     }
 
     function togglePlateLock(index) {
-        const locked = !plateDocument.plateLocked(index)
-        plateDocument.setPlateLocked(index, locked)
+        const locked = !PlateDocument.plateLocked(index)
+        PlateDocument.setPlateLocked(index, locked)
         root.setStatus((locked ? "locked" : "unlocked") + " plate " + (index + 1))
     }
 
@@ -738,8 +738,8 @@ Window {
     }
 
     function clearObject() {
-        session.clear()
-        toolpath.clear()
+        Session.clear()
+        Toolpath.clear()
         viewport.selected = false
         root.activeTool = ""
         root.mode = root.modelMode
@@ -747,7 +747,7 @@ Window {
     }
 
     function saveProject(path) {
-        const error = plateDocument.saveProject(path)
+        const error = PlateDocument.saveProject(path)
         if (error.length > 0) {
             root.setStatus(error)
             return false
@@ -759,7 +759,7 @@ Window {
     }
 
     function saveProject3mf(path) {
-        const error = sliceController.exportProject3mf(path)
+        const error = SliceController.exportProject3mf(path)
         if (error.length > 0) {
             root.setStatus(error)
             return false
@@ -768,18 +768,18 @@ Window {
         return true
     }
     function openProject(path) {
-        const error = plateDocument.loadProject(path)
+        const error = PlateDocument.loadProject(path)
         if (error.length > 0) {
             root.setStatus(error)
             return false
         }
         root.projectPath = path
-        const printer = plateDocument.printSetupPrinter()
-        const process = plateDocument.printSetupProcess()
-        const filament = plateDocument.printSetupFilament()
+        const printer = PlateDocument.printSetupPrinter()
+        const process = PlateDocument.printSetupProcess()
+        const filament = PlateDocument.printSetupFilament()
         if (printer.length > 0 && process.length > 0 && filament.length > 0)
-            presetStore.reload(printer, process, filament)
-        toolpath.clear()
+            PresetStore.reload(printer, process, filament)
+        Toolpath.clear()
         root.mode = root.modelMode
         viewport.selected = false
         viewport.resetView()
@@ -789,8 +789,8 @@ Window {
     }
 
     function newPlate() {
-        plateDocument.clear()
-        toolpath.clear()
+        PlateDocument.clear()
+        Toolpath.clear()
         root.projectPath = ""
         root.mode = root.modelMode
         root.setStatus("empty plate")
@@ -806,34 +806,34 @@ Window {
         switch (id) {
         case "open": openDialog.open(); break
         case "undo": {
-            const label = plateDocument.undoLabel
-            plateDocument.undo()
+            const label = PlateDocument.undoLabel
+            PlateDocument.undo()
             root.setStatus(label.length > 0 ? "undid " + label.toLowerCase() : "nothing to undo")
             break
         }
         case "redo": {
-            const label = plateDocument.redoLabel
-            plateDocument.redo()
+            const label = PlateDocument.redoLabel
+            PlateDocument.redo()
             root.setStatus(label.length > 0 ? "redid " + label.toLowerCase() : "nothing to redo")
             break
         }
         case "objects": root.showObjectList(!root.objectListVisible); break
-        case "delete": plateDocument.removeSelection(); break
-        case "duplicate": plateDocument.duplicateSelection(); break
-        case "centre": plateDocument.centreSelection(); break
-        case "drop": plateDocument.dropSelection(); break
-        case "selectAll": plateDocument.selectAll(); break
+        case "delete": PlateDocument.removeSelection(); break
+        case "duplicate": PlateDocument.duplicateSelection(); break
+        case "centre": PlateDocument.centreSelection(); break
+        case "drop": PlateDocument.dropSelection(); break
+        case "selectAll": PlateDocument.selectAll(); break
         case "arrange":
-            root.setStatus(plateDocument.arrangePlate() ? "arranged the plate"
+            root.setStatus(PlateDocument.arrangePlate() ? "arranged the plate"
                                                         : "arrange could not place every object")
             viewport.fitPlate()
             break
         case "orient":
-            root.setStatus(plateDocument.autoOrientSelection() ? "auto-oriented the selection"
+            root.setStatus(PlateDocument.autoOrientSelection() ? "auto-oriented the selection"
                                                                : "nothing to orient")
             break
-        case "isolate": plateDocument.isolateSelection(); break
-        case "showAll": plateDocument.showAll(); break
+        case "isolate": PlateDocument.isolateSelection(); break
+        case "showAll": PlateDocument.showAll(); break
         case "export": exportDialog.open(); break
         case "addShapeBox":
             root.addShape("box", 40, 40, 20); break
@@ -852,12 +852,12 @@ Window {
             root.addVolume("blocker"); break
         case "addEnforcer":
             root.addVolume("enforcer"); break
-        case "layerGcode": layerGcodeDialog.openFor(toolpath.layerZ, toolpath.currentLayer, "gcode"); break
-        case "layerPause": layerGcodeDialog.openFor(toolpath.layerZ, toolpath.currentLayer, "pause"); break
+        case "layerGcode": layerGcodeDialog.openFor(Toolpath.layerZ, Toolpath.currentLayer, "gcode"); break
+        case "layerPause": layerGcodeDialog.openFor(Toolpath.layerZ, Toolpath.currentLayer, "pause"); break
         case "layerToolChange":
-            layerGcodeDialog.openFor(toolpath.layerZ, toolpath.currentLayer, "tool"); break
+            layerGcodeDialog.openFor(Toolpath.layerZ, Toolpath.currentLayer, "tool"); break
         case "plateRename":
-            textPrompt.openWith("Rename plate", plateDocument.plateName(root.plateMenuIndex),
+            textPrompt.openWith("Rename plate", PlateDocument.plateName(root.plateMenuIndex),
                                 "", "Rename")
             break
         case "plateDuplicate":
@@ -867,7 +867,7 @@ Window {
             root.togglePlateLock(root.plateMenuIndex)
             break
         case "plateClear":
-            plateDocument.clearPlate(root.plateMenuIndex)
+            PlateDocument.clearPlate(root.plateMenuIndex)
             root.setStatus("cleared plate " + (root.plateMenuIndex + 1))
             break
         case "plateDelete":
@@ -877,10 +877,10 @@ Window {
                 root.setStatus("switch to the plate first")
             break
         case "layerRemove":
-            if (!plateDocument.removeLayerGcode(toolpath.layerZ))
-                root.setStatus("no marker at " + toolpath.layerZ.toFixed(2) + " mm")
+            if (!PlateDocument.removeLayerGcode(Toolpath.layerZ))
+                root.setStatus("no marker at " + Toolpath.layerZ.toFixed(2) + " mm")
             else
-                root.setStatus("removed the marker at " + toolpath.layerZ.toFixed(2) + " mm")
+                root.setStatus("removed the marker at " + Toolpath.layerZ.toFixed(2) + " mm")
             break
         // A menu row and a key are the same command. Everything reachable only by
         // key lives in runShortcut, and a second switch that forgot half of them is
@@ -892,9 +892,9 @@ Window {
     /// A primitive straight onto the plate. It is an object like any other, so
     /// every tool, every per-object setting and the project file all work on it.
     function addShape(kind, width, depth, height) {
-        const id = plateDocument.addShape(kind, width, depth, height)
+        const id = PlateDocument.addShape(kind, width, depth, height)
         if (id < 0) {
-            root.setStatus(plateDocument.error.length > 0 ? plateDocument.error
+            root.setStatus(PlateDocument.error.length > 0 ? PlateDocument.error
                                                           : "could not add a " + kind)
             return
         }
@@ -904,18 +904,18 @@ Window {
 
     /// A volume attached to the selection: what turns a model into a part. The
     /// engine's own slice does the boolean, so the viewport overlay and the
-    /// toolpath are the same geometry.
+    /// Toolpath are the same geometry.
     function addVolume(type) {
-        const id = plateDocument.selectedId
+        const id = PlateDocument.selectedId
         if (id <= 0) {
             root.setStatus("select an object first")
             return
         }
-        const info = plateDocument.objectInfo(id)
+        const info = PlateDocument.objectInfo(id)
         const size = Math.max(4, Math.min(30, Math.min(info.width, info.depth, info.height) * 0.6))
-        const volumeId = plateDocument.addVolume(id, "box", type, size, size, size)
+        const volumeId = PlateDocument.addVolume(id, "box", type, size, size, size)
         if (volumeId < 0) {
-            root.setStatus(plateDocument.error.length > 0 ? plateDocument.error
+            root.setStatus(PlateDocument.error.length > 0 ? PlateDocument.error
                                                           : "could not add a " + type + " volume")
             return
         }
@@ -929,10 +929,10 @@ Window {
     // object's numbers. It used to open on 125/110 -- the centre of a Prusa bed,
     // left over as property defaults -- whatever the object's real position was.
     function seedTransformPanel() {
-        const id = plateDocument.selectedId
+        const id = PlateDocument.selectedId
         if (id <= 0)
             return
-        const info = plateDocument.objectInfo(id)
+        const info = PlateDocument.objectInfo(id)
         if (!info || info.x === undefined)
             return
         transformPanel.moveX = info.x
@@ -968,7 +968,7 @@ Window {
             return
         }
         if (id === "support" || id === "seam" || id === "colour") {
-            const objectId = plateDocument.selectedId
+            const objectId = PlateDocument.selectedId
             if (objectId <= 0) {
                 root.setStatus("select an object first")
                 return
@@ -984,7 +984,7 @@ Window {
                                          : kind === "seam" ? "seam" : "support"
             root.setStatus(viewport.paintActive
                            ? "painting " + label + " — drag on "
-                             + plateDocument.objectInfo(objectId).name
+                             + PlateDocument.objectInfo(objectId).name
                            : "")
             objectPanel.openFor(objectId)
             objectPanel.settingsTab = false
@@ -1005,7 +1005,7 @@ Window {
             return
         }
         if (id === "layers") {
-            const objectId = plateDocument.selectedId
+            const objectId = PlateDocument.selectedId
             if (objectId <= 0) {
                 root.setStatus("select an object first")
                 return
@@ -1045,7 +1045,7 @@ Window {
     color: Colors.background
 
     // A window that comes up without keyboard focus swallows every key until
-    // something is clicked -- the first `F` or `Ctrl+O` of a session did nothing,
+    // something is clicked -- the first `F` or `Ctrl+O` of a Session did nothing,
     // which reads as shortcuts being broken rather than as focus being elsewhere.
     onActiveChanged: {
         if (active && shell.activeFocusItem === null)
@@ -1059,7 +1059,7 @@ Window {
 
         // Modal dialogs are drawn by the Controls overlay, and their dimming comes
         // from the platform style: under qt6ct that scrim is fully transparent, so a
-        // dialog floated over a bright toolpath with nothing behind it. Attached to
+        // dialog floated over a bright Toolpath with nothing behind it. Attached to
         // the window's content item, one rule covers every dialog in the app.
         Overlay.modal: Rectangle {
             color: Colors.alpha("#000000", 0.55)
@@ -1154,7 +1154,7 @@ Window {
                     return
                 }
                 root.runShortcut("clearSelection")
-                plateDocument.clearSelection()
+                PlateDocument.clearSelection()
                 event.accepted = true
                 return
             }
@@ -1179,7 +1179,7 @@ Window {
                 return
             }
             if (entry.id === "preview") {
-                if (toolpath.loaded) {
+                if (Toolpath.loaded) {
                     root.mode = root.mode === root.previewMode ? root.modelMode : root.previewMode
                     event.accepted = true
                 }
@@ -1197,7 +1197,7 @@ Window {
             height: Metrics.headerHeight
             mode: root.mode
             version: root.appVersion
-            documentName: session.hasModel ? session.displayName() : ""
+            documentName: Session.hasModel ? Session.displayName() : ""
             onModeRequested: (requested) => root.mode = requested
             onFileMenuRequested: (x, y) => {
                 root.fileMenuAt = Qt.point(x, y)
@@ -1246,12 +1246,12 @@ Window {
                     root.setStatus("imported presets, no printer among them")
                     return
                 }
-                presetStore.selectPrinter(printer)
+                PresetStore.selectPrinter(printer)
                 root.setStatus("imported " + printer)
             }
             onRestartRequested: {
                 root.allowClose = true
-                presetStore.relaunch()
+                PresetStore.relaunch()
             }
         }
 
@@ -1390,7 +1390,7 @@ Window {
             onContextRequested: (objectId, x, y) => root.openObjectMenu(objectId, x, y)
             onPlateRenameRequested: (index) => {
                 root.plateMenuIndex = index
-                textPrompt.openWith("Rename plate", plateDocument.plateName(index), "", "Rename")
+                textPrompt.openWith("Rename plate", PlateDocument.plateName(index), "", "Rename")
             }
 
             Behavior on x { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
@@ -1421,7 +1421,7 @@ Window {
             activePlate: root.activePlate
             actions: root.objectActions
             slicing: footer.slicing
-            canSlice: session.hasModel
+            canSlice: Session.hasModel
             onPlateSelected: (index) => root.switchPlate(index)
             onPlateAdded: root.addPlate()
             onPlateRemoved: (index) => root.removePlate(index)
@@ -1584,7 +1584,7 @@ Window {
             anchors.bottomMargin: Metrics.md
             z: 5
             object: root.selectedObject
-            selectedCount: plateDocument.selectedCount
+            selectedCount: PlateDocument.selectedCount
             visible: root.mode === root.modelMode && root.selectedObject !== null
         }
 
@@ -1595,19 +1595,19 @@ Window {
             anchors.top: viewportToolbar.bottom
             anchors.topMargin: Metrics.sm
             tool: root.activeTool
-            busy: transformController.busy
+            busy: TransformController.busy
             onRotateRequested: (x, y, z) => root.rotateSelected(x, y, z)
             onScaleRequested: (factor) => root.scaleSelected(factor)
             onMoveRequested: (x, y) => root.moveObjectTo(x, y)
             onCutRequested: (z) => {
-                const parts = plateDocument.cutAtZ(plateDocument.selectedId, z, true)
+                const parts = PlateDocument.cutAtZ(PlateDocument.selectedId, z, true)
                 root.setStatus(parts > 1 ? "cut into " + parts + " parts"
-                                         : plateDocument.error.length > 0 ? plateDocument.error
+                                         : PlateDocument.error.length > 0 ? PlateDocument.error
                                                                           : "nothing to cut there")
             }
             onDuplicateRequested: (count) => root.duplicateSelected(count)
-            onCenterRequested: plateDocument.centreObject(plateDocument.selectedId)
-            onDropRequested: plateDocument.dropToBed(plateDocument.selectedId)
+            onCenterRequested: PlateDocument.centreObject(PlateDocument.selectedId)
+            onDropRequested: PlateDocument.dropToBed(PlateDocument.selectedId)
             onDismissed: root.activeTool = ""
         }
 
@@ -1716,23 +1716,23 @@ Window {
             id: layerSlider
             objectName: "layerSlider"
             activeFocusOnTab: false
-            visible: root.mode === root.previewMode && toolpath.layerCount > 0
+            visible: root.mode === root.previewMode && Toolpath.layerCount > 0
             width: 132
             height: Math.min(Math.round(viewport.height * 0.8), 560)
             anchors.right: viewport.right
             anchors.rightMargin: Metrics.sm
             anchors.verticalCenter: viewport.verticalCenter
             from: 0
-            to: Math.max(0, toolpath.layerCount - 1)
+            to: Math.max(0, Toolpath.layerCount - 1)
             step: 1
             labelOffset: 1
-            lowerValue: toolpath.firstLayer
-            upperValue: toolpath.currentLayer
-            upperDetail: Number(toolpath.layerZ).toFixed(2) + " mm"
-            onLowerMoved: (value) => toolpath.setFirstLayer(Math.round(value))
-            onUpperMoved: (value) => toolpath.setLayer(Math.round(value))
-            onStepped: (delta) => toolpath.setLayer(toolpath.currentLayer + delta)
-            markers: plateDocument.layerGcodeMarkers
+            lowerValue: Toolpath.firstLayer
+            upperValue: Toolpath.currentLayer
+            upperDetail: Number(Toolpath.layerZ).toFixed(2) + " mm"
+            onLowerMoved: (value) => Toolpath.setFirstLayer(Math.round(value))
+            onUpperMoved: (value) => Toolpath.setLayer(Math.round(value))
+            onStepped: (delta) => Toolpath.setLayer(Toolpath.currentLayer + delta)
+            markers: PlateDocument.layerGcodeMarkers
             onContextRequested: (x, y) => {
                 root.layerMenuX = x
                 root.layerMenuY = y
@@ -1757,17 +1757,17 @@ Window {
                 radius: Metrics.radiusSmall
                 color: layerModeMouse.containsMouse ? Colors.hoverFill : Colors.surfaceContainerHigh
                 border.width: Metrics.borderWidth
-                border.color: toolpath.layerMode > 0 ? Colors.accent : Colors.edge
+                border.color: Toolpath.layerMode > 0 ? Colors.accent : Colors.edge
             }
 
             Text {
                 anchors.centerIn: parent
-                text: toolpath.layerMode === 0 ? "RANGE"
-                    : toolpath.layerMode === 1 ? "ALL" : "1 LAYER"
+                text: Toolpath.layerMode === 0 ? "RANGE"
+                    : Toolpath.layerMode === 1 ? "ALL" : "1 LAYER"
                 font.family: Type.family
                 font.pixelSize: Type.sizeCaption
                 font.bold: true
-                color: toolpath.layerMode > 0 ? Colors.accent : Colors.textSecondary
+                color: Toolpath.layerMode > 0 ? Colors.accent : Colors.textSecondary
             }
 
             MouseArea {
@@ -1775,7 +1775,7 @@ Window {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: toolpath.cycleLayerMode()
+                onClicked: Toolpath.cycleLayerMode()
             }
         }
 
@@ -1786,7 +1786,7 @@ Window {
             anchors.bottom: movesSlider.top
             anchors.bottomMargin: Metrics.xxs
             text: "Move " + (Math.round(movesSlider.liveLower) + 1) + "-"
-                  + (Math.round(movesSlider.liveUpper) + 1) + " / " + toolpath.layerMoveCount
+                  + (Math.round(movesSlider.liveUpper) + 1) + " / " + Toolpath.layerMoveCount
             font.family: Type.family
             font.pixelSize: Type.sizeCaption
             color: Colors.textSecondary
@@ -1795,7 +1795,7 @@ Window {
         MovesSlider {
             id: movesSlider
             objectName: "movesSlider"
-            visible: root.mode === root.previewMode && toolpath.layerMoveCount > 1 && width > 200
+            visible: root.mode === root.previewMode && Toolpath.layerMoveCount > 1 && width > 200
             anchors.left: viewport.left
             anchors.right: layerSlider.left
             anchors.leftMargin: Metrics.md
@@ -1803,13 +1803,13 @@ Window {
             anchors.bottom: viewport.bottom
             anchors.bottomMargin: Metrics.md
             from: 0
-            to: Math.max(0, toolpath.layerMoveCount - 1)
+            to: Math.max(0, Toolpath.layerMoveCount - 1)
             step: 1
-            tickCount: toolpath.layerMoveCount
-            lowerValue: toolpath.firstMove
-            upperValue: toolpath.lastMove
-            onLowerMoved: (value) => toolpath.setFirstMove(Math.round(value))
-            onUpperMoved: (value) => toolpath.setLastMove(Math.round(value))
+            tickCount: Toolpath.layerMoveCount
+            lowerValue: Toolpath.firstMove
+            upperValue: Toolpath.lastMove
+            onLowerMoved: (value) => Toolpath.setFirstMove(Math.round(value))
+            onUpperMoved: (value) => Toolpath.setLastMove(Math.round(value))
         }
 
         // The moves slider spans the viewport's bottom, so the viewport is told how
@@ -1832,10 +1832,10 @@ Window {
             anchors.bottom: parent.bottom
             height: Metrics.footerHeight
             onPreviewReady: root.mode = root.previewMode
-            // Slicing switches the window to the toolpath view, which hides the
+            // Slicing switches the window to the Toolpath view, which hides the
             // plate, so the thumbnail is captured from the viewport the user is
             // looking at when they ask for the slice.
-            onSliceRequested: sliceController.capturePlateThumbnail(viewport,
+            onSliceRequested: SliceController.capturePlateThumbnail(viewport,
                 Qt.rect(toolRail.x + toolRail.width - viewport.x,
                         viewportToolbar.y + viewportToolbar.height - viewport.y,
                         viewport.width - (toolRail.x + toolRail.width - viewport.x),
@@ -1845,12 +1845,12 @@ Window {
     }
 
     Connections {
-        target: session
+        target: Session
 
         function onModelChanged() {
-            toolpath.clear()
+            Toolpath.clear()
             root.mode = root.modelMode
-            root.title = "NextLayer · " + session.displayName()
+            root.title = "NextLayer · " + Session.displayName()
             // Only a different model moves the camera. Re-framing on every document
             // change is what made a plain move or delete look like a zoom.
             //
@@ -1858,9 +1858,9 @@ Window {
             // reset the remembered path and the undo that brought it back counted as
             // a new model: the camera then zoomed into the part at the closest zoom.
             // Neither an empty plate nor a returning one is a new model.
-            if (session.path.length > 0 && session.path !== root.lastModelPath) {
-                root.lastModelPath = session.path
-                root.noteRecent(session.path, "model")
+            if (Session.path.length > 0 && Session.path !== root.lastModelPath) {
+                root.lastModelPath = Session.path
+                root.noteRecent(Session.path, "model")
                 frameTimer.restart()
             }
         }
@@ -1878,7 +1878,7 @@ Window {
         interval: 0
         repeat: false
         onTriggered: {
-            if (plateDocument.plateCount > 1)
+            if (PlateDocument.plateCount > 1)
                 viewport.fitPlate()
             else
                 viewport.frameContent()
@@ -1886,18 +1886,18 @@ Window {
     }
 
     Connections {
-        target: sliceController
+        target: SliceController
 
         function onFinished() {
             // A single slice belongs to the active plate; a slice-all gave every
-            // plate its own toolpath, so the viewport reloads the active plate's.
-            if (sliceController.slicedAll)
+            // plate its own Toolpath, so the viewport reloads the active plate's.
+            if (SliceController.slicedAll)
                 root.switchPlate(root.activePlate)
         }
     }
 
     Connections {
-        target: transformController
+        target: TransformController
 
         function onApplied(path, message) {
             root.mode = root.modelMode
@@ -2073,18 +2073,18 @@ Window {
             root.objectMenuVisible = false
             if (objectId <= 0)
                 return
-            if (!plateDocument.isSelected(objectId))
-                plateDocument.selectObject(objectId)
+            if (!PlateDocument.isSelected(objectId))
+                PlateDocument.selectObject(objectId)
             switch (id) {
             case "objSettings": objectPanel.openFor(objectId); break
-            case "objSettingsReset": plateDocument.clearObjectSettings(objectId); break
-            case "objDuplicate": plateDocument.duplicateObject(objectId); break
-            case "objDelete": plateDocument.removeObject(objectId); break
-            case "objIsolate": plateDocument.isolateSelection(); break
-            case "objShowAll": plateDocument.showAll(); break
-            case "objCentre": plateDocument.centreObject(objectId); break
-            case "objDrop": plateDocument.dropSelection(); break
-            case "objOrient": plateDocument.autoOrient(objectId); break
+            case "objSettingsReset": PlateDocument.clearObjectSettings(objectId); break
+            case "objDuplicate": PlateDocument.duplicateObject(objectId); break
+            case "objDelete": PlateDocument.removeObject(objectId); break
+            case "objIsolate": PlateDocument.isolateSelection(); break
+            case "objShowAll": PlateDocument.showAll(); break
+            case "objCentre": PlateDocument.centreObject(objectId); break
+            case "objDrop": PlateDocument.dropSelection(); break
+            case "objOrient": PlateDocument.autoOrient(objectId); break
             case "objLayFace": root.runTool("face"); break
             case "objPart": root.addVolume("part"); break
             case "objModifier": root.addVolume("modifier"); break
@@ -2093,9 +2093,9 @@ Window {
             case "objEnforcer": root.addVolume("enforcer"); break
             case "objStatistics": statisticsDialog.openFor(objectId); break
             case "objHollow": hollowDialog.openFor(objectId); break
-            case "objMerge": plateDocument.mergeSelection(); break
+            case "objMerge": PlateDocument.mergeSelection(); break
             case "objSplit": {
-                const added = plateDocument.splitToParts(objectId)
+                const added = PlateDocument.splitToParts(objectId)
                 root.setStatus(added > 0 ? "split into " + (added + 1) + " parts"
                                          : "this object is already a single part")
                 break
@@ -2116,9 +2116,9 @@ Window {
         menuWidth: 320
         entries: {
             const list = root.layerMenuEntries.slice()
-            const z = toolpath.layerZ
+            const z = Toolpath.layerZ
             let hasMarker = false
-            const markers = plateDocument.layerGcodeMarkers
+            const markers = PlateDocument.layerGcodeMarkers
             for (let i = 0; i < markers.length; ++i)
                 if (Math.abs(Number(markers[i].z) - z) < 0.001)
                     hasMarker = true
@@ -2220,9 +2220,9 @@ Window {
     TextPromptDialog {
         id: textPrompt
         onSubmitted: (text) => {
-            plateDocument.setPlateName(root.plateMenuIndex, text)
+            PlateDocument.setPlateName(root.plateMenuIndex, text)
             root.setStatus("renamed plate " + (root.plateMenuIndex + 1)
-                           + " to " + plateDocument.plateName(root.plateMenuIndex))
+                           + " to " + PlateDocument.plateName(root.plateMenuIndex))
         }
     }
 
@@ -2230,7 +2230,7 @@ Window {
         id: layerGcodeDialog
         onSubmitted: (kind, text) => {
             const z = layerGcodeDialog.layerZ
-            if (!plateDocument.addLayerGcode(z, kind, text)) {
+            if (!PlateDocument.addLayerGcode(z, kind, text)) {
                 root.setStatus("could not add a marker at " + z.toFixed(2) + " mm")
                 return
             }
@@ -2264,7 +2264,7 @@ Window {
             { id: "importConfig", label: "Load configuration…", keys: "Ctrl+Shift+I" },
             { id: "exportPresets", label: "Export preset bundle…", keys: "Ctrl+Shift+B" },
             { id: "sepCalibration", label: "" },
-            { id: "calibration", label: "Calibration…", keys: "" },
+            { id: "Calibration", label: "Calibration…", keys: "" },
             { id: "sep2", label: "" },
             { id: "setup", label: "Printer setup…", keys: "Ctrl+Alt+S" },
             { id: "preferences", label: "Preferences…", keys: "Ctrl+," },
@@ -2476,9 +2476,9 @@ Window {
                     Layout.fillWidth: true
                     Layout.leftMargin: Metrics.xl
                     Layout.rightMargin: Metrics.xl
-                    text: plateDocument.count + (plateDocument.count === 1 ? " object on the plate" : " objects on the plate")
-                          + (plateDocument.projectPath.length > 0
-                             ? ", last saved to " + plateDocument.projectPath
+                    text: PlateDocument.count + (PlateDocument.count === 1 ? " object on the plate" : " objects on the plate")
+                          + (PlateDocument.projectPath.length > 0
+                             ? ", last saved to " + PlateDocument.projectPath
                              : "") + "."
                     wrapMode: Text.WordWrap
                     font.family: Type.family
@@ -2565,11 +2565,11 @@ Window {
 
     TextObjectDialog {
         id: textDialog
-        fonts: plateDocument.fonts()
+        fonts: PlateDocument.fonts()
         onTextRequested: (text, height, depth, fontPath) => {
-            const id = plateDocument.addText(text, height, depth, fontPath)
+            const id = PlateDocument.addText(text, height, depth, fontPath)
             root.setStatus(id > 0 ? "added text \"" + text + "\""
-                                  : plateDocument.error.length > 0 ? plateDocument.error
+                                  : PlateDocument.error.length > 0 ? PlateDocument.error
                                                                    : "could not add the text")
         }
     }
@@ -2577,10 +2577,10 @@ Window {
     HollowDialog {
         id: hollowDialog
         onHollowRequested: (objectId, thickness) => {
-            if (plateDocument.hollowObject(objectId, thickness))
+            if (PlateDocument.hollowObject(objectId, thickness))
                 root.setStatus("hollowed with a " + thickness.toFixed(1) + " mm wall")
             else
-                root.setStatus(plateDocument.error.length > 0 ? plateDocument.error
+                root.setStatus(PlateDocument.error.length > 0 ? PlateDocument.error
                                                               : "hollowing failed")
         }
     }
@@ -2592,7 +2592,7 @@ Window {
         defaultSuffix: "json"
         nameFilters: ["Configuration (*.json)", "All files (*)"]
         onAccepted: {
-            const error = presetStore.exportConfiguration(selectedFile)
+            const error = PresetStore.exportConfiguration(selectedFile)
             root.setStatus(error.length > 0 ? error : "exported the configuration")
         }
     }
@@ -2603,7 +2603,7 @@ Window {
         fileMode: FileDialog.OpenFile
         nameFilters: ["Configuration (*.json)", "All files (*)"]
         onAccepted: {
-            const error = presetStore.importConfiguration(selectedFile)
+            const error = PresetStore.importConfiguration(selectedFile)
             root.setStatus(error.length > 0 ? error : "loaded the configuration")
         }
     }
@@ -2616,12 +2616,12 @@ Window {
         title: "Export the preset bundle into"
         acceptLabel: "Export here"
         onAccepted: {
-            const error = presetStore.exportBundle(selectedFolder)
+            const error = PresetStore.exportBundle(selectedFolder)
             if (error.length > 0) {
                 root.setStatus(error)
                 return
             }
-            const summary = presetStore.bundleSummary()
+            const summary = PresetStore.bundleSummary()
             root.setStatus("exported " + summary.vendor + ": " + summary.presets
                            + " preset files for " + summary.machines + " machine(s)")
         }
@@ -2637,10 +2637,10 @@ Window {
     }
 
     Connections {
-        target: settingsModel
+        target: SettingsModel
         ignoreUnknownSignals: true
         function onChanged() {
-            if (!preferencesDialog.autoslice || !toolpath.loaded || footer.slicing)
+            if (!preferencesDialog.autoslice || !Toolpath.loaded || footer.slicing)
                 return
             autosliceDelay.restart()
         }
@@ -2650,7 +2650,7 @@ Window {
         id: autosliceDelay
         interval: 900
         onTriggered: {
-            if (preferencesDialog.autoslice && toolpath.loaded && !footer.slicing)
+            if (preferencesDialog.autoslice && Toolpath.loaded && !footer.slicing)
                 footer.startSlice()
         }
     }
@@ -2659,7 +2659,7 @@ Window {
         id: openDialog
         title: "Add model"
         fileMode: FileDialog.OpenFiles
-        nameFilters: ["Models (" + plateDocument.importWildcards() + ")", "All files (*)"]
+        nameFilters: ["Models (" + PlateDocument.importWildcards() + ")", "All files (*)"]
         // The dialog opens where models were last found. A home directory can hold
         // both `Downloads` and `downloads` -- only one of them is where the files
         // actually are -- so the folder that was last used wins over the default.
@@ -2686,9 +2686,9 @@ Window {
         onAccepted: {
             // Host offsets are part of what a machine prints, so they go into the
             // file that lands on disk as well as the one that gets uploaded.
-            const source = printerLink.withOffsets(sliceController.gcodePath)
-            if (toolpath.loaded && Host.copyFile(source, selectedFile))
-                root.setStatus(printerLink.hasOffsets
+            const source = PrinterLink.withOffsets(SliceController.gcodePath)
+            if (Toolpath.loaded && Host.copyFile(source, selectedFile))
+                root.setStatus(PrinterLink.hasOffsets
                                ? "exported to " + selectedFile + " with host offsets"
                                : "exported to " + selectedFile)
             else
@@ -2701,12 +2701,12 @@ Window {
         // handler: the first model change this window sees must therefore not frame
         // again. Without this, the first change -- an undo, a delete -- counted as a
         // new model and the camera zoomed into the part.
-        root.lastModelPath = session.path
+        root.lastModelPath = Session.path
         // A model named on the command line is opened before this window exists, so
         // the document-changed handler that records it never runs for it. It is the
         // first thing the person opened; it belongs at the top of the list.
-        if (session.path.length > 0)
-            root.noteRecent(session.path, "model")
+        if (Session.path.length > 0)
+            root.noteRecent(Session.path, "model")
         shell.forceActiveFocus()
         preferencesDialog.load()
         root.applyPreferences()
@@ -2718,36 +2718,36 @@ Window {
         if (typeof startupPanelLeft !== "undefined" && startupPanelLeft)
             root.panelOnLeft = true
         Colors.loadFromHost()
-        if (session.hasModel)
+        if (Session.hasModel)
             if (typeof startupPlates !== "undefined")
             for (let i = 1; i < startupPlates; ++i)
                 root.addPlate()
         if (typeof startupPreSlicedPath !== "undefined" && startupPreSlicedPath.length > 0)
             root.openPreSliced(startupPreSlicedPath)
-        if (startupGcodePath.length > 0 && toolpath.load(startupGcodePath)) {
-            const last = Math.max(0, toolpath.layerCount - 1)
+        if (startupGcodePath.length > 0 && Toolpath.load(startupGcodePath)) {
+            const last = Math.max(0, Toolpath.layerCount - 1)
             const layer = startupLayer >= 0 ? Math.min(startupLayer, last) : last
-            toolpath.setLayer(layer)
+            Toolpath.setLayer(layer)
             if (startupLayerFrom > 0)
-                toolpath.setFirstLayer(Math.min(startupLayerFrom, layer))
+                Toolpath.setFirstLayer(Math.min(startupLayerFrom, layer))
             if (startupMovesFrom > 0)
-                toolpath.setFirstMove(startupMovesFrom - 1)
+                Toolpath.setFirstMove(startupMovesFrom - 1)
             if (startupMovesTo > 0)
-                toolpath.setLastMove(startupMovesTo - 1)
+                Toolpath.setLastMove(startupMovesTo - 1)
             if (startupSingleLayer)
-                toolpath.setSingleLayer(true)
+                Toolpath.setSingleLayer(true)
             for (let i = 0; i < startupHiddenFeatures.length; ++i)
-                toolpath.setFeatureVisible(startupHiddenFeatures[i], false)
+                Toolpath.setFeatureVisible(startupHiddenFeatures[i], false)
             if (typeof startupViewType !== "undefined" && startupViewType.length > 0)
-                toolpath.setViewType(startupViewType)
+                Toolpath.setViewType(startupViewType)
             for (let i = 0; i < startupHiddenOptions.length; ++i)
-                toolpath.setOptionVisible(startupHiddenOptions[i], false)
+                Toolpath.setOptionVisible(startupHiddenOptions[i], false)
         }
         if (typeof startupCameraView !== "undefined" && startupCameraView.length > 0)
             viewport.setView(startupCameraView)
         if (typeof startupOrthographic !== "undefined")
             viewport.orthographic = startupOrthographic
-        root.title = "NextLayer · " + session.displayName()
+        root.title = "NextLayer · " + Session.displayName()
         if (setupFlow.firstRun()) {
             // A new install lands on the home screen, with the welcome over it: the
             // welcome explains, and dismissing it leaves somewhere to start rather

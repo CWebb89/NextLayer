@@ -6,6 +6,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
+import NextLayer 1.0
 import "../theme"
 import "../components"
 import "."
@@ -39,12 +40,12 @@ Popup {
     readonly property bool printerTab: root.tab === "printer"
     readonly property string currentName: {
         if (root.tab === "filament")
-            return presetStore.currentFilament
+            return PresetStore.currentFilament
         if (root.tab === "printer")
-            return presetStore.currentPrinter
-        return presetStore.currentPrint
+            return PresetStore.currentPrinter
+        return PresetStore.currentPrint
     }
-    readonly property bool currentIsUser: presetStore.presetIsUser(root.presetKind,
+    readonly property bool currentIsUser: PresetStore.presetIsUser(root.presetKind,
                                                                   root.currentName)
     /// The categories of this preset, the per-category dots and the changed count
     /// all come from the settings model, so the window re-reads them whenever the
@@ -56,20 +57,20 @@ Popup {
     property var groupCache: []
 
     function refresh() {
-        root.modified = settingsModel.modifiedCount(root.tab)
+        root.modified = SettingsModel.modifiedCount(root.tab)
         root.groupCache = root.filterText.length > 0
-                        ? settingsModel.groups("", "", root.filterText)
-                        : settingsModel.groups(root.tab, root.subTab, "")
+                        ? SettingsModel.groups("", "", root.filterText)
+                        : SettingsModel.groups(root.tab, root.subTab, "")
     }
 
     Connections {
-        target: settingsModel
+        target: SettingsModel
 
         function onChanged() { root.refresh() }
     }
 
     Connections {
-        target: presetStore
+        target: PresetStore
 
         function onResolved() { root.refresh() }
     }
@@ -79,7 +80,7 @@ Popup {
     /// what the reference slicers put in this window and what makes 68 settings
     /// readable at all.
     readonly property var categories: {
-        const tabs = settingsModel.tabList()
+        const tabs = SettingsModel.tabList()
         const wanted = root.tab === "filament" ? "filament"
                      : root.tab === "printer" ? "printer" : "process"
         for (let i = 0; i < tabs.length; ++i) {
@@ -97,15 +98,15 @@ Popup {
 
     readonly property var tabChoices: {
         if (root.tab === "filament")
-            return presetStore.filamentProfiles
+            return PresetStore.filamentProfiles
         if (root.tab === "printer") {
             const out = []
-            const printers = presetStore.printers
+            const printers = PresetStore.printers
             for (let i = 0; i < printers.length; ++i)
                 out.push({ value: printers[i].name, label: printers[i].name })
             return out
         }
-        return presetStore.printProfiles
+        return PresetStore.printProfiles
     }
 
     // Drawn over the whole window, not inside the panel it is declared in: a Popup
@@ -206,19 +207,19 @@ Popup {
     }
 
     function reloadWith(printName, filamentName) {
-        presetStore.reload(presetStore.currentPrinter, printName, filamentName)
+        PresetStore.reload(PresetStore.currentPrinter, printName, filamentName)
     }
 
     function selectPreset(name) {
         if (name.length === 0)
             return
         if (root.tab === "printer") {
-            presetStore.selectPrinter(name)
+            PresetStore.selectPrinter(name)
             return
         }
         root.nameField = name
-        root.reloadWith(root.tab === "process" ? name : presetStore.currentPrint,
-                        root.tab === "filament" ? name : presetStore.currentFilament)
+        root.reloadWith(root.tab === "process" ? name : PresetStore.currentPrint,
+                        root.tab === "filament" ? name : PresetStore.currentFilament)
     }
 
     function save() {
@@ -230,11 +231,11 @@ Popup {
                            + "overwritten. Give it your own name to save a copy."
             return
         }
-        const error = presetStore.saveUserPreset(root.presetKind, root.currentName, root.tab)
+        const error = PresetStore.saveUserPreset(root.presetKind, root.currentName, root.tab)
         root.message = error.length > 0 ? error : "saved " + root.currentName
         if (error.length > 0)
             return
-        root.reloadWith(presetStore.currentPrint, presetStore.currentFilament)
+        root.reloadWith(PresetStore.currentPrint, PresetStore.currentFilament)
     }
 
     function saveAs() {
@@ -261,7 +262,7 @@ Popup {
                 }
             }
         }
-        const error = presetStore.saveUserPreset(root.presetKind, name, root.tab, !copy)
+        const error = PresetStore.saveUserPreset(root.presetKind, name, root.tab, !copy)
         root.message = error.length > 0 ? error
                                        : (copy ? "saved " + name : "saved " + root.currentName)
         if (error.length > 0)
@@ -269,12 +270,12 @@ Popup {
         // A saved machine is a machine: it has to become the one selected, or
         // the editor would keep editing the catalogue entry it was copied from.
         if (root.printerTab) {
-            presetStore.selectPrinter(name)
+            PresetStore.selectPrinter(name)
             root.nameField = name
             return
         }
-        root.reloadWith(root.tab === "process" ? name : presetStore.currentPrint,
-                        root.tab === "filament" ? name : presetStore.currentFilament)
+        root.reloadWith(root.tab === "process" ? name : PresetStore.currentPrint,
+                        root.tab === "filament" ? name : PresetStore.currentFilament)
     }
 
     function rename() {
@@ -283,12 +284,12 @@ Popup {
             return
         }
         const name = root.nameField.trim()
-        const error = presetStore.renameUserPreset(root.presetKind, root.currentName, name)
+        const error = PresetStore.renameUserPreset(root.presetKind, root.currentName, name)
         root.message = error
         if (error.length > 0)
             return
-        root.reloadWith(root.tab === "process" ? name : presetStore.currentPrint,
-                        root.tab === "filament" ? name : presetStore.currentFilament)
+        root.reloadWith(root.tab === "process" ? name : PresetStore.currentPrint,
+                        root.tab === "filament" ? name : PresetStore.currentFilament)
     }
 
     function remove() {
@@ -302,22 +303,22 @@ Popup {
 
     function removeConfirmed() {
         root.confirmingDelete = false
-        const error = presetStore.deleteUserPreset(root.presetKind, root.currentName)
+        const error = PresetStore.deleteUserPreset(root.presetKind, root.currentName)
         root.message = error
         if (error.length > 0)
             return
-        root.reloadWith(root.tab === "process" ? "" : presetStore.currentPrint,
-                        root.tab === "filament" ? "" : presetStore.currentFilament)
+        root.reloadWith(root.tab === "process" ? "" : PresetStore.currentPrint,
+                        root.tab === "filament" ? "" : PresetStore.currentFilament)
     }
 
     function addPrinter() {
-        const error = presetStore.createPrinter(printerName.text, printerWidth.value,
+        const error = PresetStore.createPrinter(printerName.text, printerWidth.value,
                                                 printerDepth.value, printerHeight.value)
         root.message = error
         if (error.length > 0)
             return
         root.showAddPrinter = false
-        presetStore.reload(printerName.text, "Standard", "Generic")
+        PresetStore.reload(printerName.text, "Standard", "Generic")
     }
 
     background: Rectangle {
@@ -365,7 +366,7 @@ Popup {
                     icon: "restart_alt"
                     hint: "Revert every change on this tab"
                     enabled: root.modified > 0
-                    onClicked: settingsModel.resetTab(root.tab)
+                    onClicked: SettingsModel.resetTab(root.tab)
                 }
 
                 ToolButton {
@@ -536,7 +537,7 @@ Popup {
                 Layout.bottomMargin: Metrics.sm
                 visible: text.length > 0
                 text: root.message.length > 0 ? root.message
-                      : presetStore.error.length > 0 ? presetStore.error : ""
+                      : PresetStore.error.length > 0 ? PresetStore.error : ""
                 wrapMode: Text.WordWrap
                 maximumLineCount: 3
                 elide: Text.ElideRight
@@ -558,7 +559,7 @@ Popup {
                 Layout.rightMargin: Metrics.lg
                 Layout.bottomMargin: Metrics.sm
                 spacing: Metrics.sm
-                visible: presetStore.filaments.length > 1
+                visible: PresetStore.filaments.length > 1
 
                 Text {
                     text: "Tools"
@@ -569,7 +570,7 @@ Popup {
                 }
 
                 Repeater {
-                    model: presetStore.filaments.length
+                    model: PresetStore.filaments.length
 
                     delegate: RowLayout {
                         id: toolRow
@@ -586,11 +587,11 @@ Popup {
 
                         ComboBox {
                             Layout.preferredWidth: 190
-                            choices: presetStore.filamentProfiles
-                            currentValue: presetStore.filaments[toolRow.index]
+                            choices: PresetStore.filamentProfiles
+                            currentValue: PresetStore.filaments[toolRow.index]
                             searchable: true
                             popupWidth: 320
-                            onSelected: (value) => presetStore.setFilamentForTool(toolRow.index + 1, value)
+                            onSelected: (value) => PresetStore.setFilamentForTool(toolRow.index + 1, value)
                         }
                     }
                 }
@@ -629,7 +630,7 @@ Popup {
                     id: printerWidth
                     Layout.preferredWidth: 130
                     value: {
-                        const shape = settingsModel.value("bed_shape")
+                        const shape = SettingsModel.value("bed_shape")
                         return shape !== undefined && shape !== null && shape.length > 1
                                ? Math.abs(Number(shape[1][0]) - Number(shape[0][0])) : 250
                     }
@@ -642,7 +643,7 @@ Popup {
                     id: printerDepth
                     Layout.preferredWidth: 130
                     value: {
-                        const shape = settingsModel.value("bed_shape")
+                        const shape = SettingsModel.value("bed_shape")
                         return shape !== undefined && shape !== null && shape.length > 2
                                ? Math.abs(Number(shape[2][1]) - Number(shape[1][1])) : 210
                     }
@@ -655,7 +656,7 @@ Popup {
                     id: printerHeight
                     Layout.preferredWidth: 130
                     value: {
-                        const height = Number(settingsModel.value("max_print_height"))
+                        const height = Number(SettingsModel.value("max_print_height"))
                         return height > 0 ? height : 250
                     }
                     from: 20
@@ -775,7 +776,7 @@ Popup {
         defaultSuffix: "yaml"
         nameFilters: ["Preset (*.yaml)", "All files (*)"]
         onAccepted: {
-            const error = presetStore.exportPreset(root.presetKind, root.currentName,
+            const error = PresetStore.exportPreset(root.presetKind, root.currentName,
                                                    selectedFile)
             root.message = error.length > 0 ? error
                                             : "wrote " + root.currentName + " to " + selectedFile
@@ -788,12 +789,12 @@ Popup {
         fileMode: FileDialog.OpenFile
         nameFilters: ["Preset (*.yaml)", "All files (*)"]
         onAccepted: {
-            const error = presetStore.importPreset(root.presetKind, selectedFile)
+            const error = PresetStore.importPreset(root.presetKind, selectedFile)
             if (error.length > 0) {
                 root.message = error
                 return
             }
-            root.message = "imported " + presetStore.importedPresetName()
+            root.message = "imported " + PresetStore.importedPresetName()
         }
     }
 }

@@ -5,6 +5,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import NextLayer 1.0
 import "../theme"
 import "../components"
 
@@ -57,9 +58,9 @@ Popup {
 
     function apply() {
         if (root.singleString)
-            settingsModel.setValue(root.settingName, root.singleText)
+            SettingsModel.setValue(root.settingName, root.singleText)
         else
-            settingsModel.setValue(root.settingName, root.rows)
+            SettingsModel.setValue(root.settingName, root.rows)
         root.close()
     }
 

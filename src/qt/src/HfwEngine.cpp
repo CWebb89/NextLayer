@@ -5,6 +5,7 @@
 
 #include <Slic3r/Biz/Format/STL.hpp>
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
@@ -23,7 +24,7 @@ namespace {
 
 QString developmentBinary()
 {
-    return QStringLiteral("/home/cwebb/dev/HFW/HFW-final/target/release/hfw-cli");
+    return QStringLiteral("/home/cwebb/dev/HFW/target/release/hfw-cli");
 }
 
 QString tail(const QString& text, int lines)
@@ -107,14 +108,6 @@ QString writeObjectSettings(const QTemporaryDir& work, const QVector<PlateSliceO
 
 } // namespace
 
-bool hfwRequested()
-{
-    const QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
-    return environment.value(QStringLiteral("NEXT_LAYER_ENGINE")).compare(
-               QStringLiteral("hfw"), Qt::CaseInsensitive)
-        == 0;
-}
-
 QString hfwBinary()
 {
     const QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
@@ -122,11 +115,30 @@ QString hfwBinary()
     if (!configured.isEmpty())
         return QFileInfo::exists(configured) ? configured : QString();
 
+    // An installed copy keeps the engine in its own directory beside the
+    // executable, so the two travel together through a package.
+    const QString beside =
+        QDir(QCoreApplication::applicationDirPath() + QStringLiteral("/../libexec/next-layer"))
+            .filePath(QStringLiteral("hfw-cli"));
+    if (QFileInfo(beside).isExecutable())
+        return beside;
+
     const QString found = QStandardPaths::findExecutable(QStringLiteral("hfw-cli"));
     if (!found.isEmpty())
         return found;
 
-    return QFileInfo::exists(developmentBinary()) ? developmentBinary() : QString();
+    return QFileInfo(developmentBinary()).isExecutable() ? developmentBinary() : QString();
+}
+
+QString hfwUnavailableReason()
+{
+    if (!hfwBinary().isEmpty())
+        return {};
+    const QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+    if (!environment.value(QStringLiteral("NEXT_LAYER_HFW")).isEmpty())
+        return QStringLiteral("NEXT_LAYER_HFW points at a file that is not there");
+    return QStringLiteral("hfw-cli was not found beside the application, on PATH or in the "
+                          "development build tree; set NEXT_LAYER_HFW to its path");
 }
 
 bool sliceWithHfw(const QVector<PlateSliceObject>& objects, const QString& configPath,
@@ -138,7 +150,7 @@ bool sliceWithHfw(const QVector<PlateSliceObject>& objects, const QString& confi
     }
     const QString binary = hfwBinary();
     if (binary.isEmpty()) {
-        error = QStringLiteral("no hfw-cli found: set NEXT_LAYER_HFW to its path");
+        error = hfwUnavailableReason();
         return false;
     }
 

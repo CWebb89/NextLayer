@@ -7,6 +7,7 @@ import QtQuick.Controls
 import QtQuick.Dialogs
 import QtQuick.Layouts
 import QtCore
+import NextLayer 1.0
 import "../theme"
 import "../components"
 
@@ -390,7 +391,7 @@ Popup {
                         id: importFolderDialog
                         title: "The other slicer's configuration folder"
                         onAccepted: importStatus.report(
-                                        presetStore.importSlicerPresets(selectedFolder))
+                                        PresetStore.importSlicerPresets(selectedFolder))
                     }
 
                     FileDialog {
@@ -398,7 +399,7 @@ Popup {
                         title: "A preset file from another slicer"
                         nameFilters: ["Preset (*.json *.ini)", "All files (*)"]
                         onAccepted: importStatus.report(
-                                        presetStore.importSlicerPresetFile(selectedFile))
+                                        PresetStore.importSlicerPresetFile(selectedFile))
                     }
 
                     Divider { Layout.fillWidth: true }
@@ -417,15 +418,15 @@ Popup {
                         }
 
                         Button {
-                            text: updater.busy ? "working…" : "Check for updates"
-                            enabled: !updater.busy
-                            onClicked: updater.check()
+                            text: Updater.busy ? "working…" : "Check for updates"
+                            enabled: !Updater.busy
+                            onClicked: Updater.check()
                         }
                     }
 
                     Text {
                         Layout.fillWidth: true
-                        text: updater.status.length > 0 ? updater.status
+                        text: Updater.status.length > 0 ? Updater.status
                                                         : "version " + root.appVersion + " is installed"
                         wrapMode: Text.WordWrap
                         font.family: Type.family
@@ -436,8 +437,8 @@ Popup {
                     Text {
                         Layout.fillWidth: true
                         visible: text.length > 0
-                        text: "Channel  " + updater.channel + (updater.notes.length > 0
-                                                                 ? "  --  " + updater.notes : "")
+                        text: "Channel  " + Updater.channel + (Updater.notes.length > 0
+                                                                 ? "  --  " + Updater.notes : "")
                         wrapMode: Text.WordWrap
                         font.family: Type.family
                         font.pixelSize: Type.sizeCaption
@@ -447,25 +448,25 @@ Popup {
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: Metrics.sm
-                        visible: updater.availableVersion.length > 0
+                        visible: Updater.availableVersion.length > 0
 
                         Item { Layout.fillWidth: true }
 
                         Button {
-                            text: "Download " + updater.availableVersion
-                            visible: !updater.downloaded
-                            enabled: !updater.busy
-                            onClicked: updater.download()
+                            text: "Download " + Updater.availableVersion
+                            visible: !Updater.downloaded
+                            enabled: !Updater.busy
+                            onClicked: Updater.download()
                         }
 
                         Button {
                             text: "Install and restart"
                             primary: true
-                            visible: updater.canInstall
-                            enabled: !updater.busy
+                            visible: Updater.canInstall
+                            enabled: !Updater.busy
                             onClicked: {
-                                updater.install()
-                                updater.relaunch()
+                                Updater.install()
+                                Updater.relaunch()
                             }
                         }
                     }

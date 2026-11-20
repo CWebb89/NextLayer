@@ -10,39 +10,50 @@
 
 namespace next_layer {
 
-// The engine emits the exact feature names below in `;TYPE:` comments.
-// Preview colours are a fixed palette, not theme roles: the sliced view has to
-// separate line types at a glance, which a single-hue MD3 scheme cannot do.
+// One colour per line type, chosen so that the types a printed part actually
+// shows are far apart on the wheel: walls warm (orange, amber), fill cool
+// (violet, orchid), the visible top surface bright mint, bridges cyan, supports
+// green. Every name the engine and both slicer dialects emit is listed, so a
+// role never falls through to the grey default by accident.
 inline QColor featureColor(const QString& feature, const QVariantMap& roles)
 {
     Q_UNUSED(roles)
 
-    if (feature == QLatin1String("External perimeter"))
-        return QColor("#ff7a18");
-    if (feature == QLatin1String("Overhang perimeter"))
-        return QColor("#ff5ca8");
-    if (feature == QLatin1String("Perimeter"))
-        return QColor("#ffc247");
-    if (feature == QLatin1String("Internal infill"))
-        return QColor("#e7543f");
-    if (feature.startsWith(QLatin1String("Solid infill")) || feature.startsWith(QLatin1String("Top solid infill"))
-        || feature.startsWith(QLatin1String("Bottom solid infill")))
-        return QColor("#b8442f");
+    if (feature == QLatin1String("External perimeter") || feature == QLatin1String("Outer wall"))
+        return QColor("#ff6a00");
+    if (feature == QLatin1String("Perimeter") || feature == QLatin1String("Inner wall"))
+        return QColor("#ffd400");
+    if (feature == QLatin1String("Overhang perimeter") || feature == QLatin1String("Overhang wall"))
+        return QColor("#ff3ea5");
+    if (feature == QLatin1String("Internal infill") || feature == QLatin1String("Sparse infill"))
+        return QColor("#7b4bff");
+    if (feature == QLatin1String("Solid infill") || feature == QLatin1String("Internal solid infill")
+        || feature == QLatin1String("Bottom solid infill"))
+        return QColor("#c04bff");
+    if (feature == QLatin1String("Top solid infill") || feature == QLatin1String("Top surface"))
+        return QColor("#00e6a8");
     if (feature == QLatin1String("Bottom surface"))
-        return QColor("#2fb6d6");
-    if (feature.startsWith(QLatin1String("Bridge infill")))
-        return QColor("#4f9ee8");
-    if (feature.startsWith(QLatin1String("Internal bridge infill")))
-        return QColor("#3fbfa0");
-    if (feature == QLatin1String("Support material"))
-        return QColor("#58b368");
-    if (feature == QLatin1String("Support material interface"))
-        return QColor("#8fd39a");
+        return QColor("#2f6bff");
+    if (feature == QLatin1String("Ironing"))
+        return QColor("#b6e600");
+    if (feature == QLatin1String("Bridge infill") || feature == QLatin1String("Bridge"))
+        return QColor("#00c2d1");
+    if (feature == QLatin1String("Internal bridge infill") || feature == QLatin1String("Internal bridge"))
+        return QColor("#7fd8e0");
+    if (feature == QLatin1String("Gap fill") || feature == QLatin1String("Gap infill"))
+        return QColor("#ffb3c1");
+    if (feature == QLatin1String("Support material") || feature == QLatin1String("Support"))
+        return QColor("#3bb143");
+    if (feature == QLatin1String("Support material interface")
+        || feature == QLatin1String("Support interface"))
+        return QColor("#a4de4a");
     if (feature == QLatin1String("Skirt") || feature == QLatin1String("Brim")
         || feature == QLatin1String("Skirt/Brim"))
-        return QColor("#8d7be0");
+        return QColor("#6d8bff");
+    if (feature == QLatin1String("Wipe tower") || feature == QLatin1String("Prime tower"))
+        return QColor("#b58cff");
     if (feature == QLatin1String("Custom"))
-        return QColor("#d9d9d9");
+        return QColor("#dcdcdc");
     return QColor("#9aa4b2");
 }
 

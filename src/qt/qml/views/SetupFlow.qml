@@ -5,6 +5,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtCore
+import NextLayer 1.0
 import "../theme"
 import "../components"
 
@@ -45,7 +46,7 @@ Item {
                                          : ready
 
     readonly property var vendorChoices: {
-        const out = [{ value: "", label: "All vendors (" + presetStore.printers.length + ")" }]
+        const out = [{ value: "", label: "All vendors (" + PresetStore.printers.length + ")" }]
         const vendors = root.vendors
         for (let i = 0; i < vendors.length; ++i)
             out.push({ value: vendors[i].name, label: vendors[i].name + " (" + vendors[i].count + ")" })
@@ -55,8 +56,8 @@ Item {
     readonly property var vendors: {
         const counts = ({})
         const order = []
-        for (let i = 0; i < presetStore.printers.length; ++i) {
-            const name = presetStore.printers[i].vendor
+        for (let i = 0; i < PresetStore.printers.length; ++i) {
+            const name = PresetStore.printers[i].vendor
             if (name === "")
                 continue
             if (counts[name] === undefined) {
@@ -75,8 +76,8 @@ Item {
     readonly property var machines: {
         const needle = root.filter.toLowerCase()
         const out = []
-        for (let i = 0; i < presetStore.printers.length; ++i) {
-            const entry = presetStore.printers[i]
+        for (let i = 0; i < PresetStore.printers.length; ++i) {
+            const entry = PresetStore.printers[i]
             if (root.vendor !== "" && entry.vendor !== root.vendor)
                 continue
             if (needle !== "" && entry.name.toLowerCase().indexOf(needle) < 0
@@ -90,8 +91,8 @@ Item {
     readonly property var materials: {
         const needle = root.filter.toLowerCase()
         const out = []
-        for (let i = 0; i < presetStore.filamentProfiles.length; ++i) {
-            const name = presetStore.filamentProfiles[i]
+        for (let i = 0; i < PresetStore.filamentProfiles.length; ++i) {
+            const name = PresetStore.filamentProfiles[i]
             if (needle !== "" && name.toLowerCase().indexOf(needle) < 0)
                 continue
             out.push(name)
@@ -102,8 +103,8 @@ Item {
     readonly property var qualities: {
         const needle = root.filter.toLowerCase()
         const out = []
-        for (let i = 0; i < presetStore.printProfiles.length; ++i) {
-            const name = presetStore.printProfiles[i]
+        for (let i = 0; i < PresetStore.printProfiles.length; ++i) {
+            const name = PresetStore.printProfiles[i]
             if (needle !== "" && name.toLowerCase().indexOf(needle) < 0)
                 continue
             out.push(name)
@@ -112,9 +113,9 @@ Item {
     }
 
     readonly property var selectedMachine: {
-        for (let i = 0; i < presetStore.printers.length; ++i)
-            if (presetStore.printers[i].name === root.machine)
-                return presetStore.printers[i]
+        for (let i = 0; i < PresetStore.printers.length; ++i)
+            if (PresetStore.printers[i].name === root.machine)
+                return PresetStore.printers[i]
         return null
     }
 
@@ -123,20 +124,20 @@ Item {
         root.filter = ""
         root.customOpen = false
         root.customMessage = ""
-        if (presetStore.printers.length === 0)
-            presetStore.refreshPrinters()
+        if (PresetStore.printers.length === 0)
+            PresetStore.refreshPrinters()
     }
 
     // A machine the catalog does not carry: the user knows its bed, so the bed is
     // the whole question. This writes a printer preset into the local bundle and
     // nothing is inherited from any vendor's profile.
     function createCustom(name, width, depth, height) {
-        const error = presetStore.createPrinter(name, width, depth, height)
+        const error = PresetStore.createPrinter(name, width, depth, height)
         if (error.length > 0) {
             root.customMessage = error
             return
         }
-        presetStore.refreshPrinters()
+        PresetStore.refreshPrinters()
         root.customOpen = false
         root.customMessage = ""
         root.chooseMachine(name)
@@ -172,11 +173,11 @@ Item {
         root.machine = name
         root.material = ""
         root.quality = ""
-        presetStore.selectPrinter(name)
+        PresetStore.selectPrinter(name)
     }
 
     function apply() {
-        presetStore.reload(root.machine, root.quality, root.material)
+        PresetStore.reload(root.machine, root.quality, root.material)
         saved.machine = root.machine
         saved.material = root.material
         saved.quality = root.quality
@@ -198,7 +199,7 @@ Item {
     function remember() {
         if (saved.machine === "")
             return
-        presetStore.reload(saved.machine, saved.quality, saved.material)
+        PresetStore.reload(saved.machine, saved.quality, saved.material)
     }
 
     function stepReached(index) {
@@ -407,16 +408,16 @@ Item {
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
                 anchors.margins: Metrics.panelPadding
-                text: presetStore.busy
+                text: PresetStore.busy
                       ? "reading the catalogue…"
-                      : presetStore.error !== ""
-                        ? presetStore.error
-                        : presetStore.printers.length + " machines · " + root.vendors.length + " vendors"
+                      : PresetStore.error !== ""
+                        ? PresetStore.error
+                        : PresetStore.printers.length + " machines · " + root.vendors.length + " vendors"
                 textFormat: Text.PlainText
                 wrapMode: Text.WordWrap
                 font.family: Type.family
                 font.pixelSize: Type.sizeCaption
-                color: presetStore.error !== "" ? Colors.error : Colors.textTertiary
+                color: PresetStore.error !== "" ? Colors.error : Colors.textTertiary
             }
         }
 
@@ -737,7 +738,7 @@ Item {
                                 Button {
                                     text: "Create this printer"
                                     primary: true
-                                    enabled: !presetStore.busy && customName.text.length > 0
+                                    enabled: !PresetStore.busy && customName.text.length > 0
                                     onClicked: root.createCustom(customName.text, customWidth.value,
                                                                  customDepth.value, customHeight.value)
                                 }

@@ -10,26 +10,20 @@
 
 namespace next_layer {
 
-/// Whether a slice should be routed to HFW instead of the bundled engine.
-///
-/// Set `NEXT_LAYER_ENGINE=hfw` in the environment. It is read per slice rather
-/// than cached, so one build can produce both engines' output without a restart.
-bool hfwRequested();
-
 /// The HFW binary this process will run: `NEXT_LAYER_HFW` when set, then
-/// `hfw-cli` on PATH, then the development build tree. Empty when none exists.
+/// `hfw-cli` beside the executable (its installed home), then `hfw-cli` on PATH,
+/// then the development build tree. Empty when none exists.
 QString hfwBinary();
 
-/// Slices a plate with HFW, writing the same G-code the bundled engine would.
+/// Why no binary was found, in the words the interface can show. Empty when one
+/// was. Cheap enough to ask at start-up, so a window with no engine says so
+/// before anyone presses Slice.
+QString hfwUnavailableReason();
+
+/// Slices a plate with HFW, writing the G-code this application prints.
 ///
-/// The plate arrives in printer coordinates, so the objects are written as STL
-/// where they are and HFW is told not to arrange them. The configuration is the
-/// app's own resolved engine configuration, which HFW reads through its preset
-/// intake; a setting HFW cannot apply is dropped by that intake and reported
-/// rather than silently changing the job.
-///
-/// Returns false and fills \p error with the intake report and the verifier's
-/// verdict when HFW refuses or the file fails verification.
+/// The engine is HFW and nothing else: there is no second path, no environment
+/// switch and no fallback, so a missing binary is the caller's error to show.
 bool sliceWithHfw(const QVector<PlateSliceObject>& objects,
                   const QString& configPath,
                   const QString& gcodePath,

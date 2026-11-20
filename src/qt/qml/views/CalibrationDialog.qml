@@ -6,10 +6,11 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import NextLayer 1.0
 import "../theme"
 import "../components"
 
-// The calibration suite: pick a test, then
+// The Calibration suite: pick a test, then
 // set the parameters that shape it before it goes on the plate. Each row is a
 // test plate this app builds itself -- the geometry from the engine's primitives,
 // the per-band change from the plate's own layer G-code -- so nothing here
@@ -48,7 +49,7 @@ Popup {
     /// The values the plate's own print setup supplies, so the dialog opens on the
     /// machine's nozzle and speed rather than on a 0.4 mm reference.
     function settingNumber(name, fallback) {
-        const value = Number(settingsModel.value(name))
+        const value = Number(SettingsModel.value(name))
         return isNaN(value) || value <= 0 ? fallback : value
     }
 
@@ -70,7 +71,7 @@ Popup {
                 next.speed = root.settingNumber("print_speed", 100)
         }
         root.values = next
-        const flavour = String(settingsModel.value("gcode_flavor"))
+        const flavour = String(SettingsModel.value("gcode_flavor"))
         root.flavour = flavour.length > 0 ? flavour : "klipper"
         root.applyValue = 0
     }
@@ -80,12 +81,12 @@ Popup {
     }
 
     function build() {
-        root.message = calibration.build(root.selected.kind, root.paramValues())
+        root.message = Calibration.build(root.selected.kind, root.paramValues())
         // The test is what was just put on the plate, and it is a handful of
         // objects (bands, their shelves, the numbers). Left unselected, Delete
         // removed nothing, or one band out of nine, and the plate looked untouched.
         if (!root.message.startsWith("could not") && !root.message.startsWith("temperature tower: 0"))
-            plateDocument.selectAll()
+            PlateDocument.selectAll()
         root.close()
     }
 
@@ -93,7 +94,7 @@ Popup {
         const setting = root.selected ? root.selected.apply : ""
         if (setting === "" || root.applyValue <= 0)
             return
-        settingsModel.setValue(setting, root.applyValue * root.selected.applyScale)
+        SettingsModel.setValue(setting, root.applyValue * root.selected.applyScale)
         root.message = "saved " + root.applyValue + " to " + setting
         root.close()
     }
@@ -148,7 +149,7 @@ Popup {
                     Layout.margins: Metrics.sm
                     clip: true
                     spacing: Metrics.xxs
-                    model: calibration.tests
+                    model: Calibration.tests
 
                     delegate: Rectangle {
                         id: testRow
@@ -184,7 +185,7 @@ Popup {
                 }
 
                 Component.onCompleted: {
-                    const tests = calibration.tests
+                    const tests = Calibration.tests
                     if (tests.length > 0)
                         root.select(tests[0])
                 }

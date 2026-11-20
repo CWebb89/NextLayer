@@ -3,6 +3,7 @@
 
 #include "GcodeBrand.hpp"
 #include "GcodeView.hpp"
+#include "HfwEngine.hpp"
 #include "Host.hpp"
 #include "MeshGeometry.hpp"
 #include "Palette.hpp"
@@ -782,15 +783,57 @@ bool applyTransformSpec(const QString& spec, Slic3r::App::InitParams& params)
     return true;
 }
 
-int sliceToFile(const QString& model, const QString& config, const QString& output){
-    Slic3r::App::InitParams params = engineParams();
-    params.input.input_files.push_back(model.toStdString());
-    params.input.config_file   = config.toStdString();
-    params.action.export_gcode = true;
-    params.misc.output         = output.toStdString();
-    const int code = Slic3r::App::CLI::run(params);
-    std::fprintf(stdout, "slice exit %d -> %s\n", code, output.toUtf8().constData());
-    return code;
+// The headless slice: one model file, one resolved config, G-code out. It goes
+// through HFW like every other slice in the application, so a gate that measures
+// this measures the engine the window prints with.
+int sliceToFile(const QString& model, const QString& config, const QString& output)
+{
+    const auto loaded = Slic3r::Biz::load_stl(model.toStdString());
+    if (!loaded) {
+        std::fprintf(stderr, "slice failed: cannot read %s\n", model.toUtf8().constData());
+        return 1;
+    }
+
+    next_layer::PlateSliceObject object;
+    object.name = QFileInfo(model).fileName();
+    object.mesh = *loaded;
+
+    QString error;
+    const bool ok = next_layer::sliceWithHfw({object}, config, output, error);
+    if (!ok) {
+        std::fprintf(stderr, "slice failed: %s\n", error.toUtf8().constData());
+        return 1;
+    }
+    std::fprintf(stdout, "slice exit 0 -> %s\n", output.toUtf8().constData());
+    return 0;
+}
+
+/// The printer/process/filament the interface was last set up with. The interface
+/// keeps it in the [presets] group, so a headless run of the same machine picks up
+/// where the window left off instead of falling back to whichever printer sorts
+/// first. A name given on the command line wins over the remembered one.
+bool resolveSavedPresets(PresetStore* presets, const QString& printer,
+                         const QString& process, const QString& filament, QString& error)
+{
+    QString chosenPrinter = printer;
+    QString chosenProcess = process;
+    QString chosenFilament = filament;
+    if (chosenPrinter.isEmpty() || chosenProcess.isEmpty() || chosenFilament.isEmpty()) {
+        QSettings saved;
+        saved.beginGroup(QStringLiteral("presets"));
+        if (chosenPrinter.isEmpty())
+            chosenPrinter = saved.value(QStringLiteral("printer")).toString();
+        if (chosenProcess.isEmpty())
+            chosenProcess = saved.value(QStringLiteral("process")).toString();
+        if (chosenFilament.isEmpty())
+            chosenFilament = saved.value(QStringLiteral("filament")).toString();
+        saved.endGroup();
+    }
+    if (!presets->reloadSync(chosenPrinter, chosenProcess, chosenFilament)) {
+        error = presets->error();
+        return false;
+    }
+    return true;
 }
 
 }
@@ -801,6 +844,8 @@ int sliceToFile(const QString& model, const QString& config, const QString& outp
 // space and broke every other program that writes there. Scratch directories are
 // named for the process that owns them, so one whose owner is gone can be removed
 // now rather than after a day.
+
+void qml_register_types_NextLayer();
 
 int main(int argc, char* argv[])
 {
@@ -879,10 +924,11 @@ int main(int argc, char* argv[])
         "checked without slicing anything.",
         "path");
     const QCommandLineOption engine_capabilities_option("engine-capabilities",
-        "Read a JSON file listing settings the active engine cannot apply and remove them from "
-        "every surface, so no control is offered whose value never reaches the engine. Shape: "
-        "{\"engine\": name, \"unsupported\": [setting, ...]}. The shipped engine lists none.",
-        "path");
+        "Override the settings list that is read by default from the shipped capability file. "
+        "Shape: {\"engine\": name, \"unsupported\": [setting, ...]}. The default list is HFW's "
+        "own ledger, so no control is offered whose value never reaches the engine; pass `none` "
+        "to offer every setting.",
+        "path|none");
     const QCommandLineOption dump_subtab_option("dump-subtab", "Print the settings of one sub-tab (TAB/SUBTAB) and exit.", "tab/subtab");
     const QCommandLineOption transform_option("transform",
         "Apply transforms (rotate=x,y,z;scale=f;cut=z;duplicate=n;move=x,y;center;drop) and export STL to OUT.",
@@ -1042,6 +1088,10 @@ int main(int argc, char* argv[])
     const QString modelArg = files.isEmpty() ? QString() : files.first();
 
     initEngine();
+
+    const QString engineGap = next_layer::hfwUnavailableReason();
+    if (!engineGap.isEmpty())
+        std::fprintf(stderr, "engine: %s\n", engineGap.toUtf8().constData());
 
     if (parser.isSet(vgcode_shot_option)) {
         const QStringList parts = parser.value(vgcode_shot_option).split(',');
@@ -1412,14 +1462,16 @@ int main(int argc, char* argv[])
     auto* presets = new PresetStore;
     presets->setSettings(settings);
 
-    if (parser.isSet(engine_capabilities_option)) {
-        QFile file(parser.value(engine_capabilities_option));
-        if (!file.open(QIODevice::ReadOnly)) {
-            std::fprintf(stderr, "--engine-capabilities: cannot read %s\n",
-                         parser.value(engine_capabilities_option).toUtf8().constData());
+    // The engine is HFW, so the settings it cannot apply are removed from every
+    // surface by default: a control whose value never arrives is a lie about what
+    // the print will do. The list is HFW's own settings ledger, shipped with the app.
+    {
+        QFile shipped(QStringLiteral(":/next-layer/engine-capabilities.json"));
+        if (!shipped.open(QIODevice::ReadOnly)) {
+            std::fprintf(stderr, "engine capabilities: the shipped list is missing from the build\n");
             return 1;
         }
-        const QJsonObject capabilities = QJsonDocument::fromJson(file.readAll()).object();
+        const QJsonObject capabilities = QJsonDocument::fromJson(shipped.readAll()).object();
         QStringList unsupported;
         for (const QJsonValue& value : capabilities.value(QStringLiteral("unsupported")).toArray()) {
             const QString name = value.toString();
@@ -1433,6 +1485,33 @@ int main(int argc, char* argv[])
                      int(unsupported.size()));
     }
 
+    if (parser.isSet(engine_capabilities_option)) {
+        const QString requested = parser.value(engine_capabilities_option);
+        if (requested == QLatin1String("none")) {
+            settings->setUnsupported({});
+            std::fprintf(stderr, "engine: the capability list is switched off, every setting offered\n");
+        } else {
+            QFile file(requested);
+            if (!file.open(QIODevice::ReadOnly)) {
+                std::fprintf(stderr, "--engine-capabilities: cannot read %s\n",
+                             requested.toUtf8().constData());
+                return 1;
+            }
+            const QJsonObject capabilities = QJsonDocument::fromJson(file.readAll()).object();
+            QStringList unsupported;
+            for (const QJsonValue& value : capabilities.value(QStringLiteral("unsupported")).toArray()) {
+                const QString name = value.toString();
+                if (!name.isEmpty())
+                    unsupported.append(name);
+            }
+            settings->setUnsupported(unsupported);
+            std::fprintf(stderr, "engine %s: %d settings not offered\n",
+                         capabilities.value(QStringLiteral("engine")).toString("unnamed")
+                             .toUtf8().constData(),
+                         int(unsupported.size()));
+        }
+    }
+
     QObject::connect(presets, &PresetStore::resolved, settings, [settings, presets] {
         settings->seedFromConfigJson(QString::fromUtf8(presets->resolvedConfigJson()));
     });
@@ -1444,30 +1523,16 @@ int main(int argc, char* argv[])
     // Prusa core-one start sequence reached a Voron. Resolve the selected presets
     // here, the way the interface does when it opens, and refuse when there is nothing
     // to resolve rather than write a plausible-looking wrong file.
-    if (parser.isSet(slice_all_option)) {
-        QString printer = parser.value(preset_printer_option);
-        QString process = parser.value(preset_process_option);
-        QString filament = parser.value(preset_filament_option);
-        // The interface remembers the triple it was last set up with in the
-        // [presets] group, so a headless run of the same machine picks up where the
-        // window left off instead of falling back to whichever printer sorts first.
-        if (printer.isEmpty() || process.isEmpty() || filament.isEmpty()) {
-            QSettings saved;
-            saved.beginGroup(QStringLiteral("presets"));
-            if (printer.isEmpty())
-                printer = saved.value(QStringLiteral("printer")).toString();
-            if (process.isEmpty())
-                process = saved.value(QStringLiteral("process")).toString();
-            if (filament.isEmpty())
-                filament = saved.value(QStringLiteral("filament")).toString();
-            saved.endGroup();
-        }
-        if (!presets->reloadSync(printer, process, filament)) {
-            std::fprintf(stderr, "slice-all: no printable configuration: %s\n",
-                         presets->error().toUtf8().constData());
+    if (parser.isSet(slice_all_option) || parser.isSet(selftest_option)) {
+        QString error;
+        if (!resolveSavedPresets(presets, parser.value(preset_printer_option),
+                                 parser.value(preset_process_option),
+                                 parser.value(preset_filament_option), error)) {
+            std::fprintf(stderr, "slice: no printable configuration: %s\n",
+                         error.toUtf8().constData());
             return 1;
         }
-        std::fprintf(stderr, "slice-all: %s / %s / %s\n",
+        std::fprintf(stderr, "slice: %s / %s / %s\n",
                      presets->currentPrinter().toUtf8().constData(),
                      presets->currentPrint().toUtf8().constData(),
                      presets->currentFilament().toUtf8().constData());
@@ -2242,7 +2307,11 @@ int main(int argc, char* argv[])
             std::fprintf(stderr, "slice-all failed: %s\n", message.toUtf8().constData());
             loop.quit();
         });
-        slicer->sliceAll();
+        // Queued rather than called here: a controller that refuses immediately --
+        // no machine, no model, a plate that is empty -- emits its verdict
+        // synchronously, and a loop that has not started yet never sees a quit.
+        // The window hung until it was killed when that happened.
+        QMetaObject::invokeMethod(slicer, &SliceController::sliceAll, Qt::QueuedConnection);
         loop.exec();
         next_layer::SliceRuntime::shutdown();
         return exit_code;
@@ -2255,6 +2324,10 @@ int main(int argc, char* argv[])
             std::fprintf(stdout, "slice finished in %.0f ms: %d layers, %d moves -> %s\n",
                          slicer->elapsedMs(), slicer->layerCount(), slicer->moveCount(),
                          slicer->gcodePath().toUtf8().constData());
+            // The layer height the engine was handed, so a caller can check the layer
+            // count against it instead of against a number that only fits one preset.
+            std::fprintf(stdout, "layer height %.3f mm\n",
+                         settings->value(QStringLiteral("layer_height")).toDouble());
             std::fprintf(stdout, "toolpath sha256 %s\n",
                          qPrintable(next_layer::toolpathDigest(slicer->gcodePath())));
             const QString keep = parser.value(keep_gcode_option);
@@ -2273,7 +2346,7 @@ int main(int argc, char* argv[])
             std::fprintf(stderr, "slice failed: %s\n", message.toUtf8().constData());
             loop.quit();
         });
-        slicer->slice();
+        QMetaObject::invokeMethod(slicer, &SliceController::slice, Qt::QueuedConnection);
         loop.exec();
         next_layer::SliceRuntime::shutdown();
         return exit_code;
@@ -2289,7 +2362,19 @@ int main(int argc, char* argv[])
                      });
 
     qmlRegisterSingletonInstance("NextLayer", 1, 0, "Host", &host);
+    qmlRegisterSingletonInstance("NextLayer", 1, 0, "MeshGeometry", geometry);
+    qmlRegisterSingletonInstance("NextLayer", 1, 0, "BedPlateGeometry", bedPlate);
+    qmlRegisterSingletonInstance("NextLayer", 1, 0, "PlateDocument", document);
+    qmlRegisterSingletonInstance("NextLayer", 1, 0, "PlateScene", scene);
+    qmlRegisterSingletonInstance("NextLayer", 1, 0, "SettingsModel", settings);
+    qmlRegisterSingletonInstance("NextLayer", 1, 0, "PresetStore", presets);
+    qmlRegisterSingletonInstance("NextLayer", 1, 0, "SliceController", slicer);
+    qmlRegisterSingletonInstance("NextLayer", 1, 0, "Toolpath", toolpath);
+    qmlRegisterSingletonInstance("NextLayer", 1, 0, "Session", session);
+    qmlRegisterSingletonInstance("NextLayer", 1, 0, "TransformController", transforms);
     qmlRegisterType<GcodeView>("NextLayer", 1, 0, "GcodeView");
+
+    qml_register_types_NextLayer();
 
     qAddPostRoutine([] { next_layer::SliceRuntime::shutdown(); });
 
@@ -2300,21 +2385,13 @@ int main(int argc, char* argv[])
                              std::fprintf(stdout, "qml: %s\n",
                                           warning.toString().toUtf8().constData());
                      });
-    engine.rootContext()->setContextProperty("meshGeometry", geometry);
-    engine.rootContext()->setContextProperty("plateDocument", document);
-    engine.rootContext()->setContextProperty("calibration",
-                                             new next_layer::Calibration(document, settings, &engine));
-    engine.rootContext()->setContextProperty("plateScene", scene);
-    engine.rootContext()->setContextProperty("bedPlateGeometry", bedPlate);
-    engine.rootContext()->setContextProperty("settingsModel", settings);
-    engine.rootContext()->setContextProperty("presetStore", presets);
+    auto* calibration = new next_layer::Calibration(document, settings, &engine);
+    qmlRegisterSingletonInstance("NextLayer", 1, 0, "Calibration", calibration);
     auto* printerLink = new next_layer::PrinterLink(&engine);
     printerLink->load();
-    engine.rootContext()->setContextProperty("printerLink", printerLink);
+    qmlRegisterSingletonInstance("NextLayer", 1, 0, "PrinterLink", printerLink);
     auto* updater = new next_layer::Updater(&engine);
-    engine.rootContext()->setContextProperty("updater", updater);
-    engine.rootContext()->setContextProperty("sliceController", slicer);
-    engine.rootContext()->setContextProperty("toolpath", toolpath);
+    qmlRegisterSingletonInstance("NextLayer", 1, 0, "Updater", updater);
     engine.rootContext()->setContextProperty("appVersionString", next_layer::applicationVersion());
     engine.rootContext()->setContextProperty(
         "engineVersionString", QString::fromStdString(Slic3r::VERSION));
@@ -2334,8 +2411,6 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty("startupHiddenFeatures", startupHiddenFeatures);
     engine.rootContext()->setContextProperty("startupHiddenOptions", startupHiddenOptions);
     engine.rootContext()->setContextProperty("startupViewType", startupViewType);
-    engine.rootContext()->setContextProperty("session", session);
-    engine.rootContext()->setContextProperty("transformController", transforms);
     engine.rootContext()->setContextProperty("startupSettingsTab", parser.value(settings_tab_option));
     engine.rootContext()->setContextProperty("startupPresetDialog", parser.value(preset_dialog_option));
     engine.rootContext()->setContextProperty("startupPanelLeft", parser.isSet(panel_left_option));

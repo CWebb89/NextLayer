@@ -86,6 +86,7 @@ qt_add_resources(next-layer-qt "app_assets"
     PREFIX "/next-layer"
     BASE assets
     FILES assets/base-config.json
+          assets/engine-capabilities.json
           assets/settings-layout.json
           assets/fonts/MaterialSymbolsOutlined.ttf
           assets/bed/voron24_350_plate.stl
@@ -105,6 +106,27 @@ qt_add_resources(next-layer-qt "filament_library"
     FILES ${FILAMENT_LIBRARY}
 )
 
+# The application backend is a cxx-qt crate: it builds the Rust static library
+# and the generated `NextLayer` QML module, and the executable links both.
+set(NEXT_LAYER_APP_CRATE "${CMAKE_CURRENT_SOURCE_DIR}/../app")
+set(NEXT_LAYER_APP_TARGET_DIR "${CMAKE_BINARY_DIR}/next-layer-app")
+set(NEXT_LAYER_APP_LIB "${NEXT_LAYER_APP_TARGET_DIR}/release/libnext_layer_app.a")
+file(GLOB_RECURSE NEXT_LAYER_APP_SOURCES CONFIGURE_DEPENDS
+    "${NEXT_LAYER_APP_CRATE}/src/*.rs"
+    "${NEXT_LAYER_APP_CRATE}/build.rs"
+    "${NEXT_LAYER_APP_CRATE}/Cargo.toml"
+)
+add_custom_command(
+    OUTPUT "${NEXT_LAYER_APP_LIB}"
+    COMMAND "${CMAKE_COMMAND}" -E env "CARGO_TARGET_DIR=${NEXT_LAYER_APP_TARGET_DIR}"
+            cargo build --release --manifest-path "${NEXT_LAYER_APP_CRATE}/Cargo.toml"
+    DEPENDS ${NEXT_LAYER_APP_SOURCES}
+    COMMENT "Building the Rust application backend"
+    VERBATIM
+)
+add_custom_target(next-layer-app-rust DEPENDS "${NEXT_LAYER_APP_LIB}")
+add_dependencies(next-layer-qt next-layer-app-rust)
+
 target_include_directories(next-layer-qt PRIVATE src)
 
 target_compile_definitions(next-layer-qt PRIVATE
@@ -116,6 +138,12 @@ target_compile_definitions(next-layer-qt PRIVATE
 )
 
 target_link_libraries(next-layer-qt PRIVATE
+    "${NEXT_LAYER_APP_LIB}"
+    pthread
+    dl
+    m
+    util
+    rt
     slic3r-app-cli
     slic3r-biz-arrange
     libpgcode

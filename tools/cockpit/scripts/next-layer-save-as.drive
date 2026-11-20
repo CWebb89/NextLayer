@@ -11,15 +11,19 @@
 # is nothing to save" is the report this proves gone, and it came from a copy that
 # wrote only the diff. The name field is at a fixed place in the 1920x1080 window,
 # (1250,190), read off a capture; Ctrl+A clears whatever the field already held.
+# The copy is named "Gate Copy", not anything containing "Save as": the button is
+# pressed by its own label, and a name that repeats those two words puts them in
+# the name field too, so the label search matched the field and the click landed
+# there instead of on the button.
 # The name is read back out of the field before Save is pressed, and the frame is
 # captured in that state: a click that missed or a keystroke that went to the wrong
 # window is then its own failure, with the picture that shows it.
 assert-text "Printer settings"
 click 1250 190
 key A --modifier ctrl
-type "Gate Save As"
-find-text "Gate Save As"
+type "Gate Copy"
+find-text "Gate Copy"
 shot /tmp/cockpit-saveas-0-window.png
 click-text "Save as"
-wait-text "saved Gate Save As" --timeout 20
+wait-text "saved Gate Copy" --timeout 20
 shot /tmp/cockpit-saveas-1-saved.png

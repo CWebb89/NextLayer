@@ -3,16 +3,19 @@
 
 Two jobs, both run by `tools/check`:
 
-  --from-ledger            Write oracle/engine-capabilities-hfw.json from HFW's
+  --from-ledger            Write src/qt/assets/engine-capabilities.json from HFW's
                            settings ledger: every setting that engine cannot
-                           apply. This is what the swap ships behind its flag.
-  --check <capabilities>   Drive next-layer twice, once plain and once with the
-                           capability list, and require that:
+                           apply. The app reads that file by default.
+  --check <capabilities>   Drive next-layer three times -- with the list switched
+                           off, with it passed explicitly, and with no flag at all
+                           -- and require that:
                              * every listed name really is a setting the sidebar
                                shows (a typo would otherwise silently do nothing)
                              * none of them appear in the filtered sidebar
                              * the two counts differ by exactly the number of
                                distinct names listed
+                             * the shipped default hides exactly what the file
+                               passed on the command line hides
 
 Prints one measurement line, because a gate that cannot measure its subject
 fails.
@@ -30,7 +33,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 BINARY = ROOT / "upstream/build/src/next-layer-qt/next-layer-qt"
-LEDGER = ROOT.parent / "HFW/HFW-final/docs/SETTINGS-LEDGER.md"
+LEDGER = ROOT.parent / "HFW/docs/SETTINGS-LEDGER.md"
+SHIPPED = ROOT / "src/qt/assets/engine-capabilities.json"
 ROW = re.compile(r"^\| `([a-z0-9_]+)` \| ([a-z0-9/]+) \| ([a-z/]+) \|")
 TABLE_END = re.compile(r"^## ")
 
@@ -60,7 +64,9 @@ def ledger_gaps(path: Path) -> list[str]:
 
 def dump_names(capabilities: Path | None) -> list[str]:
     command = [str(BINARY), "--dump-setting-names"]
-    if capabilities is not None:
+    if capabilities is None:
+        command[1:1] = ["--engine-capabilities", "none"]
+    else:
         command[1:1] = ["--engine-capabilities", str(capabilities)]
     environment = dict(os.environ)
     environment.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -97,6 +103,7 @@ def check(capabilities: Path) -> int:
 
     plain = dump_names(None)
     filtered = dump_names(capabilities)
+    shipped = dump_names(SHIPPED)
     plain_set, filtered_set = set(plain), set(filtered)
 
     problems: list[str] = []
@@ -110,6 +117,9 @@ def check(capabilities: Path) -> int:
     expected = len([name for name in listed if name in plain_set])
     if removed != expected:
         problems.append(f"removed {removed} settings, expected {expected}")
+    if set(plain) - set(shipped) != set(plain) - set(filtered):
+        extra = sorted((set(plain) - set(shipped)) ^ (set(plain) - set(filtered)))[:5]
+        problems.append(f"the shipped list hides a different set than {capabilities.name}: {extra}")
 
     if problems:
         for problem in problems:
@@ -117,14 +127,14 @@ def check(capabilities: Path) -> int:
         return 1
     print(
         f"engine-capabilities: {len(listed)} listed, {removed} hidden, "
-        f"{len(plain)} -> {len(filtered)} settings offered"
+        f"{len(plain)} -> {len(filtered)} settings offered, shipped default matches"
     )
     return 0
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--from-ledger", type=Path, nargs="?", const=ROOT / "oracle/engine-capabilities-hfw.json")
+    parser.add_argument("--from-ledger", type=Path, nargs="?", const=SHIPPED)
     parser.add_argument("--check", type=Path)
     arguments = parser.parse_args()
     if arguments.from_ledger is not None:

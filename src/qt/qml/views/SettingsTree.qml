@@ -4,6 +4,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
+import NextLayer 1.0
 import "../theme"
 import "../components"
 import "."
@@ -197,7 +198,7 @@ Item {
                                             anchors.margins: -Metrics.xs
                                             hoverEnabled: true
                                             cursorShape: Qt.PointingHandCursor
-                                            onClicked: settingsModel.reset(settingRow.modelData.name)
+                                            onClicked: SettingsModel.reset(settingRow.modelData.name)
                                         }
                                     }
 

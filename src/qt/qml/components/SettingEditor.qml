@@ -5,6 +5,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
+import NextLayer 1.0
 import "../theme"
 import "."
 
@@ -122,7 +123,7 @@ Item {
             root.valueEdited(root.item.name, value)
             return
         }
-        settingsModel.setValue(root.item.name, value)
+        SettingsModel.setValue(root.item.name, value)
     }
 
     function writeFloatOrPercent(number) {

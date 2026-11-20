@@ -13,6 +13,8 @@
 #include <QByteArray>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QUrl>
 
 #include "Scratch.hpp"
@@ -91,9 +93,38 @@ void countGcode(const QString& path, GcodeCounts& counts)
     }
 }
 
+/// The settings a slice was handed, as the block the print file records: the
+/// resolved configuration object out of the document written for the engine.
+QString recordedConfiguration(const QString& configPath)
+{
+    QFile file(configPath);
+    if (!file.open(QIODevice::ReadOnly))
+        return {};
+    const QJsonObject document = QJsonDocument::fromJson(file.readAll()).object();
+    const QJsonObject configuration = document.value(QStringLiteral("configuration")).toObject();
+    if (configuration.isEmpty())
+        return {};
+    return QString::fromUtf8(QJsonDocument(configuration).toJson(QJsonDocument::Compact));
+}
+
 QString modelName(const QString& path)
 {
     return QFileInfo(path).fileName();
+}
+
+/// What the plate carries that HFW has no way to place: a G-code snippet, pause or
+/// colour change at a Z height, and a path drawn inside a layer rather than made of
+/// geometry. Empty when the plate carries neither.
+QString unsupportedMarkers(const QVector<next_layer::PlateLayerGcode>& layerGcodes,
+                           const QVector<next_layer::PlateInLayerPolyline>& inLayer)
+{
+    if (layerGcodes.isEmpty() && inLayer.isEmpty())
+        return {};
+    return QStringLiteral("this plate carries %1 Z-height G-code marker(s) and %2 in-layer "
+                          "path(s), which this engine cannot place yet; remove them from the "
+                          "plate timeline and clear the calibration labels to slice it")
+        .arg(layerGcodes.size())
+        .arg(inLayer.size());
 }
 
 }
@@ -206,6 +237,20 @@ void SliceController::slice()
         return;
     }
 
+    // HFW writes the toolpath and nothing else: it reads the objects, their own
+    // settings and the plate's config. A Z-height marker or a path the plate wants
+    // printed inside a layer has no channel into it, so a plate carrying one is
+    // refused here instead of being sliced without them.
+    const QString markers = unsupportedMarkers(
+        m_document != nullptr ? m_document->layerGcodeList() : QVector<next_layer::PlateLayerGcode>(),
+        m_document != nullptr ? m_document->inLayerList() : QVector<next_layer::PlateInLayerPolyline>());
+    if (!markers.isEmpty()) {
+        m_status = QStringLiteral("Slice failed: %1").arg(markers);
+        emit statusChanged();
+        emit failed(m_status);
+        return;
+    }
+
     if (m_worker.joinable())
         m_worker.join();
 
@@ -231,30 +276,18 @@ void SliceController::slice()
     m_status = QStringLiteral("Slicing %1").arg(modelName(modelPath));
     emit statusChanged();
 
+    // Everything the worker reads out of the document is taken here, on the GUI
+    // thread, in one go. Reading it inside the thread was a race against an edit
+    // made while the slice ran -- the document's containers belong to this thread.
     const QVector<next_layer::PlateSliceObject> objects =
         m_document != nullptr ? m_document->sliceObjects()
                               : QVector<next_layer::PlateSliceObject>();
 
-    // Everything the worker reads out of the document is taken here, on the GUI
-    // thread, in one go. Reading it inside the thread was a race against an edit
-    // made while the slice ran -- the document's containers belong to this thread.
-    const QVector<next_layer::PlateLayerGcode> layerGcodes =
-        m_document != nullptr ? m_document->layerGcodeList()
-                              : QVector<next_layer::PlateLayerGcode>();
-    const QVector<next_layer::PlateInLayerPolyline> inLayer =
-        m_document != nullptr ? m_document->inLayerList()
-                              : QVector<next_layer::PlateInLayerPolyline>();
-
-    m_worker = std::thread([this, modelPath, outputPath, objects, plate, layerGcodes, inLayer] {
+    m_worker = std::thread([this, modelPath, outputPath, objects, plate] {
         const auto started = std::chrono::steady_clock::now();
 
         QString engineError;
-        const bool sliced = next_layer::hfwRequested()
-            ? next_layer::sliceWithHfw(objects, m_configPath, outputPath, engineError)
-            : !objects.empty()
-                ? m_runtime.slicePlate(objects, m_configPath, outputPath, engineError, layerGcodes,
-                                       inLayer)
-                : m_runtime.slice(modelPath, m_configPath, outputPath, engineError);
+        const bool sliced = next_layer::sliceWithHfw(objects, m_configPath, outputPath, engineError);
 
         const double elapsedMs =
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
@@ -275,7 +308,7 @@ void SliceController::slice()
             ok = false;
             message = QStringLiteral("Slice failed: the engine wrote no G-code");
         } else {
-            next_layer::brandGcode(outputPath);
+            next_layer::brandGcode(outputPath, recordedConfiguration(m_configPath));
             message = QStringLiteral("Sliced %1: %2 layers, %3 moves")
                           .arg(modelName(modelPath))
                           .arg(layers)
@@ -321,6 +354,15 @@ void SliceController::sliceAll()
     if (m_worker.joinable())
         m_worker.join();
 
+    const QString markers = unsupportedMarkers(m_document->layerGcodeList(),
+                                              m_document->inLayerList());
+    if (!markers.isEmpty()) {
+        m_status = QStringLiteral("Slice failed: %1").arg(markers);
+        emit statusChanged();
+        emit failed(m_status);
+        return;
+    }
+
     const QByteArray json = m_settings->configJson().toUtf8();
     QFile config(m_configPath);
     const bool written = config.open(QIODevice::WriteOnly | QIODevice::Truncate)
@@ -334,8 +376,6 @@ void SliceController::sliceAll()
     }
 
     const int plates = m_document->plateCount();
-    const QVector<next_layer::PlateLayerGcode> layerGcodes = m_document->layerGcodeList();
-    const QVector<next_layer::PlateInLayerPolyline> inLayer = m_document->inLayerList();
     QVector<QVector<next_layer::PlateSliceObject>> perPlate;
     perPlate.reserve(plates);
     int empty = 0;
@@ -359,7 +399,7 @@ void SliceController::sliceAll()
     m_status = QStringLiteral("Slicing %1 plates").arg(plates - empty);
     emit statusChanged();
 
-    m_worker = std::thread([this, run, plates, perPlate, layerGcodes, inLayer] {
+    m_worker = std::thread([this, run, plates, perPlate] {
         const auto started = std::chrono::steady_clock::now();
         QStringList failures;
         int sliced = 0;
@@ -375,10 +415,8 @@ void SliceController::sliceAll()
             const QString outputPath =
                 m_tempDir->filePath(QStringLiteral("slice-%1-plate-%2.gcode").arg(run).arg(plate + 1));
             QString engineError;
-            const bool ok = next_layer::hfwRequested()
-                ? next_layer::sliceWithHfw(perPlate[plate], m_configPath, outputPath, engineError)
-                : m_runtime.slicePlate(perPlate[plate], m_configPath, outputPath, engineError,
-                                       layerGcodes, inLayer);
+            const bool ok = next_layer::sliceWithHfw(perPlate[plate], m_configPath, outputPath,
+                                                    engineError);
             const QFileInfo gcode(outputPath);
             GcodeCounts counts;
             if (gcode.exists() && gcode.size() > 0)
@@ -392,7 +430,7 @@ void SliceController::sliceAll()
                 continue;
             }
 
-            next_layer::brandGcode(outputPath);
+            next_layer::brandGcode(outputPath, recordedConfiguration(m_configPath));
             ++sliced;
             totalLayers += counts.layers;
             totalMoves += counts.moves;

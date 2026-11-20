@@ -67,6 +67,32 @@ def slice_with(app, model, presets, gcode, engine_env):
     return gcode
 
 
+def resolve_config(app, presets, path):
+    """The resolved settings document for a printer/process/filament triple.
+
+    Both engines are handed the same file, so what is compared is the engines and
+    not two separately resolved configurations.
+    """
+    environment = dict(os.environ)
+    environment.setdefault("QT_QPA_PLATFORM", "offscreen")
+    command = [app, "--dump-config", path]
+    for flag, name in presets:
+        command += [flag, name]
+    result = subprocess.run(command, capture_output=True, text=True, timeout=600, env=environment)
+    if not os.path.exists(path) or os.path.getsize(path) == 0:
+        print(f"no configuration resolved: {result.stdout[-400:]}{result.stderr[-400:]}",
+              file=sys.stderr)
+        return None
+    return path
+
+def slice_with_command(command, gcode, environment, label):
+    result = subprocess.run(command, capture_output=True, text=True, timeout=900, env=environment)
+    if not os.path.exists(gcode) or os.path.getsize(gcode) == 0:
+        print(f"no G-code from {label}: {result.stdout[-400:]}{result.stderr[-400:]}",
+              file=sys.stderr)
+        return None
+    return gcode
+
 def summarise(path):
     """The numbers a print is judged by, read from the file itself."""
     layers = 0
@@ -153,14 +179,37 @@ def main():
         "libslic3r": os.path.join(work, "libslic3r.gcode"),
         "hfw": os.path.join(work, "hfw.gcode"),
     }
-    engines = {"libslic3r": {}, "hfw": {"NEXT_LAYER_ENGINE": "hfw"}}
+    config = resolve_config(args.app, presets, os.path.join(work, "resolved.json"))
+    if config is None:
+        return 2
 
+    # HFW is the only engine the application slices with, so the reference arm is
+    # the C++ engine driven directly: its own launcher, its own slice, the same
+    # resolved configuration. Running the application twice would compare HFW with
+    # HFW and call it parity.
+    launcher = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(args.app)),
+                                            "..", "slic3r-app-launcher",
+                                            "slic3r-app-launcher"))
+    if not os.path.exists(launcher):
+        print(f"no C++ launcher at {launcher}: there is no second engine to compare against",
+              file=sys.stderr)
+        return 2
+
+    environment = dict(os.environ)
+    environment.setdefault("QT_QPA_PLATFORM", "offscreen")
     results = {}
-    for name, environment in engines.items():
-        path = slice_with(args.app, args.model, presets, paths[name], environment)
-        if path is None:
-            return 2
-        results[name] = summarise(path)
+    reference = slice_with_command(
+        [launcher, args.model, "--slice", f"{config},{paths['libslic3r']}"],
+        paths["libslic3r"], environment, "libslic3r")
+    if reference is None:
+        return 2
+    results["libslic3r"] = summarise(reference)
+    candidate = slice_with_command(
+        [args.app, args.model, "--slice", f"{config},{paths['hfw']}"],
+        paths["hfw"], environment, "hfw")
+    if candidate is None:
+        return 2
+    results["hfw"] = summarise(candidate)
 
     reference, candidate = results["libslic3r"], results["hfw"]
     print(f"{'':16}{'libslic3r':>14}{'hfw':>14}{'spread':>10}  verdict")

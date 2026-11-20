@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Curtis Webb
 
 import QtQuick
+import NextLayer 1.0
 import "../theme"
 
 // What is selected, in the viewport's own corner: its name, its measured size and
@@ -11,7 +12,7 @@ import "../theme"
 Item {
     id: root
 
-    /// One entry of `plateDocument.objects`.
+    /// One entry of `PlateDocument.objects`.
     property var object: null
     property int selectedCount: 0
 

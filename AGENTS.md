@@ -1,7 +1,7 @@
 # next-layer
 
 A 3D printer slicer of our own. Slicing runs on **HFW**, our Rust engine in
-`~/dev/HFW/HFW-final`, reached as a subprocess today and as a C library in phase 1 of
+`~/dev/HFW`, reached as a subprocess today and as a C library in phase 1 of
 `docs/rust-engine-plan.md`. The C++ engine under `upstream/` is still linked for the
 plate model, settings, arrange, preview and project files, and that plan is how it
 leaves. `docs/engine-boundary.md` is the generated file-by-file measure of the

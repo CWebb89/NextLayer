@@ -67,7 +67,7 @@ Item {
 
     onLayOnFaceActiveChanged: {
         if (!root.layOnFaceActive)
-            plateScene.setHoverFacet(0, -1)
+            PlateScene.setHoverFacet(0, -1)
     }
     property bool paintActive: false
     property int paintObjectId: 0
@@ -229,7 +229,7 @@ Item {
 
     // The plate mesh's own underside when the printer ships one, else the slab.
     readonly property real bedUndersideZ: Host.bedPlateLoaded
-        ? bedPlateGeometry.boundsMin.z - 0.03
+        ? BedPlateGeometry.boundsMin.z - 0.03
         : -4.03
 
     // Distance fits the bed, not the model: the camera must not resize itself
@@ -326,8 +326,8 @@ Item {
                                             + plateChrome.gapLeft
     readonly property real longestPlateName: {
         let longest = 0
-        for (let i = 0; i < plateDocument.plates.length; ++i) {
-            const label = plateDocument.plates[i].label || ""
+        for (let i = 0; i < PlateDocument.plates.length; ++i) {
+            const label = PlateDocument.plates[i].label || ""
             longest = Math.max(longest, label.length)
         }
         const aspect = Math.max(1.2, Math.min(6, longest * 0.55))
@@ -362,17 +362,17 @@ Item {
         if (root.paintObjectId <= 0)
             return
         const hit = root.hitAt(x, y)
-        if (hit.w <= 0 || plateScene.pickedId !== root.paintObjectId)
+        if (hit.w <= 0 || PlateScene.pickedId !== root.paintObjectId)
             return
         // The brush is a circle on screen, so the painter needs the eye. The
         // camera lives in the scene's Y-up frame; every point handed to the
         // document is in printer coordinates, Z-up.
         const eye = perspectiveCamera.scenePosition
-        const painted = plateDocument.paintObject(root.paintObjectId, root.paintKind,
+        const painted = PlateDocument.paintObject(root.paintObjectId, root.paintKind,
                                                   Qt.vector3d(hit.x, hit.y, hit.z),
                                                   Qt.vector3d(eye.x, -eye.z, eye.y),
                                                   root.paintMode, root.paintTool,
-                                                  plateScene.pickedFacet)
+                                                  PlateScene.pickedFacet)
         if (painted > 0)
             root.painted(root.paintObjectId, painted)
         root.updateBrushRing(x, y)
@@ -382,16 +382,16 @@ Item {
     // aiming at a facet is a separate act from committing paint to it.
     function updateBrushRing(x, y) {
         if (!root.paintActive || root.paintObjectId <= 0) {
-            plateScene.clearBrushRing()
+            PlateScene.clearBrushRing()
             return
         }
         const hit = root.hitAt(x, y)
-        if (hit.w <= 0 || plateScene.pickedId !== root.paintObjectId) {
-            plateScene.clearBrushRing()
+        if (hit.w <= 0 || PlateScene.pickedId !== root.paintObjectId) {
+            PlateScene.clearBrushRing()
             return
         }
-        plateScene.setBrushRing(Qt.vector3d(hit.x, hit.y, hit.z),
-                                plateScene.pickedNormal, root.paintRadius)
+        PlateScene.setBrushRing(Qt.vector3d(hit.x, hit.y, hit.z),
+                                PlateScene.pickedNormal, root.paintRadius)
     }
 
     function fitPlate() {
@@ -435,7 +435,7 @@ Item {
         const bottom = Math.max(band.startY, band.endY)
 
         const chosen = []
-        const objects = plateDocument.objects
+        const objects = PlateDocument.objects
         for (let i = 0; i < objects.length; ++i) {
             const entry = objects[i]
             if (entry.min === undefined || entry.max === undefined)
@@ -454,7 +454,7 @@ Item {
             if (highX >= left && lowX <= right && highY >= top && lowY <= bottom)
                 chosen.push(entry.id)
         }
-        plateDocument.selectObjects(chosen)
+        PlateDocument.selectObjects(chosen)
         return chosen.length
     }
 
@@ -479,8 +479,8 @@ Item {
         return vAdd(vector, vScale(scaled, 2))
     }
 
-    readonly property int activePlateIndex: plateDocument.activePlate
-    readonly property vector3d plateShift: plateDocument.plateOffset(activePlateIndex)
+    readonly property int activePlateIndex: PlateDocument.activePlate
+    readonly property vector3d plateShift: PlateDocument.plateOffset(activePlateIndex)
 
     function sceneToPrinter(point) {
         return Qt.vector3d(point.x, -point.z, point.y)
@@ -521,7 +521,7 @@ Item {
         const ray = rayAt(x, y)
         if (ray === null)
             return Qt.vector4d(0, 0, 0, -1)
-        return plateScene.pick(ray[0], ray[1])
+        return PlateScene.pick(ray[0], ray[1])
     }
 
     function pickAt(x, y) {
@@ -576,7 +576,7 @@ Item {
             // slicers shade with lights alone. SSAO was doing two things nobody
             // asked for -- smearing a soft dark blot across the bed and the empty
             // background behind it as the camera turned, and darkening every
-            // recess inside a part until the toolpath read as if it were in its
+            // recess inside a part until the Toolpath read as if it were in its
             // own shadow. Shape is carried by the light rig below.
             aoEnabled: false
         }
@@ -640,7 +640,7 @@ Item {
             Model {
                 id: plateNode
                 objectName: "plateNode"
-                geometry: plateScene.plateGeometry
+                geometry: PlateScene.plateGeometry
                 visible: root.mode !== "preview"
 
                 materials: PrincipledMaterial {
@@ -657,8 +657,8 @@ Item {
             Model {
                 id: otherPlateNode
                 objectName: "otherPlateNode"
-                geometry: plateScene.otherPlateGeometry
-                visible: plateScene.hasOtherPlates && root.mode !== "preview"
+                geometry: PlateScene.otherPlateGeometry
+                visible: PlateScene.hasOtherPlates && root.mode !== "preview"
 
                 materials: PrincipledMaterial {
                     baseColor: Colors.surfaceVariantText
@@ -674,8 +674,8 @@ Item {
             // before the click rather than only afterwards.
             Model {
                 objectName: "hoverNode"
-                geometry: plateScene.hoverGeometry
-                visible: plateScene.hasHover && root.mode !== "preview" && root.layOnFaceActive
+                geometry: PlateScene.hoverGeometry
+                visible: PlateScene.hasHover && root.mode !== "preview" && root.layOnFaceActive
 
                 // A coloured geometry needs the matching material: the colour is
                 // per triangle, so it is read from the vertex buffer, and no
@@ -692,8 +692,8 @@ Item {
             Model {
                 id: selectionNode
                 objectName: "selectionNode"
-                geometry: plateScene.selectionGeometry
-                visible: plateScene.hasSelection && root.mode !== "preview"
+                geometry: PlateScene.selectionGeometry
+                visible: PlateScene.hasSelection && root.mode !== "preview"
                 position: Qt.vector3d(root.dragOffset.x, root.dragOffset.y, 0)
 
                 // With modifier volumes attached, the selected object turns into a
@@ -706,10 +706,10 @@ Item {
                 // A ghost is the one case that wants transparency, so volumes keep
                 // the blend and the solids show through.
                 materials: PrincipledMaterial {
-                    baseColor: plateScene.hasVolumes
+                    baseColor: PlateScene.hasVolumes
                                ? Colors.alpha(Colors.accent, 0.18)
                                : Colors.mix(Colors.surfaceVariantText, Colors.accent, 0.28)
-                    alphaMode: plateScene.hasVolumes ? PrincipledMaterial.Blend
+                    alphaMode: PlateScene.hasVolumes ? PrincipledMaterial.Blend
                                                      : PrincipledMaterial.Opaque
                     roughness: 0.55
                     metalness: 0.0
@@ -722,7 +722,7 @@ Item {
             // sits on rather than z-fighting with it.
             Model {
                 objectName: "paintNode"
-                geometry: plateScene.paintGeometry
+                geometry: PlateScene.paintGeometry
                 visible: root.mode !== "preview"
                 position: Qt.vector3d(root.dragOffset.x, root.dragOffset.y, 0)
                 scale: Qt.vector3d(1.002, 1.002, 1.002)
@@ -740,7 +740,7 @@ Item {
             // without it a brush slider is a number and nothing else.
             Model {
                 objectName: "brushRingNode"
-                geometry: plateScene.brushRingGeometry
+                geometry: PlateScene.brushRingGeometry
                 visible: root.paintActive && root.mode !== "preview"
 
                 materials: PrincipledMaterial {
@@ -759,7 +759,7 @@ Item {
             // green forces it.
             Model {
                 objectName: "volumeNode"
-                geometry: plateScene.volumeGeometry
+                geometry: PlateScene.volumeGeometry
                 visible: root.mode !== "preview"
 
                 materials: PrincipledMaterial {
@@ -775,8 +775,8 @@ Item {
             // they share the plate's own frame.
             Model {
                 objectName: "gizmoNode"
-                geometry: plateScene.gizmoGeometry
-                visible: root.mode !== "preview" && root.moveEnabled && plateScene.hasGizmo
+                geometry: PlateScene.gizmoGeometry
+                visible: root.mode !== "preview" && root.moveEnabled && PlateScene.hasGizmo
 
                 materials: PrincipledMaterial {
                     lighting: PrincipledMaterial.NoLighting
@@ -792,7 +792,7 @@ Item {
             Repeater3D {
                 objectName: "otherPlateNode"
 
-                model: plateDocument.plates
+                model: PlateDocument.plates
 
                 delegate: Node {
                     id: otherPlate
@@ -863,7 +863,7 @@ Item {
             // same intent and the one the viewport was asked for.
             Model {
                 visible: Host.bedPlateLoaded && root.showBedPlate && !root.paintActive
-                geometry: bedPlateGeometry
+                geometry: BedPlateGeometry
                 position: Qt.vector3d(root.plateShift.x, root.plateShift.y, -0.03)
 
                 // Unlit, and that is the point: a shaded bed is not one colour.
@@ -1070,7 +1070,7 @@ Item {
             Repeater3D {
                 objectName: "plateChromeNode"
 
-                model: plateDocument.plates
+                model: PlateDocument.plates
 
                 delegate: Node {
                     id: chromePlate
@@ -1204,7 +1204,7 @@ Item {
                 value: root.paintRadius
                 onMoved: (value) => {
                     root.paintRadius = value
-                    plateDocument.brushRadius = value
+                    PlateDocument.brushRadius = value
                     root.paintSettingsChanged(root.paintKind, root.paintMode, value)
                 }
             }
@@ -1253,8 +1253,8 @@ Item {
             CheckBox {
                 visible: root.paintKind === "supports"
                 text: "Overhangs only"
-                checked: plateDocument.brushOverhangOnly
-                onToggled: plateDocument.brushOverhangOnly = checked
+                checked: PlateDocument.brushOverhangOnly
+                onToggled: PlateDocument.brushOverhangOnly = checked
             }
 
             Item { Layout.preferredWidth: Metrics.xs }
@@ -1275,14 +1275,14 @@ Item {
     GcodeView {
         id: gcodeView
         anchors.fill: parent
-        visible: toolpath.loaded && root.mode === "preview"
+        visible: Toolpath.loaded && root.mode === "preview"
 
         cameraEye: perspectiveCamera.scenePosition
         cameraCenter: root.vAdd(root.focusPoint, root.panOffset)
         cameraUp: root.rotateByQuaternion(perspectiveCamera.sceneRotation, Qt.vector3d(0, 1, 0))
         fov: perspectiveCamera.fieldOfView
 
-        Component.onCompleted: toolpath.attachView(gcodeView)
+        Component.onCompleted: Toolpath.attachView(gcodeView)
     }
 
     // Only a failed open says anything here now: the empty plate is what an empty
@@ -1290,8 +1290,8 @@ Item {
     // part of the model.
     Text {
         anchors.centerIn: parent
-        visible: !session.hasModel && session.error.length > 0
-        text: session.error
+        visible: !Session.hasModel && Session.error.length > 0
+        text: Session.error
         font.family: Type.family
         font.pixelSize: Type.sizeSmall
         color: Colors.error
@@ -1355,7 +1355,7 @@ Item {
 
 
     Connections {
-        target: meshGeometry
+        target: MeshGeometry
         function onBoundsChanged() { root.dragOffset = Qt.vector3d(0, 0, 0) }
     }
 
@@ -1461,7 +1461,7 @@ Item {
                      || (root.paintActive && !input.paintOrbiting)
                    ? Qt.CrossCursor
                    : input.dragging ? Qt.ClosedHandCursor
-                   : (root.moveEnabled || (root.dragSelectedEnabled && plateDocument.selectedCount > 0))
+                   : (root.moveEnabled || (root.dragSelectedEnabled && PlateDocument.selectedCount > 0))
                      && input.containsMouse ? Qt.SizeAllCursor
                    : (pressed && input.panning) ? Qt.ClosedHandCursor
                    : root.hoveringObject ? Qt.PointingHandCursor
@@ -1499,7 +1499,7 @@ Item {
 
         onExited: {
             root.hoveringObject = false
-            plateScene.clearBrushRing()
+            PlateScene.clearBrushRing()
         }
 
         onPressed: (mouse) => {
@@ -1512,7 +1512,7 @@ Item {
             input.dragging = false
             input.paintOrbiting = false
 
-            if (mouse.button !== Qt.LeftButton || root.measureActive || !session.hasModel)
+            if (mouse.button !== Qt.LeftButton || root.measureActive || !Session.hasModel)
                 return
 
             if (root.paintActive) {
@@ -1523,7 +1523,7 @@ Item {
                 // are the same gesture separated by what is under the pointer.
                 const onModel = (mouse.modifiers & Qt.ControlModifier) === 0
                                 && root.hitAt(mouse.x, mouse.y).w > 0
-                                && plateScene.pickedId === root.paintObjectId
+                                && PlateScene.pickedId === root.paintObjectId
                 input.paintOrbiting = !onModel
                 if (!onModel)
                     return
@@ -1532,7 +1532,7 @@ Item {
                 input.paintY = mouse.y
                 input.paintFacet = -1
                 root.paintStroke(mouse.x, mouse.y)
-                input.paintFacet = plateScene.pickedFacet
+                input.paintFacet = PlateScene.pickedFacet
                 root.updateBrushRing(mouse.x, mouse.y)
                 return
             }
@@ -1540,9 +1540,9 @@ Item {
             if (root.layOnFaceActive) {
                 const faceHit = root.hitAt(mouse.x, mouse.y)
                 if (faceHit.w > 0) {
-                    const facet = plateScene.pickedFacet
-                    if (plateDocument.placeOnFace(plateScene.pickedId, facet))
-                        root.placedOnFace(plateScene.pickedId, facet)
+                    const facet = PlateScene.pickedFacet
+                    if (PlateDocument.placeOnFace(PlateScene.pickedId, facet))
+                        root.placedOnFace(PlateScene.pickedId, facet)
                 }
                 return
             }
@@ -1562,7 +1562,7 @@ Item {
 
             // The sliced preview is a read-only view of the toolpaths. A left drag
             // there orbits the camera; letting it drag the object committed a move
-            // and dropped the toolpath, which is exactly the "rotating the preview
+            // and dropped the Toolpath, which is exactly the "rotating the preview
             // throws the model away" report.
             if (root.mode !== "model")
                 return
@@ -1572,10 +1572,10 @@ Item {
             // freely across the bed.
             const grabRay = root.rayAt(mouse.x, mouse.y)
             if (grabRay !== null && root.moveEnabled) {
-                const axis = plateScene.pickGizmo(grabRay[0], grabRay[1])
+                const axis = PlateScene.pickGizmo(grabRay[0], grabRay[1])
                 if (axis >= 0) {
                     input.gizmoAxis = axis
-                    input.gizmoStart = plateScene.gizmoAxisPoint(axis, grabRay[0], grabRay[1])
+                    input.gizmoStart = PlateScene.gizmoAxisPoint(axis, grabRay[0], grabRay[1])
                     return
                 }
             }
@@ -1583,19 +1583,19 @@ Item {
             const hit = root.hitAt(mouse.x, mouse.y)
             if (hit.w > 0) {
                 root.selected = true
-                const id = plateScene.pickedId
-                const volume = plateScene.pickedVolume
+                const id = PlateScene.pickedId
+                const volume = PlateScene.pickedVolume
                 const additive = (mouse.modifiers & (Qt.ShiftModifier | Qt.ControlModifier)) !== 0
                 if (additive) {
-                    plateDocument.selectObject(id, true)
+                    PlateDocument.selectObject(id, true)
                 } else if (volume > 0) {
-                    plateDocument.selectVolume(id, volume)
+                    PlateDocument.selectVolume(id, volume)
                 } else {
-                    if (!plateDocument.isSelected(id))
-                        plateDocument.selectObject(id)
-                    plateDocument.clearVolumeSelection()
+                    if (!PlateDocument.isSelected(id))
+                        PlateDocument.selectObject(id)
+                    PlateDocument.clearVolumeSelection()
                 }
-                if (!plateDocument.isSelected(id))
+                if (!PlateDocument.isSelected(id))
                     return
                 if (!root.moveEnabled && !root.dragSelectedEnabled)
                     return
@@ -1605,7 +1605,7 @@ Item {
                 input.volumeMoved = Qt.vector3d(0, 0, 0)
             } else {
                 root.selected = false
-                plateDocument.selectObject(0)
+                PlateDocument.selectObject(0)
             }
         }
 
@@ -1617,14 +1617,14 @@ Item {
             if (mouse.button === Qt.RightButton) {
                 const travelled = Math.abs(mouse.x - input.pressX) + Math.abs(mouse.y - input.pressY)
                 input.panning = false
-                if (travelled >= 4 || root.mode !== "model" || !session.hasModel)
+                if (travelled >= 4 || root.mode !== "model" || !Session.hasModel)
                     return
                 const hit = root.hitAt(mouse.x, mouse.y)
                 if (hit.w <= 0)
                     return
-                plateDocument.selectObject(plateScene.pickedId)
+                PlateDocument.selectObject(PlateScene.pickedId)
                 const point = root.mapToItem(null, mouse.x, mouse.y)
-                root.contextRequested(plateScene.pickedId, point.x, point.y)
+                root.contextRequested(PlateScene.pickedId, point.x, point.y)
                 return
             }
 
@@ -1636,7 +1636,7 @@ Item {
                     // A Shift click is still a Shift click: it adds one object.
                     const hit = root.hitAt(mouse.x, mouse.y)
                     if (hit.w > 0)
-                        plateDocument.selectObject(plateScene.pickedId, true)
+                        PlateDocument.selectObject(PlateScene.pickedId, true)
                 } else {
                     const count = root.selectInBand()
                     root.bandSelected(count)
@@ -1651,7 +1651,7 @@ Item {
                 input.gizmoDelta = Qt.vector3d(0, 0, 0)
                 root.dragOffset = Qt.vector3d(0, 0, 0)
                 if (Math.abs(moved.x) + Math.abs(moved.y) + Math.abs(moved.z) > 0.0005)
-                    plateDocument.moveSelection(moved.x, moved.y, moved.z)
+                    PlateDocument.moveSelection(moved.x, moved.y, moved.z)
             }
 
             // A stroke ended: the press painted, the moves painted, and the release
@@ -1666,7 +1666,7 @@ Item {
             if (input.dragging) {
                 const point = root.planePoint(mouse.x, mouse.y, input.dragPlaneZ)
                 input.dragging = false
-                if (plateDocument.selectedVolume > 0) {
+                if (PlateDocument.selectedVolume > 0) {
                     input.volumeMoved = Qt.vector3d(0, 0, 0)
                     return
                 }
@@ -1681,7 +1681,7 @@ Item {
                     return
                 }
                 root.dragOffset = Qt.vector3d(0, 0, 0)
-                plateDocument.moveSelection(deltaX, deltaY)
+                PlateDocument.moveSelection(deltaX, deltaY)
             }
 
             if (!root.measureActive)
@@ -1700,8 +1700,8 @@ Item {
             const point = root.planePoint(mouse.x, mouse.y, 0)
             if (point === null)
                 return
-            const plate = plateDocument.plateAt(point)
-            if (plate >= 0 && plate !== plateDocument.activePlate)
+            const plate = PlateDocument.plateAt(point)
+            if (plate >= 0 && plate !== PlateDocument.activePlate)
                 root.plateSelected(plate)
         }
 
@@ -1724,7 +1724,7 @@ Item {
                                                    / Math.max(root.mmPerPixel, 0.0001) * 0.5)
                     const travelled = Math.abs(mouse.x - input.paintX)
                                     + Math.abs(mouse.y - input.paintY)
-                    const facet = plateScene.pickedFacet
+                    const facet = PlateScene.pickedFacet
                     if (travelled >= spacing || (facet >= 0 && facet !== input.paintFacet)) {
                         const steps = Math.min(4, Math.max(1, Math.round(travelled / spacing)))
                         const fromX = input.paintX
@@ -1736,7 +1736,7 @@ Item {
                         }
                         input.paintX = mouse.x
                         input.paintY = mouse.y
-                        input.paintFacet = plateScene.pickedFacet
+                        input.paintFacet = PlateScene.pickedFacet
                     }
                 }
                 return
@@ -1744,7 +1744,7 @@ Item {
 
             // The cursor is a hand only over a model: the viewport is a canvas,
             // and a hand on the empty bed promises a click that does nothing.
-            if (!input.dragging && !input.panning && root.mode === "model" && session.hasModel)
+            if (!input.dragging && !input.panning && root.mode === "model" && Session.hasModel)
                 root.hoveringObject = root.hitAt(mouse.x, mouse.y).w > 0
             else
                 root.hoveringObject = false
@@ -1754,15 +1754,15 @@ Item {
             if (root.layOnFaceActive && !input.pressed) {
                 const hoverHit = root.hitAt(mouse.x, mouse.y)
                 if (hoverHit.w > 0)
-                    plateScene.setHoverFacet(plateScene.pickedId, plateScene.pickedFacet)
+                    PlateScene.setHoverFacet(PlateScene.pickedId, PlateScene.pickedFacet)
                 else
-                    plateScene.setHoverFacet(0, -1)
+                    PlateScene.setHoverFacet(0, -1)
             }
 
             if (input.pressed && input.gizmoAxis >= 0 && input.gizmoStart !== null) {
                 const ray = root.rayAt(mouse.x, mouse.y)
                 if (ray !== null) {
-                    const point = plateScene.gizmoAxisPoint(input.gizmoAxis, ray[0], ray[1])
+                    const point = PlateScene.gizmoAxisPoint(input.gizmoAxis, ray[0], ray[1])
                     const delta = root.vSub(point, input.gizmoStart)
                     if (Math.abs(delta.x) + Math.abs(delta.y) + Math.abs(delta.z) > 0.0005) {
                         // An object is previewed and committed on release:
@@ -1771,8 +1771,8 @@ Item {
                         // a busy plate. A volume is small, so it follows the handle
                         // live -- and its undo step coalesces, because every report
                         // pushes the same key.
-                        if (plateDocument.selectedVolume > 0) {
-                            plateDocument.moveSelection(delta.x, delta.y, delta.z)
+                        if (PlateDocument.selectedVolume > 0) {
+                            PlateDocument.moveSelection(delta.x, delta.y, delta.z)
                         } else {
                             input.gizmoDelta = root.vAdd(input.gizmoDelta, delta)
                             root.dragOffset = Qt.vector3d(input.gizmoDelta.x,
@@ -1797,8 +1797,8 @@ Item {
                 if (point !== null && input.dragStart !== null) {
                     const dx = point.x - input.dragStart.x
                     const dy = point.y - input.dragStart.y
-                    if (plateDocument.selectedVolume > 0) {
-                        plateDocument.moveSelection(dx - input.volumeMoved.x,
+                    if (PlateDocument.selectedVolume > 0) {
+                        PlateDocument.moveSelection(dx - input.volumeMoved.x,
                                                     dy - input.volumeMoved.y, 0)
                         input.volumeMoved = Qt.vector3d(dx, dy, 0)
                     } else {
@@ -1845,11 +1845,11 @@ Item {
                 const names = ["iso", "top", "bottom", "front", "rear", "left", "right"]
                 root.setView(names[event.key - Qt.Key_1])
                 event.accepted = true
-            } else if (event.key === Qt.Key_Up && toolpath.layerCount > 0) {
-                toolpath.setLayer(toolpath.currentLayer + 1)
+            } else if (event.key === Qt.Key_Up && Toolpath.layerCount > 0) {
+                Toolpath.setLayer(Toolpath.currentLayer + 1)
                 event.accepted = true
-            } else if (event.key === Qt.Key_Down && toolpath.layerCount > 0) {
-                toolpath.setLayer(toolpath.currentLayer - 1)
+            } else if (event.key === Qt.Key_Down && Toolpath.layerCount > 0) {
+                Toolpath.setLayer(Toolpath.currentLayer - 1)
                 event.accepted = true
             } else if (event.key === Qt.Key_Escape && root.measureActive) {
                 root.clearMeasure()
@@ -1976,7 +1976,7 @@ Item {
         }
 
         Repeater {
-            model: plateDocument.plates
+            model: PlateDocument.plates
 
             delegate: Item {
                 id: plateItem
@@ -1992,10 +1992,10 @@ Item {
                 // plate delegate declares its own `index`, which shadows the inner
                 // one and stacked every icon on the same spot once already.
                 readonly property var actions: [
-                    { slot: 0, icon: "delete", hint: plateDocument.plateCount > 1
+                    { slot: 0, icon: "delete", hint: PlateDocument.plateCount > 1
                                                  ? "Remove this plate"
                                                  : "The last plate cannot be removed",
-                      enabled: plateDocument.plateCount > 1, danger: true, action: "remove" },
+                      enabled: PlateDocument.plateCount > 1, danger: true, action: "remove" },
                     { slot: 1, icon: "autorenew", hint: "Auto-orient the objects on this plate",
                       enabled: true, danger: false, action: "orient" },
                     { slot: 2, icon: "grid_view", hint: "Arrange the objects on this plate",
@@ -2307,7 +2307,7 @@ Item {
                 Item {
                     id: numberHit
 
-                    visible: plateDocument.plateCount > 1 && plateItem.numberMatrix !== null
+                    visible: PlateDocument.plateCount > 1 && plateItem.numberMatrix !== null
                     width: 100
                     height: 100
                     x: 0
@@ -2373,7 +2373,7 @@ Item {
                 readonly property QtObject chromeEntry: QtObject {
                     readonly property var source: ({
                         name: nameContent,
-                        number: plateDocument.plateCount > 1 ? numberContent : null,
+                        number: PlateDocument.plateCount > 1 ? numberContent : null,
                         actions: plateItem.actionContents
                     })
                     readonly property var rects: ({

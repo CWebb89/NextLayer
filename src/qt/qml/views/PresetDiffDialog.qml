@@ -5,6 +5,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import NextLayer 1.0
 import "../theme"
 import "../components"
 
@@ -44,21 +45,21 @@ Popup {
     readonly property var choices: {
         if (root.kind === "printer") {
             const out = []
-            const printers = presetStore.userPrinters.concat(presetStore.catalogPrinters)
+            const printers = PresetStore.userPrinters.concat(PresetStore.catalogPrinters)
             for (let i = 0; i < printers.length; ++i)
                 out.push({ value: printers[i].name, label: printers[i].name })
             return out
         }
-        return root.kind === "filament" ? presetStore.filamentProfiles
-                                        : presetStore.printProfiles
+        return root.kind === "filament" ? PresetStore.filamentProfiles
+                                        : PresetStore.printProfiles
     }
 
     function refresh() {
         if (!root.comparing) {
-            root.entries = settingsModel.modifiedValues(root.tab)
+            root.entries = SettingsModel.modifiedValues(root.tab)
             return
         }
-        root.entries = presetStore.comparePresets(root.kind, root.aName, root.bName)
+        root.entries = PresetStore.comparePresets(root.kind, root.aName, root.bName)
     }
 
     function openFor(tab) {
@@ -140,7 +141,7 @@ Popup {
                     enabled: root.count > 0
                     onClicked: {
                         if (root.tab.length > 0)
-                            settingsModel.resetTab(root.tab)
+                            SettingsModel.resetTab(root.tab)
                         root.refresh()
                     }
                 }
@@ -285,7 +286,7 @@ Popup {
                                 label: "Reset"
                                 hint: "Put this setting back to the preset's value"
                                 onClicked: {
-                                    settingsModel.reset(row.modelData.name)
+                                    SettingsModel.reset(row.modelData.name)
                                     root.refresh()
                                 }
                             }

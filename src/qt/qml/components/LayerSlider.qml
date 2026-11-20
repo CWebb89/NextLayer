@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Curtis Webb
 
 import QtQuick
+import NextLayer 1.0
 import "../theme"
 
 // The preview's vertical layer slider: a track down
@@ -202,8 +203,8 @@ Item {
             required property var modelData
 
             readonly property real fraction: {
-                const total = toolpath.layerCount > 0
-                            ? toolpath.layerZAt(toolpath.layerCount - 1) : 0
+                const total = Toolpath.layerCount > 0
+                            ? Toolpath.layerZAt(Toolpath.layerCount - 1) : 0
                 return total > 0 ? Math.max(0, Math.min(1, Number(modelData.z) / total)) : 0
             }
 

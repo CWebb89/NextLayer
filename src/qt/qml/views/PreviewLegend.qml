@@ -4,6 +4,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
+import NextLayer 1.0
 import "../theme"
 import "../components"
 
@@ -20,13 +21,13 @@ Card {
     property bool optionsOpen: false
     property bool collapsed: false
 
-    readonly property var featureRows: toolpath.featureLegend !== undefined && toolpath.featureLegend !== null
-                                       ? toolpath.featureLegend : []
-    readonly property var optionRows: toolpath.optionLegend !== undefined && toolpath.optionLegend !== null
-                                      ? toolpath.optionLegend : []
-    readonly property var rangeRows: toolpath.rangeLegend !== undefined && toolpath.rangeLegend !== null
-                                     ? toolpath.rangeLegend : []
-    readonly property bool rangeMode: String(toolpath.viewType) !== "Feature type"
+    readonly property var featureRows: Toolpath.featureLegend !== undefined && Toolpath.featureLegend !== null
+                                       ? Toolpath.featureLegend : []
+    readonly property var optionRows: Toolpath.optionLegend !== undefined && Toolpath.optionLegend !== null
+                                      ? Toolpath.optionLegend : []
+    readonly property var rangeRows: Toolpath.rangeLegend !== undefined && Toolpath.rangeLegend !== null
+                                     ? Toolpath.rangeLegend : []
+    readonly property bool rangeMode: String(Toolpath.viewType) !== "Feature type"
     readonly property var rows: root.rangeMode ? root.rangeRows : root.featureRows
     readonly property int rowHeight: Math.round(Type.sizeSmall * 1.7)
 
@@ -50,7 +51,7 @@ Card {
     }
 
     // The header: the view-type picker with a code-style icon, and a chevron
-    // that folds the whole panel away so the toolpath is not covered by it.
+    // that folds the whole panel away so the Toolpath is not covered by it.
     Column {
         id: stack
 
@@ -78,9 +79,9 @@ Card {
             ComboBox {
                 Layout.fillWidth: true
                 Layout.alignment: Qt.AlignVCenter
-                choices: toolpath.viewTypes
-                currentValue: toolpath.viewType
-                onSelected: function(value) { toolpath.setViewType(value) }
+                choices: Toolpath.viewTypes
+                currentValue: Toolpath.viewType
+                onSelected: function(value) { Toolpath.setViewType(value) }
             }
 
             Text {
@@ -259,7 +260,7 @@ Card {
                     enabled: !root.rangeMode
                     acceptedButtons: Qt.LeftButton
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: toolpath.setFeatureVisible(legendRow.modelData.name,
+                    onClicked: Toolpath.setFeatureVisible(legendRow.modelData.name,
                                                           legendRow.modelData.visible === false)
                 }
 
@@ -379,7 +380,7 @@ Card {
                     hoverEnabled: true
                     acceptedButtons: Qt.LeftButton
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: toolpath.setOptionVisible(optionRow.modelData.name,
+                    onClicked: Toolpath.setOptionVisible(optionRow.modelData.name,
                                                          optionRow.modelData.visible === false)
                 }
             }
@@ -400,12 +401,12 @@ Card {
 
         Repeater {
             model: [
-                { label: "Total filament", value: Number(toolpath.totalFilamentMm / 1000).toFixed(2)
-                                                 + " m   " + Number(toolpath.totalFilamentG).toFixed(2) + " g" },
-                { label: "Cost", value: toolpath.totalCost > 0 ? Number(toolpath.totalCost).toFixed(2) : "\u2014" },
+                { label: "Total filament", value: Number(Toolpath.totalFilamentMm / 1000).toFixed(2)
+                                                 + " m   " + Number(Toolpath.totalFilamentG).toFixed(2) + " g" },
+                { label: "Cost", value: Toolpath.totalCost > 0 ? Number(Toolpath.totalCost).toFixed(2) : "\u2014" },
                 { label: "Prepare time", value: "<1s" },
-                { label: "Model printing time", value: root.clock(toolpath.totalSeconds) },
-                { label: "Total time", value: root.clock(toolpath.totalSeconds) }
+                { label: "Model printing time", value: root.clock(Toolpath.totalSeconds) },
+                { label: "Total time", value: root.clock(Toolpath.totalSeconds) }
             ]
 
             delegate: RowLayout {

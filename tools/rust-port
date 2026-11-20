@@ -1,0 +1,41 @@
+#!/usr/bin/env fish
+# How much of the backend is still C++.
+#
+# The port deletes a C++ file when its Rust replacement lands, so the counts here
+# are the honest progress bar: run it any time, no git history needed.
+
+set -l root (path resolve (status filename)/../..)
+set -l cpp_dir $root/src/qt/src
+set -l rust_dir $root/src/app/src
+
+set -l cpp_files (find $cpp_dir -maxdepth 1 -type f \( -name '*.cpp' -o -name '*.hpp' \) | sort)
+set -l cpp_lines (cat $cpp_files | wc -l)
+set -l rust_files (find $rust_dir -name '*.rs' | sort)
+set -l rust_lines 0
+if test -n "$rust_files"
+    set rust_lines (cat $rust_files | wc -l)
+end
+
+set -l qml_lines (cat (find $root/src/qt/qml -name '*.qml') | wc -l)
+
+set -l ported 0
+for file in $cpp_files
+    set -l probe (path change-extension .rs $file)
+    if test -e $rust_dir/(path basename $probe)
+        set ported (math $ported + 1)
+    end
+end
+
+printf 'backend:  %d C++ files, %s lines   ->   %d Rust files, %s lines\n' \
+    (count $cpp_files) $cpp_lines (count $rust_files) $rust_lines
+printf 'ported:   %d of %d C++ files have a Rust replacement\n' $ported (count $cpp_files)
+printf 'qml:      %s lines (unchanged by the port; it keeps its own spelling)\n' $qml_lines
+echo
+echo 'still C++, by size:'
+set -l sized
+for f in $cpp_files
+    set -a sized "$(wc -l < $f) "(path basename $f)
+end
+for entry in (printf '%s\n' $sized | sort -nr | head -n 8)
+    echo "  $entry"
+end

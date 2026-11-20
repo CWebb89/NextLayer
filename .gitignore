@@ -1,5 +1,7 @@
 /upstream/
 /dist/
+/src/app/target/
+/src/app/.qmlls.ini
 /.pi/
 /tools/cockpit/atlas/
 __pycache__/

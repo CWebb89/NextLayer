@@ -17,7 +17,13 @@ QString applicationVersion();
 /// Returns the number of lines rewritten, or -1 when the file cannot be read or
 /// written. Idempotent: a file that is already branded is only touched where the
 /// version line differs.
-int brandGcode(const QString& path);
+///
+/// \p configurationJson, when given, is the resolved settings document the slice
+/// was handed: it is appended as one metadata block, so the file records the
+/// settings it was printed with. The engine behind this application writes only
+/// header lines, and a print whose settings are nowhere in it cannot be
+/// reproduced.
+int brandGcode(const QString& path, const QString& configurationJson = {});
 
 /// sha256 of a toolpath's move and command lines, comments left out: the same
 /// slice run twice differs in its timestamp and UUIDs and nowhere else, so this
