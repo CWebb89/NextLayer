@@ -57,8 +57,6 @@ add_executable(next-layer-qt
     src/TransformController.hpp
     src/HfwEngine.cpp
     src/HfwEngine.hpp
-    src/AppMesh.cpp
-    src/AppMesh.hpp
     src/SliceController.cpp
     src/SliceController.hpp
     src/SliceRuntime.cpp
