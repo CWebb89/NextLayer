@@ -197,6 +197,12 @@ moved and need a look — that is deliberate, not a nuisance.
 cmake --build upstream/build --target next-layer-qt -j4
 ```
 
+The build directory is Ninja and configured with `-DSLIC3R_LTO=OFF`, so an
+incremental relink is about 14 s rather than the 2 m 25 s LTO relink of 21 CPU
+minutes. LTO is still one flag away when a release binary is wanted:
+`-DSLIC3R_LTO=ON` on the configure line. The option survives a re-bootstrap as
+`patches/0008-no-lto-for-dev.patch`.
+
 On a fresh machine, order is: `tools/bootstrap`, then one cmake configure of
 `upstream/` into `upstream/build/`, which fetches the engine's dependencies (hours
 and tens of GB), then the build. Use the memory-capped scope for anything heavier

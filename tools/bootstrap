@@ -115,5 +115,10 @@ echo
 echo "next, build it (the first configure fetches the engine's dependencies and"
 echo "takes hours; a memory-capped scope is required on this machine):"
 echo
-echo "  cmake -S $checkout -B $checkout/build -DCMAKE_BUILD_TYPE=Release"
+echo "  cmake -S $checkout -B $checkout/build -G Ninja -DCMAKE_BUILD_TYPE=Release \\"
+echo "        -DSLIC3R_LTO=OFF \\"
+echo "        -DCMAKE_PREFIX_PATH=$checkout/deps/build/destdir/usr/local"
 echo "  cmake --build $checkout/build --target next-layer-qt -j4"
+echo
+echo "SLIC3R_LTO=OFF is the dev default: LTO relinks 1,355 objects every build and"
+echo "costs 2m30 for a one-line change. Turn it on only for a binary you ship."

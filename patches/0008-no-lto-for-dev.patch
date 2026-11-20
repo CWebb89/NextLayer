@@ -1,0 +1,17 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 98286f6..b1929cd 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -272,7 +272,11 @@ include(DoxygenTarget)
+ include(LuaDocsTarget)
+ include(Sanitizers)
+ 
+-if (NOT SLIC3R_ASAN AND NOT SLIC3R_UBSAN)
++option(SLIC3R_LTO "Optimise across object files in Release builds" ON)
++
++if (NOT SLIC3R_LTO)
++    message(STATUS "LTO/IPO disabled: SLIC3R_LTO=OFF")
++elseif (NOT SLIC3R_ASAN AND NOT SLIC3R_UBSAN)
+     include(CheckIPOSupported)
+     check_ipo_supported(RESULT _ipo_supported OUTPUT _ipo_output LANGUAGES CXX C)
+     if (_ipo_supported)
