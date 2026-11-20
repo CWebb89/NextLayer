@@ -229,6 +229,34 @@ else
     end
 end
 
+# The port's direction: C++ leaves this repository, it never arrives. A new .cpp
+# or .hpp under src/qt/src is the failure docs/rust-engine-plan.md names — two
+# languages, one backend, a port that can stall half-done — and it is cheaper to
+# reject here than to notice in a review. tools/cpp-baseline lists the files that
+# exist today; a file that leaves src/qt/src has to leave that list in the same
+# commit, so every deletion is deliberate and shows up in the diff.
+set -l cpp_now (find $code -maxdepth 1 -type f \( -name '*.cpp' -o -name '*.hpp' \) -printf '%f\n' | sort)
+set -l cpp_was (grep -v '^#' $root/tools/cpp-baseline | string trim | string match -rv '^$')
+set -l cpp_added
+for entry in $cpp_now
+    if not contains -- $entry $cpp_was
+        set -a cpp_added $entry
+    end
+end
+set -l cpp_lost
+for entry in $cpp_was
+    if not contains -- $entry $cpp_now
+        set -a cpp_lost $entry
+    end
+end
+if test (count $cpp_added) -gt 0
+    __bad "port direction: new C++ "(string join ', ' $cpp_added)" — the backend is written in Rust, so this belongs in src/app/src as a .rs"
+else if test (count $cpp_lost) -gt 0
+    __bad "port direction: "(string join ', ' $cpp_lost)" left src/qt/src but is still listed in tools/cpp-baseline; drop the line in the same commit"
+else
+    __ok "port direction: "(count $cpp_now)" C++ file(s) in src/qt/src, none added, the baseline matches"
+end
+
 if test $static -eq 1
     __skip 'every gate that needs the binary (build it, then run tools/check)'
     __summary

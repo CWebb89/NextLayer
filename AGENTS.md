@@ -38,6 +38,11 @@ the decisions, measured facts, dead ends, and the reasoning behind each.
   pattern is in the memory file under "Build operations" — read it before
   running cmake. Never `-jN` at the top level of `deps/build`; dependencies
   parallelise internally.
+- **C++ leaves this repository; it never arrives.** A new `.cpp` or `.hpp` under
+  `src/qt/src` fails `tools/check`, and a deleted one has to come out of
+  `tools/cpp-baseline` in the same commit. The port writes `src/app/src/<Name>.rs`
+  and deletes the C++ in one step — `docs/rust-engine-plan.md`, "How a file is
+  ported".
 - **Never change a model in `oracle/models/` without re-capturing baselines.**
   Models are inputs to fingerprints; a changed mesh silently invalidates its
   baseline.
