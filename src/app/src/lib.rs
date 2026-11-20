@@ -69,6 +69,7 @@ pub mod Scratch;
 pub mod Updater;
 pub mod bridge;
 pub mod hfw;
+pub mod mesh;
 
 #[derive(Default)]
 pub struct RuntimeRust {

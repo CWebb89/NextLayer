@@ -63,6 +63,10 @@ extern "C" {
     fn hfw_mesh_transform(mesh: *const HfwMesh, transform: Transform) -> *mut HfwMesh;
     fn hfw_mesh_bounds(mesh: *const HfwMesh, out: *mut Bounds) -> i32;
     fn hfw_mesh_triangle_count(mesh: *const HfwMesh) -> usize;
+    fn hfw_mesh_vertex_count(mesh: *const HfwMesh) -> usize;
+    fn hfw_mesh_vertices(mesh: *const HfwMesh, out: *mut f64, count: usize) -> i32;
+    fn hfw_mesh_index_count(mesh: *const HfwMesh) -> usize;
+    fn hfw_mesh_indices(mesh: *const HfwMesh, out: *mut u32, count: usize) -> i32;
     fn hfw_mesh_volume(mesh: *const HfwMesh) -> f64;
     fn hfw_mesh_free(mesh: *mut HfwMesh);
 
@@ -159,6 +163,44 @@ impl Mesh {
     /// How many triangles the mesh holds.
     pub fn triangles(&self) -> usize {
         unsafe { hfw_mesh_triangle_count(self.0) }
+    }
+
+    /// How many vertices the mesh holds.
+    pub fn vertex_count(&self) -> usize {
+        unsafe { hfw_mesh_vertex_count(self.0) }
+    }
+
+    /// The xyz triples, three per vertex.
+    pub fn vertices(&self) -> Result<Vec<f32>, String> {
+        let count = self.vertex_count();
+        let mut flat = vec![0.0f64; count * 3];
+        if count == 0 {
+            return Ok(Vec::new());
+        }
+        let read = unsafe { hfw_mesh_vertices(self.0, flat.as_mut_ptr(), count) };
+        if read != 0 {
+            return Err(last_error());
+        }
+        Ok(flat.into_iter().map(|value| value as f32).collect())
+    }
+
+    /// How many triangles the mesh holds, as counted by the index array.
+    pub fn index_count(&self) -> usize {
+        unsafe { hfw_mesh_index_count(self.0) }
+    }
+
+    /// The vertex triples, three per triangle.
+    pub fn indices(&self) -> Result<Vec<u32>, String> {
+        let count = self.index_count();
+        let mut flat = vec![0u32; count * 3];
+        if count == 0 {
+            return Ok(Vec::new());
+        }
+        let read = unsafe { hfw_mesh_indices(self.0, flat.as_mut_ptr(), count) };
+        if read != 0 {
+            return Err(last_error());
+        }
+        Ok(flat)
     }
 }
 

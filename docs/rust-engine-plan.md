@@ -298,10 +298,11 @@ From `docs/engine-boundary.md` at the time of writing:
 | 4 — preview | 6 |
 | 7 — optional features | 13 |
 
-Files overlap across phases; the union is 44 of 76. The count that matters is the
+Files overlap across phases; the union is 44 of 71 source files under `src/`. The
+count that matters is the
 union going to zero.
 
-## Phase 2 cannot start as written, and why (measured 2026-11-20)
+## Phase 2 was blocked on five capabilities, and all five have landed (measured 2026-11-20)
 
 `PlateDocument::sliceObjectsFor` hands the slicer five things the C ABI has no call
 for. They are not details — each is a shipped feature:
@@ -331,9 +332,23 @@ rest of the list, and each one is a feature ported forward, not a mapping.
 model, volumes and text in C++ permanently, and painting is the one thing the app has
 to do better than the references rather than later.
 
-Until one is chosen, phase 1's application half is blocked too: `HfwEngine.cpp`
-cannot be replaced by `hfw_job_start` without losing the same five, because it is
-the file that hands them over.
+**Option 1 was chosen and it is finished.** Every row above is an ABI call in both
+directions: paint (support and seam; the tool channel waits on multi-material),
+volumes of all four kinds including modifiers, per-object layer heights, timeline
+markers and in-layer strokes. `tools/check`'s `--plate-readback-test` and
+`--plate-document-test` are what keep that true — a document goes in, comes back
+rebuilt from nothing but what was read, and both slice to the same bytes.
+
+So `PlateDocument.cpp` is no longer blocked on the engine's capabilities. What is
+still in the way is the vocabulary: `tools/engine-boundary.py` counts **20 engine
+symbols in the file and 10 in its header** — `TriangleMesh`, `Transformation`,
+`Transform3d`, `Index3`, `Model`, `ModelObject`, `ModelInstance`, `ModelVolume`,
+`ModelVolumeType`, `ZHeightPair(s)`, `Vec3d`, `Vec3f`,
+`TriangleSelector::TriangleSplittingData`, `indexed_triangle_set_with_color`,
+`read_model_from_file`, `store_stl`, `get_import_extensions`, `construct_ptr`,
+`Algorithms::TriangleMesh`. Those are phase 1's geometry and mesh boundary, not
+phase 2's document model, which is why the two phases now move in the other order:
+the types go Rust first, and the plate becomes a view over them.
 
 ## Risks
 

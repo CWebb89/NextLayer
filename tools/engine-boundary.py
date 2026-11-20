@@ -166,7 +166,9 @@ def files() -> list[Path]:
     return sorted(
         path
         for path in SRC.rglob("*")
-        if path.suffix in {".cpp", ".hpp"} and path.is_file()
+        if path.suffix in {".cpp", ".hpp"}
+        and path.is_file()
+        and "target" not in path.relative_to(SRC).parts
     )
 
 
