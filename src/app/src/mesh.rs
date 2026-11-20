@@ -122,6 +122,26 @@ impl Mesh {
         Mesh { vertices, indices }
     }
 
+    /// The triangles named by `faces`, renumbered onto their own vertex table.
+    pub fn subset(&self, faces: &[u32]) -> Mesh {
+        let mut vertices = Vec::new();
+        let mut indices = Vec::with_capacity(faces.len() * 3);
+        let mut moved: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
+        for face in faces {
+            for corner in 0..3 {
+                let vertex = self.indices[*face as usize * 3 + corner];
+                let next = *moved.entry(vertex).or_insert_with(|| {
+                    let index = (vertices.len() / 3) as u32;
+                    let base = vertex as usize * 3;
+                    vertices.extend_from_slice(&self.vertices[base..base + 3]);
+                    index
+                });
+                indices.push(next);
+            }
+        }
+        Mesh { vertices, indices }
+    }
+
     /// The volume the mesh encloses under `matrix`, in cubic millimetres.
     ///
     /// Signed tetrahedra against the origin, as the engine measures it; the sign
@@ -313,6 +333,21 @@ mod tests {
         let labels = both.shell_labels();
         assert!(labels[..12].iter().all(|label| *label == 0));
         assert!(labels[12..].iter().all(|label| *label == 1));
+    }
+
+    #[test]
+    fn a_subset_keeps_only_the_faces_it_names() {
+        let mesh = cube();
+        let half = mesh.subset(&[0, 1, 2, 3, 4, 5]);
+        assert_eq!(half.triangle_count(), 6);
+        assert_eq!(half.bounds().expect("the half has area").0, mesh.bounds().unwrap().0);
+        let both = mesh.appended(&mesh.translated([0.0, 0.0, 40.0]));
+        let labels = both.shell_labels();
+        let second: Vec<u32> = (12..24).collect();
+        let only_second = both.subset(&second);
+        assert_eq!(only_second.triangle_count(), 12);
+        assert!(only_second.bounds().expect("it has area").0[2] > 39.0);
+        assert_eq!(labels[12], 1);
     }
 
     #[test]

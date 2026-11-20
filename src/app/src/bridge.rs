@@ -5,6 +5,8 @@
 //! It is the reverse of `hfw`: that boundary is Rust asking a C library, this one
 //! is C++ asking this crate, and both disappear as `src/qt/src` empties.
 
+pub use crate::mesh::Mesh;
+
 #[cxx::bridge(namespace = "next_layer")]
 mod ffi {
     unsafe extern "C++" {
@@ -15,6 +17,48 @@ mod ffi {
     }
 
     extern "Rust" {
+        /// The application's own triangle mesh: the document holds one of these per
+        /// object and one per volume, and no engine handle stands behind it.
+        type Mesh;
+
+        /// Builds a mesh from flat arrays, or says why they cannot be one.
+        fn mesh_new(vertices: &[f32], indices: &[u32]) -> Result<Box<Mesh>>;
+
+        /// How many triangles the mesh holds.
+        fn mesh_triangle_count(mesh: &Mesh) -> usize;
+
+        /// The xyz triples, three per vertex.
+        fn mesh_vertices(mesh: &Mesh) -> &[f32];
+
+        /// The vertex triples, three per triangle.
+        fn mesh_indices(mesh: &Mesh) -> &[u32];
+
+        /// The lower then the upper corner of the bounding box, all zero when the
+        /// mesh has no vertices.
+        fn mesh_bounds(mesh: &Mesh) -> [f32; 6];
+
+        /// A copy moved by `offset`, in millimetres.
+        fn mesh_translated(mesh: &Mesh, offset: [f32; 3]) -> Box<Mesh>;
+
+        /// A copy transformed by `matrix`: twelve `f64`, row-major, three rows of
+        /// four.
+        fn mesh_transformed(mesh: &Mesh, matrix: &[f64]) -> Box<Mesh>;
+
+        /// Both meshes as one, `other`'s faces on the end of this one.
+        fn mesh_appended(mesh: &Mesh, other: &Mesh) -> Box<Mesh>;
+
+        /// The volume the mesh encloses under `matrix`, in cubic millimetres.
+        fn mesh_volume(mesh: &Mesh, matrix: &[f64]) -> f64;
+
+        /// The surface area the mesh covers under `matrix`, in square millimetres.
+        fn mesh_surface_area(mesh: &Mesh, matrix: &[f64]) -> f64;
+
+        /// One label per triangle; triangles sharing a vertex share a label.
+        fn mesh_shell_labels(mesh: &Mesh) -> Vec<u32>;
+
+        /// The triangles named by `faces`, renumbered onto their own vertices.
+        fn mesh_subset(mesh: &Mesh, faces: &[u32]) -> Box<Mesh>;
+
         /// The engine's resources tree: presets, bed meshes, icons, fonts.
         fn resources_dir() -> String;
 
@@ -56,6 +100,57 @@ mod ffi {
 
 pub fn quit_application() {
     ffi::quit_application();
+}
+
+fn mesh_new(vertices: &[f32], indices: &[u32]) -> Result<Box<Mesh>, String> {
+    crate::mesh::Mesh::new(vertices.to_vec(), indices.to_vec()).map(Box::new)
+}
+
+fn mesh_triangle_count(mesh: &Mesh) -> usize {
+    mesh.triangle_count()
+}
+
+fn mesh_vertices(mesh: &Mesh) -> &[f32] {
+    mesh.vertices()
+}
+
+fn mesh_indices(mesh: &Mesh) -> &[u32] {
+    mesh.indices()
+}
+
+fn mesh_bounds(mesh: &Mesh) -> [f32; 6] {
+    match mesh.bounds() {
+        Some((low, high)) => [low[0], low[1], low[2], high[0], high[1], high[2]],
+        None => [0.0; 6],
+    }
+}
+
+fn mesh_translated(mesh: &Mesh, offset: [f32; 3]) -> Box<Mesh> {
+    Box::new(mesh.translated(offset))
+}
+
+fn mesh_transformed(mesh: &Mesh, matrix: &[f64]) -> Box<Mesh> {
+    Box::new(mesh.transformed(matrix))
+}
+
+fn mesh_appended(mesh: &Mesh, other: &Mesh) -> Box<Mesh> {
+    Box::new(mesh.appended(other))
+}
+
+fn mesh_volume(mesh: &Mesh, matrix: &[f64]) -> f64 {
+    mesh.volume(matrix)
+}
+
+fn mesh_surface_area(mesh: &Mesh, matrix: &[f64]) -> f64 {
+    mesh.surface_area(matrix)
+}
+
+fn mesh_shell_labels(mesh: &Mesh) -> Vec<u32> {
+    mesh.shell_labels()
+}
+
+fn mesh_subset(mesh: &Mesh, faces: &[u32]) -> Box<Mesh> {
+    Box::new(mesh.subset(faces))
 }
 
 fn palette_json() -> String {
