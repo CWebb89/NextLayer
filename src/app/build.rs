@@ -11,6 +11,44 @@ fn engine_library_dir() -> PathBuf {
     }
 }
 
+/// The resources tree this build falls back to when neither the environment nor
+/// the layout beside the executable names one.
+fn baked_resources_dir() -> PathBuf {
+    match std::env::var_os("NEXT_LAYER_RESOURCES_DIR") {
+        Some(named) => PathBuf::from(named),
+        None => PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../upstream/resources"),
+    }
+}
+
+/// `<cargo target dir>/<profile>/include`, the one directory CMake puts on the
+/// include path for the headers cxx generates.
+fn generated_include_dir(out_dir: &Path) -> PathBuf {
+    let build = out_dir
+        .ancestors()
+        .find(|path| path.file_name().is_some_and(|name| name == "build"))
+        .expect("OUT_DIR sits under <target dir>/<profile>/build");
+    let profile = build.parent().expect("a profile directory above build");
+    profile.join("include")
+}
+
+fn copy_headers(from: &Path, to: &Path) {
+    let Ok(entries) = std::fs::read_dir(from) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            copy_headers(&path, &to.join(entry.file_name()));
+            continue;
+        }
+        if path.extension().is_none_or(|extension| extension != "h") {
+            continue;
+        }
+        std::fs::create_dir_all(to).expect("the generated include directory");
+        std::fs::copy(&path, to.join(entry.file_name())).expect("a generated header copy");
+    }
+}
+
 fn main() {
     let library_dir = engine_library_dir();
     let archive = library_dir.join("libhfw_capi.a");
@@ -22,11 +60,25 @@ fn main() {
             archive.display()
         );
     }
-    let library_dir: &Path = &library_dir;
     println!("cargo:rustc-link-search=native={}", library_dir.display());
     println!("cargo:rustc-link-lib=static=hfw_capi");
     println!("cargo:rerun-if-env-changed=NEXT_LAYER_HFW_LIB");
     println!("cargo:rerun-if-changed={}", archive.display());
+
+    println!(
+        "cargo:rustc-env=NEXT_LAYER_RESOURCES_DIR={}",
+        baked_resources_dir().display()
+    );
+    println!("cargo:rerun-if-env-changed=NEXT_LAYER_RESOURCES_DIR");
+
+    let out_dir = PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR"));
+    let include_dir = generated_include_dir(&out_dir);
+    cxx_build::bridge("src/bridge.rs")
+        .std("c++17")
+        .compile("next-layer-bridge");
+    copy_headers(&out_dir.join("cxxbridge/include"), &include_dir);
+    println!("cargo:rerun-if-changed=src/bridge.rs");
+    println!("cargo:rerun-if-changed=src/Resources.rs");
 
     CxxQtBuilder::new_qml_module(QmlModule::new("NextLayer"))
         .qt_module("Quick")

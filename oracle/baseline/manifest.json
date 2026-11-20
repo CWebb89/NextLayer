@@ -5,12 +5,12 @@
     "cube_default": {
       "model": "cube_20.stl",
       "settings": {},
-      "sha256": "6d152d9961e135de7c4815a16eb1700d6b254c8b143d87aad48996ed72b9f987",
+      "sha256": "1cd8fe143990e615366e225aaef08a6af2089335aa4b18a0629daccd525a1a10",
       "stats": {
-        "lines": 9687,
-        "extrusions": 4421,
+        "lines": 10085,
+        "extrusions": 3662,
         "layers": 100,
-        "filament_mm": "1262.15"
+        "filament_mm": null
       }
     },
     "cube_fine_0p10": {
@@ -18,12 +18,12 @@
       "settings": {
         "layer_height": 0.1
       },
-      "sha256": "45157c472b121535090876904f925df85d7bd7a77c9c479fe5f8130b9469c7dc",
+      "sha256": "d0543e7e2d871167ffebd96ad4fc020134357e13061bf25851380b452e0aefad",
       "stats": {
-        "lines": 17562,
-        "extrusions": 8418,
+        "lines": 17236,
+        "extrusions": 7160,
         "layers": 199,
-        "filament_mm": "1237.96"
+        "filament_mm": null
       }
     },
     "cube_coarse_0p30": {
@@ -31,12 +31,12 @@
       "settings": {
         "layer_height": 0.3
       },
-      "sha256": "3d60f82ab0061223fc33da6ca8fccc18da9b4ca55a973dccd75e7dac227e1607",
+      "sha256": "2aaf3267b8e289f22588405943e8328470e63c561dd63816d8811bec64421f4b",
       "stats": {
-        "lines": 6761,
-        "extrusions": 3069,
+        "lines": 7974,
+        "extrusions": 2540,
         "layers": 67,
-        "filament_mm": "1316.48"
+        "filament_mm": null
       }
     },
     "cube_infill_40": {
@@ -47,12 +47,12 @@
           "is_percent": true
         }
       },
-      "sha256": "dacc0b73daa551e222c8e25eb8ecab8b9651e38e50ecd074116de953cb1574a0",
+      "sha256": "72943371f83322bafe428ed886d47a3f584f74d196a498418619700d00c1ac11",
       "stats": {
-        "lines": 12602,
-        "extrusions": 7339,
+        "lines": 13581,
+        "extrusions": 7158,
         "layers": 100,
-        "filament_mm": "1877.66"
+        "filament_mm": null
       }
     },
     "cube_single_perimeter": {
@@ -64,23 +64,23 @@
           "is_percent": true
         }
       },
-      "sha256": "761b8a9f4760478de09a2b85c917d4c23ffda03097c164f2264a139ff8a5ecfa",
+      "sha256": "f0a972632b8428434f6f16fef2a0c4ddf92ecb124f4a8a54390dfd57fadd4727",
       "stats": {
-        "lines": 5132,
-        "extrusions": 1663,
+        "lines": 4043,
+        "extrusions": 302,
         "layers": 100,
-        "filament_mm": "542.87"
+        "filament_mm": null
       }
     },
     "cylinder_default": {
       "model": "cylinder_r10_h20.stl",
       "settings": {},
-      "sha256": "2902565448be77e1be7949fbd7f9408e951900075af54168aeb4da1e5cdb1b40",
+      "sha256": "a9b6c1b1f5c6a5ec4f61a280146a1b1fd9ed3b2dee0485ec416fc3568a6215f0",
       "stats": {
-        "lines": 8151,
-        "extrusions": 2053,
+        "lines": 15839,
+        "extrusions": 4230,
         "layers": 100,
-        "filament_mm": "975.46"
+        "filament_mm": null
       }
     },
     "sphere_supports": {
@@ -88,23 +88,23 @@
       "settings": {
         "support_material": "everywhere"
       },
-      "sha256": "ff7e3b9a093511e22b0e6dd6a2767dc80732562e49f177f64553f857fa5fe994",
+      "sha256": "c788716f7117c8b33ad487e0be03f2300a261b8f7b4e34f3ce6157a4326a44fc",
       "stats": {
-        "lines": 20878,
-        "extrusions": 8599,
+        "lines": 20846,
+        "extrusions": 5581,
         "layers": 120,
-        "filament_mm": "1114.82"
+        "filament_mm": null
       }
     },
     "sphere_default": {
       "model": "sphere_r12.stl",
       "settings": {},
-      "sha256": "d6b096da8d99c098c18cb3038cb2294339981631f3b09c9a03c99b7394318847",
+      "sha256": "b247deb11e4b1b37f1aa0afd8fc5209353e00034263175d5a2a31413036e6d18",
       "stats": {
-        "lines": 19379,
-        "extrusions": 7617,
+        "lines": 20313,
+        "extrusions": 5424,
         "layers": 120,
-        "filament_mm": "1061.44"
+        "filament_mm": null
       }
     },
     "sphere_seam_nearest": {
@@ -112,23 +112,23 @@
       "settings": {
         "seam_position": "nearest"
       },
-      "sha256": "90681635d1f2a344f534091c33e6090eb645c68fabcd9ffb3624d2c10b9c9e74",
+      "sha256": "5c1517a3840dba7e9564808f2cacf5bac7e05683a75618e4091c6ffe3cbf80c3",
       "stats": {
-        "lines": 19612,
-        "extrusions": 7597,
+        "lines": 19991,
+        "extrusions": 5081,
         "layers": 120,
-        "filament_mm": "1061.45"
+        "filament_mm": null
       }
     },
     "bridge_default": {
       "model": "bridge_30.stl",
       "settings": {},
-      "sha256": "b5a1a182b2fc8c63da5583de7b3eca8fb7e35532b48f07ab121160feba009cd1",
+      "sha256": "44306a3208d3ba024f1903f1e52cb56c95d066d196a26ac700c8531083fa5ce3",
       "stats": {
-        "lines": 13957,
-        "extrusions": 6172,
+        "lines": 13489,
+        "extrusions": 4273,
         "layers": 125,
-        "filament_mm": "905.41"
+        "filament_mm": null
       }
     },
     "bridge_supports": {
@@ -136,23 +136,23 @@
       "settings": {
         "support_material": "everywhere"
       },
-      "sha256": "9ee2a22113de23e558205647c4fe60eaad5f3e05e92cbafc0b08533c9bb21ee5",
+      "sha256": "73d85b8e2bbc79ac056330e988d769a7379b367c9544b4630fb2af6a01466424",
       "stats": {
-        "lines": 15834,
-        "extrusions": 7154,
-        "layers": 156,
-        "filament_mm": "1199.46"
+        "lines": 19423,
+        "extrusions": 6892,
+        "layers": 125,
+        "filament_mm": null
       }
     },
     "mk4_speed_pla": {
       "model": "cube_20.stl",
       "settings": {},
-      "sha256": "568742625b26bd32c3adf2dbade37640a44b1cf873f6fc23dc13ef313d84e1e5",
+      "sha256": "dd63bd2208084006ddff94ac22d7fd2964a65e252b9393f3a7c8ab15de7ca3cc",
       "stats": {
-        "lines": 9184,
-        "extrusions": 4421,
+        "lines": 9320,
+        "extrusions": 3662,
         "layers": 100,
-        "filament_mm": "1264.15"
+        "filament_mm": null
       },
       "preset": {
         "printer": "Prusa MK4 0.4",

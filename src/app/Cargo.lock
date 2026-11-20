@@ -338,6 +338,7 @@ name = "next-layer-app"
 version = "0.1.2"
 dependencies = [
  "cxx",
+ "cxx-build",
  "cxx-qt",
  "cxx-qt-build",
  "cxx-qt-lib",

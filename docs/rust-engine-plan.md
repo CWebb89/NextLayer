@@ -58,6 +58,47 @@ Where Rust has to call code that is still C++, the bridge is `cxx`; where it cal
 the engine, it is HFW's C ABI (`crates/capi/include/hfw.h`), so the engine boundary
 stays the one promise both repositories agree on.
 
+### The Qt boundary stays C++, and that is not a leftover (decided 2026-11-20)
+
+"All Rust" is achievable everywhere except one seam. Qt's meta-object system is a
+C++ ABI: a `QObject` is a vtable plus static `QMetaObject` data, and signal/slot
+dispatch is C++ calling convention. Any language that hosts `QQmlApplicationEngine`
+has to produce those objects, which is what cxx-qt does — it generates C++ and runs
+`moc` over it. So the choice is not "Rust or C++ here", it is *whose* C++:
+
+| option | verdict |
+| --- | --- |
+| Write our own Qt↔Rust bridge | Own code generator plus moc integration, months of work, and it still emits C++ compiled against Qt headers. No behaviour gained over cxx-qt. Rejected. |
+| A pure-Rust Qt 6 binding | None exists. `qmetaobject-rs` also generates C++ and compiles it with `cc`. Rejected: nothing to adopt. |
+| Replace Qt/QML with a Rust UI toolkit (egui, Slint) | The only genuinely all-Rust answer, and it deletes the entire QML surface, the Qt Quick 3D viewport and every widget behaviour already matched against a reference slicer. A different project, not a port. |
+
+So the boundary is: **our code is Rust, and Qt's own C++ is the only C++ left** —
+the generated glue plus a host `main` that starts the engine up. "No C++ engine" is
+the promise; "no C++ compiler ever" is not reachable while QML is the front end.
+
+### The last CMake, and why it outlives the engine until the end (decided 2026-11-20)
+
+CMake is not here because of C++. It is here because that is how Qt is discovered
+and how the binary is assembled, and the CMake being run today is `upstream/`'s own:
+`patches/0001` is two `add_subdirectory` lines splicing `src/qt` and `src/cli` into
+PrusaSlicer's build system. Delete `upstream/` and that build system is gone.
+
+After it, cargo emits the executable, and the pieces already exist in cxx-qt 0.10:
+`cxx-qt-build` compiles the generated glue with `cc::Build` (no CMake),
+`QmlModule`/`.qrc()` embeds QML and resources into the binary, and `qt-build-utils`
+supplies Qt's include and link flags for `cargo:rustc-link-lib`.
+
+**It cannot land before then, and that is the whole reason to write it down.** Until
+`upstream/` is gone the application links `slic3r-shared`, `slic3r-domain`,
+`libvgcode`, `OCCTWrapper` and the rest — sixty-odd CMake targets that only
+`upstream/`'s build system knows how to produce, with a dependency prefix and
+configure flags to match. Cargo cannot build them. So the cargo-emitted binary
+arrives in the same commit as `git rm -r upstream/`, and what it costs is real:
+resource embedding moves from `qt_add_resources` to a `.qrc`; `qmllint` becomes a
+gate that calls the tool directly instead of a Qt CMake helper; `dist/` deployment
+is scripted rather than `cmake --install`. QML keeps loading from disk during
+development through `NEXT_LAYER_QML_DIR` either way.
+
 ### What is deleted rather than ported
 
 Phase 7's thirteen files — `Paint`, `Text`, `Cut`, `Hollow` and the feature gates
@@ -220,11 +261,14 @@ bookkeeping around a working engine. With them in, this is a decade.
 
 ## Definition of done
 
-1. `src/qt/CMakeLists.txt` links Qt and HFW. Nothing else.
-2. `docs/engine-boundary.md` has no rows.
+1. `cargo build` emits `next-layer-qt` on its own: no CMakeLists anywhere in this
+   repository, no dependency prefix, no `upstream/`.
+2. `docs/engine-boundary.md` has no rows — nothing includes a `Slic3r/` header.
 3. `git rm -r upstream/` changes nothing about what the application does.
 4. `next-layer-qt` slices, previews, saves, reopens and prints with no C++ engine
    on disk.
+5. The only C++ compiled is cxx-qt's generated glue and the host `main`, both from
+   this repository.
 
 ## Order of work, and why
 

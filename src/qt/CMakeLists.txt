@@ -55,7 +55,6 @@ add_executable(next-layer-qt
     src/GcodeBrand.hpp
     src/PlateThumbnail.cpp
     src/PlateThumbnail.hpp
-    src/Resources.cpp
     src/Resources.hpp
     src/ThreeMfProject.cpp
     src/ThreeMfProject.hpp
@@ -119,6 +118,7 @@ file(GLOB_RECURSE NEXT_LAYER_APP_SOURCES CONFIGURE_DEPENDS
 add_custom_command(
     OUTPUT "${NEXT_LAYER_APP_LIB}"
     COMMAND "${CMAKE_COMMAND}" -E env "CARGO_TARGET_DIR=${NEXT_LAYER_APP_TARGET_DIR}"
+            "NEXT_LAYER_RESOURCES_DIR=${CMAKE_SOURCE_DIR}/resources"
             cargo build --release --manifest-path "${NEXT_LAYER_APP_CRATE}/Cargo.toml"
     DEPENDS ${NEXT_LAYER_APP_SOURCES}
     COMMENT "Building the Rust application backend"
@@ -128,6 +128,7 @@ add_custom_target(next-layer-app-rust DEPENDS "${NEXT_LAYER_APP_LIB}")
 add_dependencies(next-layer-qt next-layer-app-rust)
 
 target_include_directories(next-layer-qt PRIVATE src)
+target_include_directories(next-layer-qt PRIVATE "${NEXT_LAYER_APP_TARGET_DIR}/release/include")
 
 target_compile_definitions(next-layer-qt PRIVATE
     NEXT_LAYER_QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"

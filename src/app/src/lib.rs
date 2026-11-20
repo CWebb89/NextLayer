@@ -26,6 +26,12 @@ pub mod qobject {
 use core::pin::Pin;
 use cxx_qt_lib::QString;
 
+/// The resources tree this build falls back to when none is found at runtime.
+const BAKED_RESOURCES_DIR: &str = env!("NEXT_LAYER_RESOURCES_DIR");
+
+#[allow(non_snake_case)]
+pub mod Resources;
+pub mod bridge;
 pub mod hfw;
 
 #[derive(Default)]
