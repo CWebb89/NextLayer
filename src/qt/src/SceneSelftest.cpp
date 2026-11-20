@@ -1396,6 +1396,157 @@ int runPlateTransportSelftest(const QString& configPath, const QString& dataDir)
     return 0;
 }
 
+/// Hands a plate to the engine, reads it back into a second document, and requires
+/// the two to slice to the same bytes. That is what "the document is a view over
+/// the engine's plate" means in practice: destroy the document, rebuild it from the
+/// engine alone, and nothing the printer sees changes.
+int runPlateDocumentSelftest(const QString& configPath, const QString& dataDir)
+{
+    Q_UNUSED(dataDir)
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+
+    QVector2D centre;
+    QVector2D size;
+    if (!bedOfConfig(configPath, centre, size)) {
+        std::fprintf(stderr, "cannot read the bed out of %s\n", qPrintable(configPath));
+        return 2;
+    }
+
+    double layerHeight = 0.2;
+    {
+        std::ifstream file(configPath.toStdString());
+        nlohmann::ordered_json config;
+        file >> config;
+        layerHeight = config["configuration"]["print_settings"].value("layer_height", layerHeight);
+    }
+
+    PlateDocument original(centre, size);
+    const int box = original.addShape(QStringLiteral("box"), 30.0, 30.0, 20.0);
+    if (box < 0) {
+        std::fprintf(stderr, "%s\n", qPrintable(original.error()));
+        return 1;
+    }
+    QVariantMap density;
+    density.insert(QStringLiteral("is_percent"), true);
+    density.insert(QStringLiteral("value"), 35);
+    if (!original.setObjectSetting(box, QStringLiteral("fill_density"), density)) {
+        std::fprintf(stderr, "the object refused a fill_density override\n");
+        return 1;
+    }
+    if (!original.setLayerHeightRange(box, 0.0, 20.0, 0.3)) {
+        std::fprintf(stderr, "the object refused a layer height profile: %s\n",
+                     qPrintable(original.error()));
+        return 1;
+    }
+    const int volume = original.addVolume(box, QStringLiteral("box"), QStringLiteral("modifier"),
+                                          12.0, 12.0, 8.0);
+    if (volume <= 0 || !original.setVolumeSetting(box, volume, QStringLiteral("fill_density"),
+                                                  density)) {
+        std::fprintf(stderr, "the modifier volume was refused: %s\n",
+                     qPrintable(original.error()));
+        return 1;
+    }
+    const int second = original.addShape(QStringLiteral("cylinder"), 15.0, 15.0, 10.0);
+    if (second < 0) {
+        std::fprintf(stderr, "%s\n", qPrintable(original.error()));
+        return 1;
+    }
+    int enforcers = 0;
+    if (const PlateDocument::Object* part = original.object(second)) {
+        const Slic3r::Domain::Transform3d trafo = part->trafo.get_matrix();
+        for (int facet = 0; facet < int(part->mesh->its.indices.size()); ++facet) {
+            const auto& face = part->mesh->its.indices[size_t(facet)];
+            const Vec3d a = part->mesh->its.vertices[face[0]].cast<double>();
+            const Vec3d b = part->mesh->its.vertices[face[1]].cast<double>();
+            const Vec3d c = part->mesh->its.vertices[face[2]].cast<double>();
+            const Vec3d normal = (trafo.linear() * (b - a).cross(c - a)).normalized();
+            const Vec3d centre3 = trafo * ((a + b + c) / 3.0);
+            if (normal.z() < -0.9) {
+                const Vec3d eye = centre3 + normal * 100.0;
+                enforcers += original.paintObject(second, QStringLiteral("supports"),
+                                                  QVector3D(centre3.x(), centre3.y(), centre3.z()),
+                                                  QVector3D(eye.x(), eye.y(), eye.z()),
+                                                  QStringLiteral("enforce"), 2, facet);
+            }
+        }
+    }
+    if (enforcers == 0) {
+        std::fprintf(stderr, "the cylinder had no downward facet to paint\n");
+        return 1;
+    }
+    const auto directoryScratch = next_layer::makeScratchDir();
+    QTemporaryDir& directory = *directoryScratch;
+    const QString first = directory.filePath(QStringLiteral("document.gcode"));
+    QString error;
+    if (!next_layer::sliceWithHfw(original.sliceObjects(), configPath, first, error)) {
+        std::fprintf(stderr, "the original document did not slice: %s\n", qPrintable(error));
+        return 1;
+    }
+
+    // A marker and a stroke belong to a layer plane, and only the engine knows where
+    // the planes fell: the profile's first layer height and the object's own stepping
+    // both move them. The first Z the plain slice visited is one of them.
+    const double markerZ = firstLayerZ(first);
+    if (!(markerZ > 0.0)) {
+        std::fprintf(stderr, "the plain slice printed no layer to put a marker on\n");
+        return 1;
+    }
+    original.addLayerGcode(markerZ, QStringLiteral("gcode"), QStringLiteral("M117 document"));
+    original.addInLayerPolyline(markerZ, {QPointF(centre.x(), centre.y()),
+                                          QPointF(centre.x() + 8.0, centre.y())},
+                                0.45, layerHeight, 20.0, QStringLiteral("M104 S230"));
+
+    if (!next_layer::sliceWithHfw(original.sliceObjects(), configPath, first, error,
+                                  original.layerGcodeList(), original.inLayerList())) {
+        std::fprintf(stderr, "the document with a marker did not slice: %s\n", qPrintable(error));
+        return 1;
+    }
+
+    next_layer::PlateSnapshot snapshot;
+    if (!next_layer::readPlateSnapshot(original.sliceObjects(), original.layerGcodeList(),
+                                       original.inLayerList(), snapshot, error)) {
+        std::fprintf(stderr, "the plate did not read back: %s\n", qPrintable(error));
+        return 1;
+    }
+
+    // A document built from nothing but the engine's plate, in a document that never
+    // saw the original: no shared mesh, no shared paint, no shared settings.
+    PlateDocument rebuilt(centre, size);
+    if (!rebuilt.adoptSnapshot(snapshot, error)) {
+        std::fprintf(stderr, "the document could not be rebuilt: %s\n", qPrintable(error));
+        return 1;
+    }
+
+    const QString secondGcode = directory.filePath(QStringLiteral("rebuilt.gcode"));
+    if (!next_layer::sliceWithHfw(rebuilt.sliceObjects(), configPath, secondGcode, error,
+                                  rebuilt.layerGcodeList(), rebuilt.inLayerList())) {
+        std::fprintf(stderr, "the rebuilt document did not slice: %s\n", qPrintable(error));
+        return 1;
+    }
+
+    QFile before(first);
+    QFile after(secondGcode);
+    if (!before.open(QIODevice::ReadOnly) || !after.open(QIODevice::ReadOnly)) {
+        std::fprintf(stderr, "the two slices could not be read back\n");
+        return 1;
+    }
+    const QByteArray left = before.readAll();
+    const QByteArray right = after.readAll();
+    if (left != right) {
+        std::fprintf(stderr,
+                     "a document rebuilt from the engine's plate printed different G-code: %lld "
+                     "bytes against %lld\n",
+                     static_cast<long long>(left.size()), static_cast<long long>(right.size()));
+        return 1;
+    }
+
+    std::printf("plate document: %d object(s), %d volume(s) rebuilt from the engine, %lld bytes "
+                "of G-code identical\n",
+                int(snapshot.objects.size()), volume > 0 ? 1 : 0,
+                static_cast<long long>(left.size()));
+    return 0;
+}
+
 /// Hands a plate to the engine and reads it back: a document is only portable if
 /// every part of it can be returned. The knob asserts on what came back, so a
 /// field the engine holds but cannot give up is a failure rather than a quiet gap.

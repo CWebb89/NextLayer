@@ -64,6 +64,11 @@ int runPlateTransportSelftest(const QString& configPath, const QString& dataDir)
 /// rebuilds it from what came back, which has to be the same document byte for
 /// byte. CONFIG is a resolved config.
 int runPlateReadbackSelftest(const QString& configPath, const QString& dataDir);
+
+/// Reads the engine's plate back into a second document and requires the two to
+/// slice to the same bytes, which is what makes the document a view over the
+/// engine's plate rather than its owner. CONFIG is a resolved config.
+int runPlateDocumentSelftest(const QString& configPath, const QString& dataDir);
 int runCalibrationSelftest(const QString& configPath, const QString& dataDir,
                            const QString& keepGcodePath = {});
 

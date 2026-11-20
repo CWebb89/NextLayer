@@ -10,6 +10,51 @@
 
 namespace next_layer {
 
+/// One object of a plate as the engine holds it, in the terms the document uses.
+///
+/// This is the shape a document is rebuilt from: read a plate back through the ABI
+/// and a `PlateDocument` can be made out of it with nothing left over. Settings
+/// travel as the text the engine accepted, because that is what it holds and what
+/// it will take back; the panel's own typing of each setting belongs to the
+/// settings model, which is the next phase.
+struct PlateSnapshot
+{
+    struct Volume
+    {
+        Slic3r::Domain::ModelVolumeType type = Slic3r::Domain::ModelVolumeType::MODEL_PART;
+        Slic3r::Domain::TriangleMesh mesh;
+        QHash<QString, QString> settings;
+    };
+
+    struct Object
+    {
+        QString name;
+        Slic3r::Domain::TriangleMesh mesh;
+        Slic3r::Domain::Transformation placement;
+        bool enabled = true;
+        QHash<QString, QString> settings;
+        QVector<QPair<double, double>> layerHeights;
+        QByteArray supportPaint;
+        QByteArray seamPaint;
+        QVector<Volume> volumes;
+    };
+
+    QVector<Object> objects;
+    QVector<PlateLayerGcode> markers;
+    QVector<PlateInLayerPolyline> strokes;
+};
+
+/// Reads a plate back through the ABI into the shape a document is built from.
+///
+/// This is the inverse of what a `PlateDocument` hands the slicer, and it is what
+/// makes the document a view over the engine's plate rather than its owner: the
+/// objects, their geometry, placement, paint, layer heights, volumes and settings
+/// all come from the engine, which is also where they are sliced from.
+bool readPlateSnapshot(const QVector<PlateSliceObject>& objects,
+                       const QVector<PlateLayerGcode>& layerGcodes,
+                       const QVector<PlateInLayerPolyline>& inLayer, PlateSnapshot& snapshot,
+                       QString& error);
+
 /// The HFW binary this process will run: `NEXT_LAYER_HFW` when set, then
 /// `hfw-cli` beside the executable (its installed home), then `hfw-cli` on PATH,
 /// then the development build tree. Empty when none exists.

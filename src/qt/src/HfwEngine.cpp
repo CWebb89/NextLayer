@@ -416,6 +416,7 @@ struct ReadObject
     quint64 id = 0;
     QString name;
     HfwTransform placement = HfwTransform{};
+    bool enabled = true;
     QByteArray settingsJson;
     QVector<double> vertices;
     QVector<uint32_t> indices;
@@ -482,6 +483,12 @@ bool readPlate(HfwPlate* plate, QVector<ReadObject>& objects, QString& error)
             error = QStringLiteral("%1: %2").arg(object.name, engineError());
             return false;
         }
+        int enabled = 1;
+        if (hfw_plate_object_enabled_get(plate, id, &enabled) != 0) {
+            error = QStringLiteral("%1: %2").arg(object.name, engineError());
+            return false;
+        }
+        object.enabled = enabled != 0;
         char* settings = hfw_plate_object_settings_json(plate, id);
         if (settings == nullptr) {
             error = QStringLiteral("%1: %2").arg(object.name, engineError());
@@ -640,6 +647,52 @@ bool rebuildPlate(const QVector<ReadObject>& objects, HfwPlate* into, QString& e
     return true;
 }
 
+/// The volume kind a code stands for, the inverse of `volumeKind`.
+Slic3r::Domain::ModelVolumeType volumeTypeOf(int kind)
+{
+    switch (kind) {
+    case HFW_VOLUME_NEGATIVE: return Slic3r::Domain::ModelVolumeType::NEGATIVE_VOLUME;
+    case HFW_VOLUME_MODIFIER: return Slic3r::Domain::ModelVolumeType::PARAMETER_MODIFIER;
+    case HFW_VOLUME_SUPPORT_BLOCKER: return Slic3r::Domain::ModelVolumeType::SUPPORT_BLOCKER;
+    case HFW_VOLUME_SUPPORT_ENFORCER: return Slic3r::Domain::ModelVolumeType::SUPPORT_ENFORCER;
+    default: return Slic3r::Domain::ModelVolumeType::MODEL_PART;
+    }
+}
+
+/// The mesh those arrays describe. The engine holds millimetre vertices in its own
+/// fixed point, so what comes back is what it will slice: the document does not
+/// round it again.
+Slic3r::Domain::TriangleMesh meshFromArrays(const QVector<double>& vertices,
+                                           const QVector<uint32_t>& indices)
+{
+    Slic3r::Domain::TriangleMesh mesh;
+    const qsizetype points = vertices.size() / 3;
+    mesh.its.vertices.reserve(size_t(points));
+    for (qsizetype point = 0; point < points; ++point) {
+        mesh.its.vertices.emplace_back(float(vertices.at(point * 3)),
+                                       float(vertices.at(point * 3 + 1)),
+                                       float(vertices.at(point * 3 + 2)));
+    }
+    const qsizetype triangles = indices.size() / 3;
+    mesh.its.indices.reserve(size_t(triangles));
+    for (qsizetype triangle = 0; triangle < triangles; ++triangle) {
+        mesh.its.indices.push_back(Slic3r::Domain::Index3{int(indices.at(triangle * 3)),
+                                                          int(indices.at(triangle * 3 + 1)),
+                                                          int(indices.at(triangle * 3 + 2))});
+    }
+    return mesh;
+}
+
+/// One settings JSON object as the key/value rows it was built from.
+QHash<QString, QString> settingsText(const QByteArray& json)
+{
+    QHash<QString, QString> rows;
+    const QJsonObject object = QJsonDocument::fromJson(json).object();
+    for (auto entry = object.constBegin(); entry != object.constEnd(); ++entry)
+        rows.insert(entry.key(), entry.value().toString());
+    return rows;
+}
+
 /// The project bytes a plate writes, for comparing two documents exactly.
 QByteArray projectBytes(HfwPlate* plate)
 {
@@ -751,6 +804,64 @@ bool roundTripPlate(const QVector<PlateSliceObject>& objects,
                  .arg(layerGcodes.size())
                  .arg(inLayer.size())
                  .arg(first.size());
+    return true;
+}
+
+bool readPlateSnapshot(const QVector<PlateSliceObject>& objects,
+                       const QVector<PlateLayerGcode>& layerGcodes,
+                       const QVector<PlateInLayerPolyline>& inLayer, PlateSnapshot& snapshot,
+                       QString& error)
+{
+    if (objects.isEmpty()) {
+        error = QStringLiteral("no object on the plate");
+        return false;
+    }
+    PlateHandle plate;
+    if (plate.get() == nullptr) {
+        error = QStringLiteral("the engine could not create a plate: %1").arg(engineError());
+        return false;
+    }
+    if (!fillPlate(plate.get(), objects, layerGcodes, inLayer, error))
+        return false;
+
+    QVector<ReadObject> read;
+    if (!readPlate(plate.get(), read, error))
+        return false;
+
+    snapshot = PlateSnapshot{};
+    snapshot.markers = layerGcodes;
+    snapshot.strokes = inLayer;
+    for (const ReadObject& object : read) {
+        PlateSnapshot::Object entry;
+        entry.name = object.name;
+        entry.mesh = meshFromArrays(object.vertices, object.indices);
+        entry.placement.set_offset(
+            Slic3r::Domain::Vec3d(object.placement.translation_mm[0],
+                                 object.placement.translation_mm[1],
+                                 object.placement.translation_mm[2]));
+        entry.placement.set_rotation(
+            Slic3r::Domain::Vec3d(object.placement.rotation_degrees[0],
+                                 object.placement.rotation_degrees[1],
+                                 object.placement.rotation_degrees[2]));
+        entry.placement.set_scaling_factor(
+            Slic3r::Domain::Vec3d(object.placement.scale[0], object.placement.scale[1],
+                                 object.placement.scale[2]));
+        entry.settings = settingsText(object.settingsJson);
+        entry.enabled = object.enabled;
+        for (qsizetype pair = 0; pair + 1 < object.layerHeights.size(); pair += 2)
+            entry.layerHeights.append({object.layerHeights.at(pair),
+                                       object.layerHeights.at(pair + 1)});
+        entry.supportPaint = object.supportPaint;
+        entry.seamPaint = object.seamPaint;
+        for (const ReadVolume& volume : object.volumes) {
+            PlateSnapshot::Volume attached;
+            attached.type = volumeTypeOf(volume.kind);
+            attached.mesh = meshFromArrays(volume.vertices, volume.indices);
+            attached.settings = settingsText(volume.settingsJson);
+            entry.volumes.append(attached);
+        }
+        snapshot.objects.append(entry);
+    }
     return true;
 }
 

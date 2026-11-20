@@ -160,4 +160,15 @@ QVector<quint8> paintFacetStates(
 
 bool paintIsEmpty(const Slic3r::Domain::TriangleSelector::TriangleSplittingData& data);
 
+/// Rebuilds one paint channel from one state per facet, the inverse of
+/// `paintFacetStates`: 0 none, 1 enforcer, 2 blocker.
+///
+/// The states are what the engine holds and what a plate hands back, so this is how
+/// a document recovers the paint the slicer will read. A facet is painted whole, at
+/// the brush covering all of it, so the result is exactly the per-facet state and
+/// never a subdivision. Returns how many facet pieces changed state.
+int paintFromFacetStates(const Slic3r::Domain::TriangleMesh& mesh,
+                        Slic3r::Domain::TriangleSelector::TriangleSplittingData& data,
+                        const QVector<quint8>& states, PaintKind kind);
+
 }

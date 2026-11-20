@@ -5,6 +5,7 @@
 
 #include "ConfigBoxJson.hpp"
 #include "ForeignSettings.hpp"
+#include "HfwEngine.hpp"
 #include "Scratch.hpp"
 #include "ThreeMfProject.hpp"
 
@@ -3319,9 +3320,35 @@ QString PlateDocument::saveProject(const QString& path)
 }
 
 
-QString PlateDocument::loadProject(const QString& path)
+/// One setting's value from the text the engine wrote it as: a trailing `%` is a
+/// percentage, anything numeric is a number, everything else is the string itself.
+/// The panel's per-setting typing belongs to the settings model, which reads HFW's
+/// own surface and knows each key's type; this only has to write back the same text.
+QVariant settingFromText(const QString& text)
 {
-    QFile file(path);
+    if (text.endsWith(QLatin1Char('%'))) {
+        QVariantMap percent;
+        percent.insert(QStringLiteral("value"), text.left(text.size() - 1).toDouble());
+        percent.insert(QStringLiteral("is_percent"), true);
+        return percent;
+    }
+    bool number = false;
+    const double value = text.toDouble(&number);
+    if (number)
+        return value;
+    return text;
+}
+
+QVariantMap settingsFromText(const QHash<QString, QString>& rows)
+{
+    QVariantMap settings;
+    for (auto entry = rows.constBegin(); entry != rows.constEnd(); ++entry)
+        settings.insert(entry.key(), settingFromText(entry.value()));
+    return settings;
+}
+
+QString PlateDocument::loadProject(const QString& path)
+{    QFile file(path);
     if (!file.open(QIODevice::ReadOnly))
         return QStringLiteral("Could not read %1").arg(path);
     const QByteArray body = file.readAll();
@@ -3410,6 +3437,102 @@ QString PlateDocument::loadProject(const QString& path)
     emit selectionChanged();
     emit geometryChanged();
     return {};
+}
+
+bool PlateDocument::adoptSnapshot(const next_layer::PlateSnapshot& snapshot, QString& error)
+{
+    if (snapshot.objects.isEmpty()) {
+        error = QStringLiteral("The engine holds no object to adopt");
+        return false;
+    }
+
+    std::vector<Object> objects;
+    objects.reserve(size_t(snapshot.objects.size()));
+    int nextId = 1;
+    for (const next_layer::PlateSnapshot::Object& entry : snapshot.objects) {
+        if (entry.mesh.its.indices.empty()) {
+            error = QStringLiteral("\"%1\" came back with no triangles").arg(entry.name);
+            return false;
+        }
+        Object object;
+        object.id = nextId++;
+        object.plate = 0;
+        object.visible = entry.enabled;
+        object.name = entry.name;
+        auto mesh = std::make_shared<TriangleMesh>(entry.mesh);
+        if (!meshBounds(*mesh, object.localMin, object.localMax)) {
+            error = QStringLiteral("\"%1\" came back with an empty mesh").arg(entry.name);
+            return false;
+        }
+        object.mesh = mesh;
+        object.trafo = entry.placement;
+        object.settings = settingsFromText(entry.settings);
+        for (const auto& pair : entry.layerHeights)
+            object.layerHeights.emplace_back(pair.first, pair.second);
+        QVector<quint8> support(entry.supportPaint.size());
+        for (qsizetype index = 0; index < entry.supportPaint.size(); ++index)
+            support[index] = quint8(entry.supportPaint.at(index));
+        QVector<quint8> seam(entry.seamPaint.size());
+        for (qsizetype index = 0; index < entry.seamPaint.size(); ++index)
+            seam[index] = quint8(entry.seamPaint.at(index));
+        paintFromFacetStates(*mesh, object.supportPaint, support, next_layer::PaintKind::Supports);
+        paintFromFacetStates(*mesh, object.seamPaint, seam, next_layer::PaintKind::Seam);
+
+        object.volumes.reserve(entry.volumes.size());
+        for (const next_layer::PlateSnapshot::Volume& stored : entry.volumes) {
+            if (stored.mesh.its.indices.empty())
+                continue;
+            Volume volume;
+            volume.id = nextId++;
+            volume.name = volumeTypeName(stored.type);
+            volume.type = stored.type;
+            volume.trafo = Slic3r::Domain::Transformation{};
+            auto volumeMesh = std::make_shared<TriangleMesh>(stored.mesh);
+            if (!meshBounds(*volumeMesh, volume.localMin, volume.localMax))
+                continue;
+            volume.mesh = volumeMesh;
+            volume.settings = settingsFromText(stored.settings);
+            object.volumes.push_back(std::move(volume));
+        }
+        objects.push_back(std::move(object));
+    }
+
+    pushUndo(QStringLiteral("Read the plate from the engine"));
+    m_objects = std::move(objects);
+    m_paintSessions.clear();
+    ++m_paintGeneration;
+    m_nextId = nextId;
+    m_selectedIds.clear();
+    if (!m_objects.empty())
+        m_selectedIds = {m_objects.front().id};
+
+    m_layerGcodes.clear();
+    for (const next_layer::PlateLayerGcode& marker : snapshot.markers) {
+        LayerGcode entry;
+        entry.z = marker.z;
+        entry.type = marker.type;
+        entry.text = marker.text;
+        m_layerGcodes.push_back(entry);
+    }
+    m_inLayerMarks.clear();
+    for (const next_layer::PlateInLayerPolyline& stroke : snapshot.strokes) {
+        InLayerMark mark;
+        mark.z = stroke.z;
+        mark.points = stroke.points;
+        mark.lineWidth = stroke.line_width;
+        mark.layerHeight = stroke.layer_height;
+        mark.speed = stroke.speed;
+        mark.prefix = stroke.prefix;
+        m_inLayerMarks.push_back(mark);
+    }
+
+    m_error.clear();
+    emit errorChanged();
+    emit layerGcodesChanged();
+    emit selectionChanged();
+    emit geometryChanged();
+    changed();
+    return true;
 }
 
 QVector3D PlateDocument::objectBoundsMin(int id) const

@@ -23,6 +23,12 @@ complete inventory, this is the part you need before you start a print.
   area. An edge painted across a facet paints the whole facet, and a facet grazed at
   one corner keeps none. Tool paint is not carried, and a plate that changes tool is
   refused with a message rather than sliced on one extruder.
+- **The toolpath view crashes intermittently on a malformed G-code file.** The
+  robustness gate has twice caught a segfault (exit 139) opening one of its fourteen
+  fixtures, once on `truncated.gcode` and once on `binary.gcode`, and neither
+  reproduces when the same command is rerun — three runs of each were clean. The
+  fixtures are refused correctly the rest of the time, so this is a crash in the
+  preview path that the gate is right to keep catching, not a gate problem.
 - **A volume's own placement is baked in, not carried.** HFW's plate volume is
   geometry in its object's frame with no transform of its own, so the panel's
   position and scale for a modifier are applied here, to the mesh, before the plate

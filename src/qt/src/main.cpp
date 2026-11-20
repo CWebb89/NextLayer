@@ -973,6 +973,10 @@ int main(int argc, char* argv[])
     const QCommandLineOption slice_features_option("slice-features",
         "Slice one model with a per-object layer height, a layer height profile and painted facets, and report what each changed; CONFIG is a resolved config.",
         "CONFIG");
+    const QCommandLineOption plate_document_option("plate-document-test",
+        "Slice a document, read the engine's plate back into a second document, and require both "
+        "to slice to the same bytes; CONFIG is a resolved config.",
+        "CONFIG");
     const QCommandLineOption plate_readback_option("plate-readback-test",
         "Hand a plate to the engine, read every part of it back through the ABI and rebuild it "
         "from what came back, which has to be the same document byte for byte; CONFIG is a "
@@ -1089,7 +1093,7 @@ int main(int argc, char* argv[])
                        preset_dialog_option,
                        hover_test_option, panel_left_option, selftest_option, slice_all_option, plate_tools_option, slice_features_option,
                        project_version_test_option, project_test_option, export_project_option, mesh_tools_option, update_option,
-                       plate_transport_option, plate_readback_option, update_install_option, multi_tool_option, print_host_test_option, print_host_start_option, apply_offsets_option, volume_settings_option, calibration_test_option, shape_test_option, keep_gcode_option, scene_selftest_option, preview_stats_option, vgcode_shot_option,
+                       plate_transport_option, plate_readback_option, plate_document_option, update_install_option, multi_tool_option, print_host_test_option, print_host_start_option, apply_offsets_option, volume_settings_option, calibration_test_option, shape_test_option, keep_gcode_option, scene_selftest_option, preview_stats_option, vgcode_shot_option,
                        dump_presets_option, dump_presets_json_option, dump_fonts_option, dump_icons_option, dump_palette_option, dump_object_settings_option, dump_foreign_settings_option, preset_printer_option, preset_process_option, preset_filament_option, preset_filaments_option,
                        set_option, add_printer_option, save_preset_option, rename_preset_option,
                        delete_preset_option, export_preset_option, import_preset_option,
@@ -1310,6 +1314,10 @@ int main(int argc, char* argv[])
     if (parser.isSet(plate_transport_option))
         return next_layer::runPlateTransportSelftest(parser.value(plate_transport_option),
                                                     QString::fromStdString(dataDir()));
+
+    if (parser.isSet(plate_document_option))
+        return next_layer::runPlateDocumentSelftest(parser.value(plate_document_option),
+                                                   QString::fromStdString(dataDir()));
 
     if (parser.isSet(plate_readback_option))
         return next_layer::runPlateReadbackSelftest(parser.value(plate_readback_option),

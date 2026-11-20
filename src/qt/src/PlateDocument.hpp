@@ -27,6 +27,10 @@
 
 class QTemporaryDir;
 
+namespace next_layer {
+struct PlateSnapshot;
+} // namespace next_layer
+
 namespace Slic3r::Domain {
 class ModelInstance;
 class ModelObject;
@@ -322,6 +326,17 @@ public:
     /// failed, and loading replaces everything, undoably.
     Q_INVOKABLE QString saveProject(const QString& path);
     Q_INVOKABLE QString loadProject(const QString& path);
+
+    /// Replaces the whole plate with what the engine holds, undoably, leaving the
+    /// view's own state -- which plates exist, their names, the tool colours, the
+    /// selection -- alone.
+    ///
+    /// The engine's plate is where slicing reads from, so a document rebuilt here
+    /// from it is the same document as the one that was handed over: same
+    /// geometry, placement, paint, layer heights, volumes and settings. Settings
+    /// arrive as the text the engine accepted, which is what it will take back;
+    /// restoring each one's panel typing is the settings model's job.
+    bool adoptSnapshot(const next_layer::PlateSnapshot& snapshot, QString& error);
 
     /// True once the plate has changed since it was last saved or opened, which
     /// is what the close guard asks before throwing the work away.

@@ -295,7 +295,7 @@ From `docs/engine-boundary.md` at the time of writing:
 | 4 — preview | 6 |
 | 7 — optional features | 13 |
 
-Files overlap across phases; the union is 43 of 76. The count that matters is the
+Files overlap across phases; the union is 44 of 76. The count that matters is the
 union going to zero.
 
 ## Phase 2 cannot start as written, and why (measured 2026-11-20)
@@ -358,7 +358,7 @@ to stop calling the C++ engine for.
 | --- | --- | --- |
 | 0 — one engine, one switch | n/a | **Landed 2026-11-18**; the C++ slice branches are gone, HFW's ledger hides 175 settings, `tools/check` was green |
 | 1 — C ABI | **Landed 2026-11-20**: `crates/capi` v1, `include/hfw.h`, exercised from C | **Not started**: `HfwEngine.cpp` still shells out to `hfw-cli` |
-| 2 — document model | **Engine half done 2026-11-20** (HFW `d5cea38`): `crates/plate` plus a *read-back* surface — object ids, name, placement, enabled flag, settings JSON, geometry with its paint, and each volume's kind/geometry/settings — so a document round-trips through the engine byte for byte. `tools/check`'s `--plate-readback-test` builds a plate from a document, reads every field back through the ABI, rebuilds a second plate from what it read and requires the two project files to be identical (13,650 bytes) | **Unblocked, not started**: `PlateDocument.cpp` (3,543 lines) is still the plate. Everything it hands the slicer has an ABI call in both directions now. What it still owns is the *view's* state — undo, plates and plate names, selection, tool colours, per-volume visibility, and each object's source path |
+| 2 — document model | **Engine half done 2026-11-20** (HFW `d5cea38`): `crates/plate` plus a *read-back* surface — object ids, name, placement, enabled flag, settings JSON, geometry with its paint, and each volume's kind/geometry/settings — so a document round-trips through the engine byte for byte. `tools/check`'s `--plate-readback-test` builds a plate from a document, reads every field back through the ABI, rebuilds a second plate from what it read and requires the two project files to be identical (13,650 bytes) | **Unblocked, not started**: `PlateDocument.cpp` (3,543 lines) is still the plate. Everything it hands the slicer has an ABI call in both directions now. What it still owns is the *view's* state — undo, plates and plate names, selection, tool colours, per-volume visibility, and each object's source path. **The view direction is proved too**: `--plate-document-test` slices a document, reads the engine's plate back into a second document that never saw the first, and requires both to print the same 647,349 bytes |
 | 3 — settings | **Landed 2026-11-20**: settings surface JSON + `hfw_plate_object_set` | **Not started**: `SettingsModel.cpp` (1,568) still reads the C++ `ConfigContainer` |
 | 4 — preview | **Landed 2026-11-20**: `hfw_plate_preview_json` + threaded job | **Not started**: `GcodeView`/`PreviewData` still borrow libvgcode/libpgcode types |
 | 5 — plate operations | **Landed 2026-11-20**: duplicate/rotate/mirror/arrange in `crates/plate` | **Not started**: `Arranger.cpp`, `Orient.cpp`, `TransformController.cpp` still slice with the C++ engine's geometry |

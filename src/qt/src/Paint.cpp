@@ -255,4 +255,53 @@ QVector<quint8> paintFacetStates(const Slic3r::Domain::TriangleMesh& mesh,
     return states;
 }
 
+int paintFromFacetStates(const Slic3r::Domain::TriangleMesh& mesh, TriangleSplittingData& data,
+                        const QVector<quint8>& states, PaintKind kind)
+{
+    Q_UNUSED(kind)
+    const size_t facets = mesh.its.indices.size();
+    if (states.isEmpty() || facets == 0)
+        return 0;
+
+    // The engine's own serialised form, facet by facet, written the way its
+    // serialiser writes an unsplit leaf: two bits of "no side is split", then the
+    // state. A brush would have to subdivide to reach a facet, and a subdivision is
+    // the one thing per-facet states cannot express.
+    data = TriangleSplittingData{};
+    data.used_states.assign(Slic3r::Domain::TriangleSelector::TRIANGLE_STATE_TYPE_COUNT, false);
+    data.used_states[static_cast<size_t>(TriangleStateType::NONE)] = true;
+    int painted = 0;
+    for (size_t facet = 0; facet < facets && facet < size_t(states.size()); ++facet) {
+        const int state = int(states.at(qsizetype(facet)));
+        if (state <= 0)
+            continue;
+        data.triangles_to_split.emplace_back(int(facet), int(data.bitstream.size()));
+        data.bitstream.push_back(false);
+        data.bitstream.push_back(false);
+        if (state < 3) {
+            data.bitstream.push_back((state & 0b01) != 0);
+            data.bitstream.push_back((state & 0b10) != 0);
+        } else {
+            data.bitstream.push_back(true);
+            data.bitstream.push_back(true);
+            if (state <= 16) {
+                const int encoded = state - 3;
+                for (int bit = 0; bit < 4; ++bit)
+                    data.bitstream.push_back((encoded & (1 << bit)) != 0);
+            } else {
+                data.bitstream.insert(data.bitstream.end(), {false, true, true, true});
+                const int encoded = state - 17;
+                for (int bit = 0; bit < 8; ++bit)
+                    data.bitstream.push_back((encoded & (1 << bit)) != 0);
+            }
+        }
+        if (size_t(state) < data.used_states.size())
+            data.used_states[size_t(state)] = true;
+        ++painted;
+    }
+    if (painted == 0)
+        data = TriangleSplittingData{};
+    return painted;
+}
+
 }
