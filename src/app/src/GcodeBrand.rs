@@ -6,7 +6,6 @@
 //! application's name, and every config key and value inside those blocks is left
 //! byte-identical.
 
-use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use sha2::{Digest, Sha256};

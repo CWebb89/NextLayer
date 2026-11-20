@@ -41,7 +41,7 @@ fn copy_headers(from: &Path, to: &Path) {
             copy_headers(&path, &to.join(entry.file_name()));
             continue;
         }
-        if path.extension().is_none_or(|extension| extension != "h") {
+        if path.extension().is_none_or(|extension| extension != "h" && extension != "hpp") {
             continue;
         }
         std::fs::create_dir_all(to).expect("the generated include directory");
@@ -78,10 +78,19 @@ fn main() {
 
     let out_dir = PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR"));
     let include_dir = generated_include_dir(&out_dir);
-    cxx_build::bridge("src/bridge.rs")
-        .std("c++17")
-        .compile("next-layer-bridge");
+    let qt = qt_build_utils::QtBuild::new(vec!["Core".to_owned()])
+        .expect("a Qt installation to compile the interop header against");
+    let mut bridge = cxx_build::bridge("src/bridge.rs");
+    bridge.std("c++17");
+    for include in qt.include_paths() {
+        bridge.include(include);
+    }
+    bridge.compile("next-layer-bridge");
     copy_headers(&out_dir.join("cxxbridge/include"), &include_dir);
+    copy_headers(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("include"),
+        &include_dir.join("next-layer-app/include"),
+    );
     println!("cargo:rerun-if-changed=src/bridge.rs");
     println!("cargo:rerun-if-changed=src/Resources.rs");
     println!("cargo:rerun-if-changed=src/GcodeBrand.rs");

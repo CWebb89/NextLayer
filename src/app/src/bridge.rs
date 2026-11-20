@@ -7,6 +7,13 @@
 
 #[cxx::bridge(namespace = "next_layer")]
 mod ffi {
+    unsafe extern "C++" {
+        include!("next-layer-app/include/next-layer-qt.hpp");
+
+        /// Leaves Qt's event loop, so the registered teardown runs.
+        fn quit_application();
+    }
+
     extern "Rust" {
         /// The engine's resources tree: presets, bed meshes, icons, fonts.
         fn resources_dir() -> String;
@@ -26,7 +33,59 @@ mod ffi {
 
         /// Removes scratch directories whose owning process is gone.
         fn sweep_scratch_dirs();
+
+        /// The resolved matugen palette, as one JSON object.
+        fn palette_json() -> String;
+
+        /// One manifest fetch, as JSON: version, url, sha256, notes, error, newer.
+        fn update_check(channel: &str) -> String;
+
+        /// Downloads and verifies an artifact; JSON with `ok`, `error`, `staged`.
+        fn update_download(url: &str, sha256: &str, version: &str, root: &str) -> String;
+
+        /// Installs a staged artifact; JSON with `ok` and `error`.
+        fn update_install(staged: &str, root: &str) -> String;
+
+        /// The install prefix this build replaces.
+        fn update_install_root() -> String;
+
+        /// The version this build reports.
+        fn update_current_version() -> String;
     }
+}
+
+pub fn quit_application() {
+    ffi::quit_application();
+}
+
+fn palette_json() -> String {
+    crate::Palette::palette_json()
+}
+
+fn update_check(channel: &str) -> String {
+    crate::Updater::check_manifest(channel).to_json()
+}
+
+fn update_download(url: &str, sha256: &str, version: &str, root: &str) -> String {
+    match crate::Updater::download_artifact(url, sha256, version, root) {
+        Ok(staged) => serde_json::json!({"ok": true, "error": "", "staged": staged}).to_string(),
+        Err(error) => serde_json::json!({"ok": false, "error": error, "staged": ""}).to_string(),
+    }
+}
+
+fn update_install(staged: &str, root: &str) -> String {
+    match crate::Updater::install_artifact(staged, root) {
+        Ok(()) => serde_json::json!({"ok": true, "error": ""}).to_string(),
+        Err(error) => serde_json::json!({"ok": false, "error": error}).to_string(),
+    }
+}
+
+fn update_install_root() -> String {
+    crate::Updater::install_root()
+}
+
+fn update_current_version() -> String {
+    crate::Updater::current_version()
 }
 
 fn resources_dir() -> String {

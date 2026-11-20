@@ -13,7 +13,7 @@
 #include "PresetStore.hpp"
 #include "Calibration.hpp"
 #include "PrinterLink.hpp"
-#include "Updater.hpp"
+#include "next-layer-app/src/bridge.rs.h"
 #include "PlateDocument.hpp"
 #include "PlateScene.hpp"
 #include "PlateThumbnail.hpp"
@@ -1389,37 +1389,52 @@ int main(int argc, char* argv[])
                                                  parser.value(keep_gcode_option));
 
     if (parser.isSet(update_option)) {
-        next_layer::Updater updater;
-        next_layer::ReleaseInfo release;
-        const bool newer = updater.checkSync(parser.value(update_option), release);
-        if (!release.error.isEmpty()) {
-            std::fprintf(stderr, "update: %s\n", release.error.toUtf8().constData());
+        const QString channel = parser.value(update_option);
+        const auto manifest = QJsonDocument::fromJson(QByteArray::fromStdString(
+            static_cast<std::string>(next_layer::update_check(channel.toStdString())))).object();
+        const QString manifestError = manifest.value(QStringLiteral("error")).toString();
+        if (!manifestError.isEmpty()) {
+            std::fprintf(stderr, "update: %s\n", manifestError.toUtf8().constData());
             return 1;
         }
+        const QString version = manifest.value(QStringLiteral("version")).toString();
+        const QString notes = manifest.value(QStringLiteral("notes")).toString();
         std::printf("current %s, channel %s\n",
-                    next_layer::Updater::currentVersion().toUtf8().constData(),
-                    qPrintable(parser.value(update_option)));
-        if (!newer) {
+                    qPrintable(QString::fromStdString(static_cast<std::string>(
+                        next_layer::update_current_version()))),
+                    qPrintable(channel));
+        if (!manifest.value(QStringLiteral("newer")).toBool()) {
             std::printf("up to date\n");
             return 0;
         }
-        std::printf("available %s: %s\n", release.version.toUtf8().constData(),
-                    release.notes.toUtf8().constData());
+        std::printf("available %s: %s\n", version.toUtf8().constData(),
+                    notes.toUtf8().constData());
         if (!parser.isSet(update_install_option))
             return 0;
 
-        const QString root = next_layer::Updater::installRoot();
+        const QString root = QString::fromStdString(
+            static_cast<std::string>(next_layer::update_install_root()));
         std::printf("install root %s\n", qPrintable(root));
-        QString error;
-        if (!updater.downloadSync(release, root, error)) {
-            std::fprintf(stderr, "update: %s\n", error.toUtf8().constData());
+        const auto downloaded = QJsonDocument::fromJson(QByteArray::fromStdString(
+            static_cast<std::string>(next_layer::update_download(
+                manifest.value(QStringLiteral("url")).toString().toStdString(),
+                manifest.value(QStringLiteral("sha256")).toString().toStdString(),
+                version.toStdString(), root.toStdString())))).object();
+        const QString downloadError = downloaded.value(QStringLiteral("error")).toString();
+        if (!downloaded.value(QStringLiteral("ok")).toBool()) {
+            std::fprintf(stderr, "update: %s\n", downloadError.toUtf8().constData());
             return 1;
         }
-        if (!updater.installSync(root, error)) {
-            std::fprintf(stderr, "update: %s\n", error.toUtf8().constData());
+        const auto installed = QJsonDocument::fromJson(QByteArray::fromStdString(
+            static_cast<std::string>(next_layer::update_install(
+                downloaded.value(QStringLiteral("staged")).toString().toStdString(),
+                root.toStdString())))).object();
+        if (!installed.value(QStringLiteral("ok")).toBool()) {
+            std::fprintf(stderr, "update: %s\n",
+                         installed.value(QStringLiteral("error")).toString().toUtf8().constData());
             return 1;
         }
-        std::printf("installed %s\n", release.version.toUtf8().constData());
+        std::printf("installed %s\n", version.toUtf8().constData());
         return 0;
     }
 
@@ -2390,8 +2405,6 @@ int main(int argc, char* argv[])
     auto* printerLink = new next_layer::PrinterLink(&engine);
     printerLink->load();
     qmlRegisterSingletonInstance("NextLayer", 1, 0, "PrinterLink", printerLink);
-    auto* updater = new next_layer::Updater(&engine);
-    qmlRegisterSingletonInstance("NextLayer", 1, 0, "Updater", updater);
     engine.rootContext()->setContextProperty("appVersionString", next_layer::applicationVersion());
     engine.rootContext()->setContextProperty(
         "engineVersionString", QString::fromStdString(Slic3r::VERSION));

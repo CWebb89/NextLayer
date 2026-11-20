@@ -9,7 +9,6 @@ add_executable(next-layer-qt
     src/MeshGeometry.cpp
     src/MeshGeometry.hpp
     src/FeatureColors.hpp
-    src/Palette.cpp
     src/Palette.hpp
     src/Host.cpp
     src/Host.hpp
@@ -64,8 +63,6 @@ add_executable(next-layer-qt
     src/Text.hpp
     src/Hollow.cpp
     src/Hollow.hpp
-    src/Updater.cpp
-    src/Updater.hpp
     src/Orient.cpp
     src/Orient.hpp
     src/Arranger.cpp
