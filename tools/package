@@ -29,7 +29,7 @@ if test "$command" != "appimage"; and test "$command" != "aur"
     exit 2
 end
 
-set -l built_version (string match -r 'NEXT_LAYER_VERSION="([^"]+)"' -- \
+set -l built_version (string match -r 'set\(NEXT_LAYER_VERSION "([^"]+)"\)' -- \
     (cat $root/src/qt/CMakeLists.txt))
 if test (count $built_version) -lt 2
     echo "tools/package: no NEXT_LAYER_VERSION in src/qt/CMakeLists.txt" >&2

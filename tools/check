@@ -469,7 +469,7 @@ else
     set -l brand_version (grep -m1 -o '"producer_version": "[^"]*"' $brand_gcode)
     # The version the binary reports comes from one place, so the gate reads it
     # from there instead of pinning a literal that a release bump would break.
-    set -l source_version (string match -r 'NEXT_LAYER_VERSION="([^"]+)"' -- \
+    set -l source_version (string match -r 'set\(NEXT_LAYER_VERSION "([^"]+)"\)' -- \
         (cat $root/src/qt/CMakeLists.txt))
     set -l brand_leak (grep -ciE 'prusaslicer|orcaslicer' $brand_gcode)
     # Two blocks of two delimiters was the old engine's shape (it wrote a Prusa and

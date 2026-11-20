@@ -36,7 +36,7 @@ set -l qml $root/src/qt/qml
 # The version the binary reports is the only one a user can see, so a tag has to
 # match it: stamping 0.3.0 onto a binary built as 0.1.0 ships an update that
 # installs a file still calling itself 0.1.0.
-set -l built_version (string match -r 'NEXT_LAYER_VERSION="([^"]+)"' -- \
+set -l built_version (string match -r 'set\(NEXT_LAYER_VERSION "([^"]+)"\)' -- \
     (cat $root/src/qt/CMakeLists.txt))
 if test (count $built_version) -lt 2
     echo "tools/release: no NEXT_LAYER_VERSION in src/qt/CMakeLists.txt" >&2

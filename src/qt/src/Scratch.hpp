@@ -4,24 +4,35 @@
 #pragma once
 
 #include <QString>
+#include <QTemporaryDir>
 
 #include <memory>
 
-class QTemporaryDir;
+#include "next-layer-app/src/bridge.rs.h"
 
 namespace next_layer {
 
-/// A scratch directory named for the process that owns it, so a later run can
-/// tell a leftover from one that is still in use. A plate is staged as a
-/// multi-megabyte STL, and on a machine whose /tmp is a small tmpfs the
-/// directories a crash or a killed session leaves behind are enough to fill it
-/// and break every other program that writes there.
-QString scratchTemplate();
+// The template, the ownership rule and the sweep are Rust's
+// (src/app/src/Scratch.rs). Making a QTemporaryDir from a template is Qt's, so it
+// stays here as an inline adapter rather than in a translation unit of its own.
 
-std::unique_ptr<QTemporaryDir> makeScratchDir();
+/// A scratch directory named for the process that owns it, so a later run can
+/// tell a leftover from one that is still in use.
+inline QString scratchTemplate()
+{
+    return QString::fromStdString(static_cast<std::string>(scratch_template()));
+}
+
+inline std::unique_ptr<QTemporaryDir> makeScratchDir()
+{
+    return std::make_unique<QTemporaryDir>(scratchTemplate());
+}
 
 /// Removes the scratch directories of processes that no longer exist, and any
 /// older than a day whose owner cannot be read.
-void sweepScratchDirs();
+inline void sweepScratchDirs()
+{
+    sweep_scratch_dirs();
+}
 
-} // namespace next_layer
+}

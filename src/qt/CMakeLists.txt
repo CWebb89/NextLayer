@@ -51,14 +51,12 @@ add_executable(next-layer-qt
     src/PreviewData.hpp
     src/GcodeView.cpp
     src/GcodeView.hpp
-    src/GcodeBrand.cpp
     src/GcodeBrand.hpp
     src/PlateThumbnail.cpp
     src/PlateThumbnail.hpp
     src/Resources.hpp
     src/ThreeMfProject.cpp
     src/ThreeMfProject.hpp
-    src/Scratch.cpp
     src/Scratch.hpp
     src/Cut.cpp
     src/Cut.hpp
@@ -105,6 +103,11 @@ qt_add_resources(next-layer-qt "filament_library"
     FILES ${FILAMENT_LIBRARY}
 )
 
+# The application version. `tools/check`, `tools/package` and `tools/release` read
+# it from this line, the C++ and Rust halves both take it from the variable, so a
+# release bump is one edit.
+set(NEXT_LAYER_VERSION "0.1.2")
+
 # The application backend is a cxx-qt crate: it builds the Rust static library
 # and the generated `NextLayer` QML module, and the executable links both.
 set(NEXT_LAYER_APP_CRATE "${CMAKE_CURRENT_SOURCE_DIR}/../app")
@@ -119,6 +122,7 @@ add_custom_command(
     OUTPUT "${NEXT_LAYER_APP_LIB}"
     COMMAND "${CMAKE_COMMAND}" -E env "CARGO_TARGET_DIR=${NEXT_LAYER_APP_TARGET_DIR}"
             "NEXT_LAYER_RESOURCES_DIR=${CMAKE_SOURCE_DIR}/resources"
+            "NEXT_LAYER_VERSION=${NEXT_LAYER_VERSION}"
             cargo build --release --manifest-path "${NEXT_LAYER_APP_CRATE}/Cargo.toml"
     DEPENDS ${NEXT_LAYER_APP_SOURCES}
     COMMENT "Building the Rust application backend"
@@ -134,7 +138,7 @@ target_compile_definitions(next-layer-qt PRIVATE
     NEXT_LAYER_QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"
     NEXT_LAYER_APP_RESOURCES="${CMAKE_CURRENT_SOURCE_DIR}/resources"
     NEXT_LAYER_RESOURCES_DIR="${CMAKE_SOURCE_DIR}/resources"
-    NEXT_LAYER_VERSION="0.1.2"
+    NEXT_LAYER_VERSION="${NEXT_LAYER_VERSION}"
     NEXT_LAYER_TAGLINE="a slicer for tool changers"
 )
 

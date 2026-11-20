@@ -29,8 +29,15 @@ use cxx_qt_lib::QString;
 /// The resources tree this build falls back to when none is found at runtime.
 const BAKED_RESOURCES_DIR: &str = env!("NEXT_LAYER_RESOURCES_DIR");
 
+/// The version this build reports: the application's, not the crate's.
+const BAKED_VERSION: &str = env!("NEXT_LAYER_VERSION");
+
+#[allow(non_snake_case)]
+pub mod GcodeBrand;
 #[allow(non_snake_case)]
 pub mod Resources;
+#[allow(non_snake_case)]
+pub mod Scratch;
 pub mod bridge;
 pub mod hfw;
 
@@ -41,6 +48,6 @@ pub struct RuntimeRust {
 
 impl cxx_qt::Initialize for qobject::Runtime {
     fn initialize(mut self: Pin<&mut Self>) {
-        self.as_mut().set_version(QString::from(env!("CARGO_PKG_VERSION")));
+        self.as_mut().set_version(QString::from(BAKED_VERSION));
     }
 }

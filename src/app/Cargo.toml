@@ -11,6 +11,8 @@ crate-type = ["staticlib"]
 cxx = "1"
 cxx-qt = "0.10"
 cxx-qt-lib = { version = "0.10", features = ["qt_gui", "qt_qml"] }
+libc = "0.2"
+sha2 = "0.10"
 
 [build-dependencies]
 cxx-build = "1"

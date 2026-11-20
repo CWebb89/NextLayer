@@ -71,6 +71,11 @@ fn main() {
     );
     println!("cargo:rerun-if-env-changed=NEXT_LAYER_RESOURCES_DIR");
 
+    let version = std::env::var("NEXT_LAYER_VERSION")
+        .unwrap_or_else(|_| std::env::var("CARGO_PKG_VERSION").expect("CARGO_PKG_VERSION"));
+    println!("cargo:rustc-env=NEXT_LAYER_VERSION={version}");
+    println!("cargo:rerun-if-env-changed=NEXT_LAYER_VERSION");
+
     let out_dir = PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR"));
     let include_dir = generated_include_dir(&out_dir);
     cxx_build::bridge("src/bridge.rs")
@@ -79,6 +84,8 @@ fn main() {
     copy_headers(&out_dir.join("cxxbridge/include"), &include_dir);
     println!("cargo:rerun-if-changed=src/bridge.rs");
     println!("cargo:rerun-if-changed=src/Resources.rs");
+    println!("cargo:rerun-if-changed=src/GcodeBrand.rs");
+    println!("cargo:rerun-if-changed=src/Scratch.rs");
 
     CxxQtBuilder::new_qml_module(QmlModule::new("NextLayer"))
         .qt_module("Quick")
