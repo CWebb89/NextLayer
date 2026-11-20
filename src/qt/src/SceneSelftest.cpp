@@ -688,13 +688,17 @@ int runSliceFeaturesSelftest(const QString& model,
         return 1;
     }
 
+    // Every slice here goes through the plate-file transport, which is the path the
+    // window uses: the document is written as HFW's own file, so per-object settings,
+    // the layer height profile, the paint and the plate's timeline all have to survive
+    // the trip for these checks to pass.
     const auto sliceNow = [&document, &configPath](int& layers, int& moves, int& supports) {
-        next_layer::SliceRuntime& slicer = next_layer::SliceRuntime::instance();
         const auto directoryScratch = next_layer::makeScratchDir();
         QTemporaryDir& directory = *directoryScratch;
         const QString gcode = directory.filePath(QStringLiteral("slice.gcode"));
         QString error;
-        if (!slicer.slicePlate(document.sliceObjects(), configPath, gcode, error)) {
+        if (!next_layer::sliceWithHfw(document.sliceObjects(), configPath, gcode, error,
+                                     document.layerGcodeList(), document.inLayerList())) {
             std::fprintf(stderr, "%s\n", qPrintable(error));
             return false;
         }
@@ -710,7 +714,9 @@ int runSliceFeaturesSelftest(const QString& model,
             if (line.startsWith(";LAYER_CHANGE")) {
                 ++layers;
             } else if (line.startsWith(";TYPE:")) {
-                inSupport = line.contains("Support material");
+                // Both spellings: HFW writes `Support` and `Support interface`, the
+                // dialect writes `Support material` and `Support material interface`.
+                inSupport = line.contains("Support");
             } else if (line.startsWith("G1 ") && line.contains(" E")) {
                 ++moves;
                 if (inSupport)

@@ -8,6 +8,7 @@
 
 #include <QtGlobal>
 
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -168,6 +169,11 @@ Slic3r::Domain::indexed_triangle_set_with_color PaintSession::painted(PaintKind 
     return paintedFrom(m_impl->selector);
 }
 
+const TriangleSelector& PaintSession::selector() const
+{
+    return m_impl->selector;
+}
+
 bool PaintSession::empty() const
 {
     return m_impl->selector.triangles().empty();
@@ -208,6 +214,45 @@ Slic3r::Domain::indexed_triangle_set_with_color paintedTriangles(
 
     PaintSession session(std::make_shared<const Slic3r::Domain::TriangleMesh>(mesh), data);
     return session.painted(kind);
+}
+
+QVector<quint8> paintFacetStates(const Slic3r::Domain::TriangleMesh& mesh,
+                                 const TriangleSplittingData& data)
+{
+    const size_t facets = mesh.its.indices.size();
+    if (facets == 0 || data.triangles_to_split.empty())
+        return {};
+
+    PaintSession session(std::make_shared<const Slic3r::Domain::TriangleMesh>(mesh), data);
+    const TriangleSelector::Triangles& triangles = session.selector().triangles();
+    const TriangleSelector::Vertices& vertices = session.selector().vertices();
+
+    // Area per facet and state, so a facet painted over half its face reads as
+    // painted and one touched at a corner does not.
+    std::vector<std::array<double, 3>> area(facets);
+    for (const TriangleSelector::Triangle& triangle : triangles) {
+        if (!triangle.valid() || triangle.is_split())
+            continue;
+        const int state = int(triangle.get_state());
+        if (state < 1 || state > 2)
+            continue;
+        const size_t source = size_t(triangle.source_triangle);
+        if (source >= facets)
+            continue;
+        const Slic3r::Domain::Vec3f& a = vertices[triangle.verts_idxs[0]].v;
+        const Slic3r::Domain::Vec3f& b = vertices[triangle.verts_idxs[1]].v;
+        const Slic3r::Domain::Vec3f& c = vertices[triangle.verts_idxs[2]].v;
+        area[source][size_t(state)] += double((b - a).cross(c - a).norm());
+    }
+
+    QVector<quint8> states(int(facets), 0);
+    for (size_t facet = 0; facet < facets; ++facet) {
+        const std::array<double, 3>& painted = area[facet];
+        if (painted[1] <= 0.0 && painted[2] <= 0.0)
+            continue;
+        states[int(facet)] = painted[2] > painted[1] ? 2 : 1;
+    }
+    return states;
 }
 
 }

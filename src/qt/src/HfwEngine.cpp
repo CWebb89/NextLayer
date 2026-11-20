@@ -3,6 +3,7 @@
 
 #include "HfwEngine.hpp"
 
+#include "Paint.hpp"
 #include "hfw.h"
 
 #include <QCoreApplication>
@@ -91,6 +92,30 @@ QString settingText(const QJsonValue& value)
     return {};
 }
 
+/// The object's uniform layer height, when it carries one as an override.
+///
+/// A layer height is not a setting on HFW's plate: it decides which planes the object
+/// is sliced on, which is a channel of its own, and the engine refuses it as an object
+/// setting for exactly that reason. It is taken out of the overrides here and folded
+/// into the object's layer height pairs, so a uniform override and a variable profile
+/// reach the engine the same way. Zero means the object carries none.
+double layerHeightOverride(const PlateSliceObject& object)
+{
+    const QJsonObject settings = QJsonDocument::fromJson(object.settingsJson).object();
+    if (settings.contains(QLatin1String("layer_height"))) {
+        const double height = settingText(settings.value(QLatin1String("layer_height"))).toDouble();
+        if (height > 0.0)
+            return height;
+    }
+    const auto foreign = object.foreignSettings.constFind(QStringLiteral("layer_height"));
+    if (foreign != object.foreignSettings.constEnd()) {
+        const double height = foreign.value().toDouble();
+        if (height > 0.0)
+            return height;
+    }
+    return 0.0;
+}
+
 /// The object's own settings as the engine reads them: its JSON overrides first,
 /// then the ones its file carried in another slicer's dialect, which are that
 /// file's words and go across unchanged. A name the engine does not know is
@@ -107,6 +132,7 @@ bool applySettings(HfwPlate* plate, quint64 id, const PlateSliceObject& object, 
     for (auto entry = object.foreignSettings.constBegin();
          entry != object.foreignSettings.constEnd(); ++entry)
         overrides.insert(entry.key(), entry.value());
+    overrides.remove(QStringLiteral("layer_height"));
 
     QStringList names;
     for (auto entry = overrides.constBegin(); entry != overrides.constEnd(); ++entry)
@@ -220,15 +246,48 @@ bool addVolume(HfwPlate* plate, quint64 id, const PlateSliceObject& object,
     return true;
 }
 
+/// Paints one channel onto the object, reducing the engine's split triangles to the
+/// one state per facet HFW holds.
+///
+/// The app's paint records which pieces of a facet were painted; HFW's paint is a
+/// state per facet. `paintFacetStates` gives a facet the state that covers most of
+/// it, so an edge painted across a facet lands on that facet rather than being lost.
+/// The mesh here is already placed for the plate, and placement keeps the triangle
+/// order, so the states still line up with HFW's copy of the mesh.
+bool setPaint(HfwPlate* plate, quint64 id, const PlateSliceObject& object,
+              const Slic3r::Domain::TriangleSelector::TriangleSplittingData& painted, int channel,
+              QString& error)
+{
+    const QVector<quint8> states = paintFacetStates(object.mesh, painted);
+    if (states.isEmpty())
+        return true;
+    // `quint8` and the engine's byte are both unsigned of one byte; the engine keeps
+    // the pointer's lifetime out of the call, so the vector's own buffer is enough.
+    if (hfw_plate_object_paint(plate, id, channel,
+                              reinterpret_cast<const uint8_t*>(states.constData()),
+                              size_t(states.size()))
+        != 0) {
+        error = QStringLiteral("%1: paint: %2").arg(object.name, engineError());
+        return false;
+    }
+    return true;
+}
+
 bool setLayerHeights(HfwPlate* plate, quint64 id, const PlateSliceObject& object, QString& error)
 {
-    if (object.layerHeights.empty())
-        return true;
     QVector<double> pairs;
-    pairs.reserve(qsizetype(object.layerHeights.size()) * 2);
-    for (const Slic3r::Domain::ZHeightPair& pair : object.layerHeights) {
-        pairs.append(pair.z);
-        pairs.append(pair.layer_height);
+    if (object.layerHeights.empty()) {
+        const double uniform = layerHeightOverride(object);
+        if (uniform <= 0.0)
+            return true;
+        pairs.append(0.0);
+        pairs.append(uniform);
+    } else {
+        pairs.reserve(qsizetype(object.layerHeights.size()) * 2);
+        for (const Slic3r::Domain::ZHeightPair& pair : object.layerHeights) {
+            pairs.append(pair.z);
+            pairs.append(pair.layer_height);
+        }
     }
     if (hfw_plate_object_layer_heights(plate, id, pairs.constData(), size_t(pairs.size() / 2))
         != 0) {
@@ -332,6 +391,10 @@ bool fillPlate(HfwPlate* plate, const QVector<PlateSliceObject>& objects,
                 return false;
         }
         if (!setLayerHeights(plate, id, object, error))
+            return false;
+        if (!setPaint(plate, id, object, object.supportPaint, HFW_PAINT_SUPPORT, error))
+            return false;
+        if (!setPaint(plate, id, object, object.seamPaint, HFW_PAINT_SEAM, error))
             return false;
     }
     return setMarkers(plate, layerGcodes, error) && setInLayer(plate, inLayer, error);

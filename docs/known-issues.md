@@ -17,11 +17,12 @@ complete inventory, this is the part you need before you start a print.
   behind.** `SliceController` writes HFW's own project document and slices it with
   `hfw-cli --plate`, so per-object settings, volumes with their kinds and modifier
   settings, per-object layer heights, the timeline markers and the in-layer
-  calibration strokes all reach the file as of 2026-11-20. **Painted facets do not**:
-  the app's paint lives in the engine's split-triangle form and has no conversion
-  into HFW's per-facet states yet, so support and seam paint still print as if the
-  part were unpainted. A plate that changes tool is refused with a message rather
-  than sliced on one extruder.
+  calibration strokes and the painted facets all reach the file as of 2026-11-20.
+  **Paint costs resolution on the way**: the brush splits the triangles it touches and
+  HFW holds one state per triangle, so a facet takes the state covering most of its
+  area. An edge painted across a facet paints the whole facet, and a facet grazed at
+  one corner keeps none. Tool paint is not carried, and a plate that changes tool is
+  refused with a message rather than sliced on one extruder.
 - **A model named on the command line is placed differently from a plate.** A plate
   file prints where the document put it, so `--plate` keeps positions. The single
   model path (`--slice`, `--selftest-slice`) has no document, so it asks HFW to

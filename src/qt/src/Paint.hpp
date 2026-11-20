@@ -7,8 +7,13 @@
 #include <Slic3r/Domain/TriangleSelector.hpp>
 
 #include <QColor>
+#include <QVector>
 
 #include <memory>
+
+namespace Slic3r::Biz::Algorithms {
+class TriangleSelector;
+}
 
 namespace next_layer {
 
@@ -105,6 +110,10 @@ public:
     /// coordinates, with one colour per state.
     Slic3r::Domain::indexed_triangle_set_with_color painted(PaintKind kind) const;
 
+    /// The engine's own selector behind this session, for readers that need the
+    /// split representation itself rather than a triangle soup.
+    const Slic3r::Biz::Algorithms::TriangleSelector& selector() const;
+
     bool empty() const;
 
 private:
@@ -134,6 +143,20 @@ Slic3r::Domain::indexed_triangle_set_with_color paintedTriangles(
     const Slic3r::Domain::TriangleMesh& mesh,
     const Slic3r::Domain::TriangleSelector::TriangleSplittingData& data,
     PaintKind kind);
+
+/// One paint channel as a state per facet of \p mesh: 0 none, 1 enforcer, 2 blocker.
+///
+/// The engine's paint is finer than a facet: a brush splits the triangles it touches
+/// and paints the pieces, so a facet can be half an enforcer and half nothing. HFW's
+/// paint is one state per facet, so the pieces are reduced to the state covering the
+/// largest area of their facet. That is a real loss of resolution and it is the reason
+/// a painted edge lands on a facet boundary rather than inside a facet; the slicer has
+/// no smaller unit to paint.
+///
+/// Empty when the channel was never painted.
+QVector<quint8> paintFacetStates(
+    const Slic3r::Domain::TriangleMesh& mesh,
+    const Slic3r::Domain::TriangleSelector::TriangleSplittingData& data);
 
 bool paintIsEmpty(const Slic3r::Domain::TriangleSelector::TriangleSplittingData& data);
 

@@ -526,13 +526,14 @@ end
 # the same object four ways and measures each one in the toolpath -- layers for
 # the first two, support moves for the paint.
 set -l features_gcode /tmp/nl-check-features.gcode
-# Supports on: two of the four measurements below are about support moves, and the
-# catalogue profile this gate otherwise uses generates none -- the knob then has
-# nothing to show and says so. Turning them on here keeps the paint and the
-# per-object support override measured instead of skipped.
+# Supports on, and bridges supported too: two of the four measurements below are
+# about support moves, the catalogue profile generates none, and the model this gate
+# slices is nothing but a bridge -- with the dialect's `dont_support_bridges` left on
+# the bridge is the one place no support is generated, so both measurements would
+# read zero and the gate would have nothing to show.
 set -l features_cfg /tmp/nl-check-features.json
 rm -f $features_cfg
-env XDG_DATA_HOME=$tools_home $bin --printer 'Anycubic Kobra 2 0.4' --process $catalog_process --filament $catalog_filament --set support_material=everywhere --dump-config $features_cfg >/dev/null 2>&1
+env XDG_DATA_HOME=$tools_home $bin --printer 'Anycubic Kobra 2 0.4' --process $catalog_process --filament $catalog_filament --set support_material=everywhere --set dont_support_bridges=false --dump-config $features_cfg >/dev/null 2>&1
 set -l features_out (env QT_QPA_PLATFORM=eglfs XDG_DATA_HOME=$tools_home $bin $root/oracle/models/bridge_30.stl --slice-features $features_cfg 2>&1)
 set -l features_rc $status
 set -l features_setting (string match -r 'per-object layer_height 0.30: ([0-9]+) layer\(s\) \(was ([0-9]+)\)' -- $features_out)
