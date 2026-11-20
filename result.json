@@ -6,5 +6,7 @@
 	"prepare_time": 0,
 	"return_code": 0,
 	"sparse_infill_density": 0.0,
-	"wall_loops": 0
+	"strict_mode": false,
+	"wall_loops": 0,
+	"warnings": []
 }
