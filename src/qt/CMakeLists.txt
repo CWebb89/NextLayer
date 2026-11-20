@@ -1,3 +1,20 @@
+# The slicing engine is HFW, reached through its C ABI. The library is built by
+# cargo rather than by this build, so the path is a cache variable and the build
+# refreshes it before linking: a stale .a is the one way a symbol can disagree
+# with the header this target compiles against.
+set(NEXT_LAYER_HFW_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../HFW" CACHE PATH
+    "HFW checkout whose C library this application links")
+find_program(CARGO_EXECUTABLE cargo REQUIRED)
+set(HFW_CAPI_LIBRARY "${NEXT_LAYER_HFW_DIR}/target/release/libhfw_capi.a")
+add_custom_target(hfw-capi-build
+    COMMAND "${CARGO_EXECUTABLE}" build --release -p hfw-capi
+    WORKING_DIRECTORY "${NEXT_LAYER_HFW_DIR}"
+    COMMENT "Building HFW's C library")
+add_library(hfw-capi STATIC IMPORTED)
+set_target_properties(hfw-capi PROPERTIES IMPORTED_LOCATION "${HFW_CAPI_LIBRARY}")
+set_property(TARGET hfw-capi APPEND PROPERTY
+    INTERFACE_INCLUDE_DIRECTORIES "${NEXT_LAYER_HFW_DIR}/crates/capi/include")
+
 find_package(Qt6 REQUIRED COMPONENTS Quick Qml Quick3D Svg OpenGL Network WebEngineQuick)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(FONTCONFIG REQUIRED IMPORTED_TARGET fontconfig)
@@ -139,7 +156,9 @@ target_compile_definitions(next-layer-qt PRIVATE
     NEXT_LAYER_TAGLINE="a slicer for tool changers"
 )
 
+add_dependencies(next-layer-qt hfw-capi-build)
 target_link_libraries(next-layer-qt PRIVATE
+    hfw-capi
     "${NEXT_LAYER_APP_LIB}"
     pthread
     dl

@@ -3,21 +3,23 @@
 
 #include "HfwEngine.hpp"
 
-#include <Slic3r/Biz/Format/STL.hpp>
+#include "hfw.h"
 
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonValue>
-#include <QFileInfo>
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QStandardPaths>
 #include <QStringList>
 #include <QTemporaryDir>
+
+#include <cstdio>
 
 namespace next_layer {
 namespace {
@@ -33,6 +35,33 @@ QString tail(const QString& text, int lines)
     const int first = std::max(0, int(all.size()) - lines);
     return all.mid(first).join(QLatin1Char('\n')).trimmed();
 }
+
+/// The engine's own words for why the call that just failed did.
+QString engineError()
+{
+    const char* message = hfw_last_error();
+    return message != nullptr && *message != '\0' ? QString::fromUtf8(message)
+                                                  : QStringLiteral("the engine gave no reason");
+}
+
+/// Owns a plate handle, so an early return cannot leak one.
+class PlateHandle
+{
+public:
+    PlateHandle() : m_plate(hfw_plate_new()) {}
+    PlateHandle(const PlateHandle&) = delete;
+    PlateHandle& operator=(const PlateHandle&) = delete;
+    ~PlateHandle()
+    {
+        if (m_plate != nullptr)
+            hfw_plate_free(m_plate);
+    }
+
+    HfwPlate* get() const { return m_plate; }
+
+private:
+    HfwPlate* m_plate;
+};
 
 /// One setting as the text a preset writes it: `50%` for a percentage, `1`/`0`
 /// for a flag, a comma-joined list for a vector.
@@ -62,48 +91,250 @@ QString settingText(const QJsonValue& value)
     return {};
 }
 
-/// Writes the per-object settings the plate holds, in the shape
-/// `hfw-cli --object-settings` reads: one `<input> <setting> = <value>` line each,
-/// the input being the 1-based order the models are handed over in. A plate built
-/// from separate models carries these values here and nowhere else, so without
-/// this file every object is sliced with the plate's config and the per-object
-/// panel does nothing. Empty when no object overrides anything.
-QString writeObjectSettings(const QTemporaryDir& work, const QVector<PlateSliceObject>& objects)
+/// The object's own settings as the engine reads them: its JSON overrides first,
+/// then the ones its file carried in another slicer's dialect, which are that
+/// file's words and go across unchanged. A name the engine does not know is
+/// refused with the engine's own reason rather than dropped here.
+bool applySettings(HfwPlate* plate, quint64 id, const PlateSliceObject& object, QString& error)
 {
-    QString text;
-    for (int index = 0; index < objects.size(); ++index) {
-        const PlateSliceObject& object = objects.at(index);
-        QHash<QString, QString> overrides;
-        const QJsonObject settings = QJsonDocument::fromJson(object.settingsJson).object();
-        for (auto entry = settings.constBegin(); entry != settings.constEnd(); ++entry) {
-            const QString value = settingText(entry.value());
-            if (!value.isEmpty())
-                overrides.insert(entry.key(), value);
-        }
-        // Settings an object was imported with are kept in the dialect its file
-        // used, because they are that file's words. They are the object's overrides
-        // all the same, and the engine reads both dialects, so they go out too; a
-        // name it does not know is reported there rather than dropped here, where
-        // nothing knows which names it has.
-        for (auto entry = object.foreignSettings.constBegin();
-             entry != object.foreignSettings.constEnd(); ++entry)
-            overrides.insert(entry.key(), entry.value());
-
-        QStringList names = overrides.keys();
-        names.sort();
-        for (const QString& name : names)
-            text += QStringLiteral("%1 %2 = %3\n").arg(index + 1).arg(name, overrides.value(name));
+    QHash<QString, QString> overrides;
+    const QJsonObject settings = QJsonDocument::fromJson(object.settingsJson).object();
+    for (auto entry = settings.constBegin(); entry != settings.constEnd(); ++entry) {
+        const QString value = settingText(entry.value());
+        if (!value.isEmpty())
+            overrides.insert(entry.key(), value);
     }
-    if (text.isEmpty())
-        return {};
+    for (auto entry = object.foreignSettings.constBegin();
+         entry != object.foreignSettings.constEnd(); ++entry)
+        overrides.insert(entry.key(), entry.value());
 
-    const QString path = work.filePath(QStringLiteral("object-settings.txt"));
-    QFile file(path);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
-        return {};
-    file.write(text.toUtf8());
-    file.close();
-    return path;
+    QStringList names;
+    for (auto entry = overrides.constBegin(); entry != overrides.constEnd(); ++entry)
+        names.append(entry.key());
+    names.sort();
+    for (const QString& name : names) {
+        const QByteArray utf8Name = name.toUtf8();
+        const QByteArray utf8Value = overrides.value(name).toUtf8();
+        if (hfw_plate_object_set(plate, id, utf8Name.constData(), utf8Value.constData()) != 0) {
+            error = QStringLiteral("%1: setting %2 = %3: %4")
+                        .arg(object.name, name, overrides.value(name), engineError());
+            return false;
+        }
+    }
+    return true;
+}
+
+/// The engine's handle for one of the plate's meshes.
+///
+/// The app's mesh is a triangle list in millimetres; the engine takes an array of
+/// vertices plus triangle numbers and keeps the order it is given, so anything the
+/// app holds per triangle stays aligned with it.
+HfwMesh* meshHandle(const Slic3r::Domain::TriangleMesh& mesh, const QString& name, QString& error)
+{
+    const indexed_triangle_set& its = mesh.its;
+    QVector<double> vertices;
+    vertices.reserve(qsizetype(its.vertices.size()) * 3);
+    for (const Slic3r::Domain::Vec3f& vertex : its.vertices) {
+        vertices.append(vertex.x());
+        vertices.append(vertex.y());
+        vertices.append(vertex.z());
+    }
+    QVector<uint32_t> indices;
+    indices.reserve(qsizetype(its.indices.size()) * 3);
+    for (const auto& face : its.indices) {
+        indices.append(face[0]);
+        indices.append(face[1]);
+        indices.append(face[2]);
+    }
+    if (vertices.isEmpty() || indices.isEmpty()) {
+        error = QStringLiteral("%1 has no triangles").arg(name);
+        return nullptr;
+    }
+    HfwMesh* handle = hfw_mesh_new(vertices.constData(), size_t(vertices.size() / 3),
+                                   indices.constData(), size_t(indices.size() / 3));
+    if (handle == nullptr)
+        error = QStringLiteral("%1: %2").arg(name, engineError());
+    return handle;
+}
+
+int markerKind(const QString& type)
+{
+    if (type == QLatin1String("pause"))
+        return HFW_MARKER_PAUSE;
+    if (type == QLatin1String("color") || type == QLatin1String("colour"))
+        return HFW_MARKER_COLOUR;
+    return HFW_MARKER_CUSTOM;
+}
+
+int volumeKind(Slic3r::Domain::ModelVolumeType type)
+{
+    switch (type) {
+    case Slic3r::Domain::ModelVolumeType::NEGATIVE_VOLUME: return HFW_VOLUME_NEGATIVE;
+    case Slic3r::Domain::ModelVolumeType::PARAMETER_MODIFIER: return HFW_VOLUME_MODIFIER;
+    case Slic3r::Domain::ModelVolumeType::SUPPORT_BLOCKER: return HFW_VOLUME_SUPPORT_BLOCKER;
+    case Slic3r::Domain::ModelVolumeType::SUPPORT_ENFORCER: return HFW_VOLUME_SUPPORT_ENFORCER;
+    default: return HFW_VOLUME_PART;
+    }
+}
+
+/// Attaches one modeller volume to an object, then the settings it prints with.
+///
+/// Only a modifier has a region of its own to print differently, so a key set on
+/// any other kind would be stored and ignored; the engine refuses it, and this
+/// only asks where it makes sense.
+bool addVolume(HfwPlate* plate, quint64 id, const PlateSliceObject& object,
+               const PlateSliceVolume& volume, QString& error)
+{
+    HfwMesh* mesh = meshHandle(volume.mesh, object.name, error);
+    if (mesh == nullptr)
+        return false;
+    const int kind = volumeKind(volume.type);
+    const int added = hfw_plate_object_add_volume(plate, id, kind, mesh);
+    hfw_mesh_free(mesh);
+    if (added != 0) {
+        error = QStringLiteral("%1: volume: %2").arg(object.name, engineError());
+        return false;
+    }
+    if (kind != HFW_VOLUME_MODIFIER)
+        return true;
+
+    const QJsonObject settings = QJsonDocument::fromJson(volume.settingsJson).object();
+    QStringList names;
+    for (auto entry = settings.constBegin(); entry != settings.constEnd(); ++entry)
+        names.append(entry.key());
+    names.sort();
+    const size_t index = size_t(hfw_plate_object_volume_count(plate, id) - 1);
+    for (const QString& name : names) {
+        const QString value = settingText(settings.value(name));
+        if (value.isEmpty())
+            continue;
+        const QByteArray utf8Name = name.toUtf8();
+        const QByteArray utf8Value = value.toUtf8();
+        if (hfw_plate_volume_set(plate, id, index, utf8Name.constData(), utf8Value.constData())
+            != 0) {
+            error = QStringLiteral("%1: volume setting %2 = %3: %4")
+                        .arg(object.name, name, value, engineError());
+            return false;
+        }
+    }
+    return true;
+}
+
+bool setLayerHeights(HfwPlate* plate, quint64 id, const PlateSliceObject& object, QString& error)
+{
+    if (object.layerHeights.empty())
+        return true;
+    QVector<double> pairs;
+    pairs.reserve(qsizetype(object.layerHeights.size()) * 2);
+    for (const Slic3r::Domain::ZHeightPair& pair : object.layerHeights) {
+        pairs.append(pair.z);
+        pairs.append(pair.layer_height);
+    }
+    if (hfw_plate_object_layer_heights(plate, id, pairs.constData(), size_t(pairs.size() / 2))
+        != 0) {
+        error = QStringLiteral("%1: layer heights: %2").arg(object.name, engineError());
+        return false;
+    }
+    return true;
+}
+
+bool setMarkers(HfwPlate* plate, const QVector<PlateLayerGcode>& layerGcodes, QString& error)
+{
+    if (layerGcodes.isEmpty())
+        return true;
+    QVector<int> kinds;
+    QVector<double> zs;
+    QVector<QByteArray> texts;
+    kinds.reserve(layerGcodes.size());
+    zs.reserve(layerGcodes.size());
+    texts.reserve(layerGcodes.size());
+    for (const PlateLayerGcode& marker : layerGcodes) {
+        kinds.append(markerKind(marker.type));
+        zs.append(marker.z);
+        texts.append(marker.text.toUtf8());
+    }
+    QVector<const char*> pointers;
+    pointers.reserve(texts.size());
+    for (const QByteArray& text : texts)
+        pointers.append(text.constData());
+    if (hfw_plate_set_markers(plate, kinds.constData(), zs.constData(), pointers.constData(),
+                             size_t(layerGcodes.size()))
+        != 0) {
+        error = QStringLiteral("the plate's timeline: %1").arg(engineError());
+        return false;
+    }
+    return true;
+}
+
+bool setInLayer(HfwPlate* plate, const QVector<PlateInLayerPolyline>& inLayer, QString& error)
+{
+    if (inLayer.isEmpty())
+        return true;
+    QVector<double> zs;
+    QVector<size_t> counts;
+    QVector<double> widths;
+    QVector<double> heights;
+    QVector<double> speeds;
+    QVector<size_t> starts;
+    QVector<double> points;
+    QVector<QByteArray> prefixes;
+    for (const PlateInLayerPolyline& stroke : inLayer) {
+        zs.append(stroke.z);
+        counts.append(size_t(stroke.points.size()));
+        widths.append(stroke.line_width);
+        heights.append(stroke.layer_height);
+        speeds.append(stroke.speed);
+        starts.append(size_t(points.size() / 2));
+        for (const QPointF& point : stroke.points) {
+            points.append(point.x());
+            points.append(point.y());
+        }
+        prefixes.append(stroke.prefix.toUtf8());
+    }
+    QVector<const char*> pointers;
+    pointers.reserve(prefixes.size());
+    for (const QByteArray& prefix : prefixes)
+        pointers.append(prefix.constData());
+    if (hfw_plate_set_in_layer(plate, zs.constData(), counts.constData(), widths.constData(),
+                              heights.constData(), speeds.constData(), starts.constData(),
+                              points.constData(), pointers.constData(), size_t(inLayer.size()))
+        != 0) {
+        error = QStringLiteral("the plate's in-layer strokes: %1").arg(engineError());
+        return false;
+    }
+    return true;
+}
+
+/// Builds the document the engine slices: one object per plate entry, with its
+/// overrides, its volumes and their kinds, its layer heights, and the plate's
+/// timeline and strokes.
+bool fillPlate(HfwPlate* plate, const QVector<PlateSliceObject>& objects,
+               const QVector<PlateLayerGcode>& layerGcodes,
+               const QVector<PlateInLayerPolyline>& inLayer, QString& error)
+{
+    for (const PlateSliceObject& object : objects) {
+        HfwMesh* mesh = meshHandle(object.mesh, object.name, error);
+        if (mesh == nullptr)
+            return false;
+        const quint64 id = hfw_plate_add_positioned(plate, mesh);
+        hfw_mesh_free(mesh);
+        if (id == 0) {
+            error = QStringLiteral("%1: %2").arg(object.name, engineError());
+            return false;
+        }
+        const QByteArray name = object.name.toUtf8();
+        hfw_plate_object_name(plate, id, name.constData());
+
+        if (!applySettings(plate, id, object, error))
+            return false;
+        for (const PlateSliceVolume& volume : object.volumes) {
+            if (!addVolume(plate, id, object, volume, error))
+                return false;
+        }
+        if (!setLayerHeights(plate, id, object, error))
+            return false;
+    }
+    return setMarkers(plate, layerGcodes, error) && setInLayer(plate, inLayer, error);
 }
 
 } // namespace
@@ -141,12 +372,59 @@ QString hfwUnavailableReason()
                           "development build tree; set NEXT_LAYER_HFW to its path");
 }
 
-bool sliceWithHfw(const QVector<PlateSliceObject>& objects, const QString& configPath,
-                  const QString& gcodePath, QString& error)
+bool writePlateFile(const QVector<PlateSliceObject>& objects,
+                    const QVector<PlateLayerGcode>& layerGcodes,
+                    const QVector<PlateInLayerPolyline>& inLayer, const QString& path,
+                    QString& error)
 {
     if (objects.isEmpty()) {
         error = QStringLiteral("no object on the plate");
         return false;
+    }
+
+    PlateHandle plate;
+    if (plate.get() == nullptr) {
+        error = QStringLiteral("the engine could not create a plate: %1").arg(engineError());
+        return false;
+    }
+    if (!fillPlate(plate.get(), objects, layerGcodes, inLayer, error))
+        return false;
+
+    size_t length = 0;
+    char* bytes = hfw_plate_project_bytes(plate.get(), &length);
+    if (bytes == nullptr) {
+        error = QStringLiteral("the engine could not write the plate: %1").arg(engineError());
+        return false;
+    }
+    QFile file(path);
+    const bool opened = file.open(QIODevice::WriteOnly | QIODevice::Truncate);
+    const qint64 written = opened ? file.write(bytes, qint64(length)) : -1;
+    file.close();
+    hfw_string_free(bytes);
+    if (!opened || written != qint64(length)) {
+        error = QStringLiteral("could not write %1").arg(path);
+        return false;
+    }
+    return true;
+}
+
+bool sliceWithHfw(const QVector<PlateSliceObject>& objects, const QString& configPath,
+                  const QString& gcodePath, QString& error,
+                  const QVector<PlateLayerGcode>& layerGcodes,
+                  const QVector<PlateInLayerPolyline>& inLayer, bool placeOnBed)
+{
+    if (objects.isEmpty()) {
+        error = QStringLiteral("no object on the plate");
+        return false;
+    }
+    for (const PlateLayerGcode& marker : layerGcodes) {
+        if (marker.type == QLatin1String("tool")) {
+            error = QStringLiteral("the plate timeline changes tool at Z%1, and this engine "
+                                  "prints with one extruder; remove the tool change or slice "
+                                  "another plate")
+                        .arg(marker.z, 0, 'f', 2);
+            return false;
+        }
     }
     const QString binary = hfwBinary();
     if (binary.isEmpty()) {
@@ -160,37 +438,15 @@ bool sliceWithHfw(const QVector<PlateSliceObject>& objects, const QString& confi
         return false;
     }
 
-    QStringList arguments;
-    arguments << QStringLiteral("--preset") << configPath;
-    for (int index = 0; index < objects.size(); ++index) {
-        // The engine names an object after the file it came from, and that name is
-        // what its report on an override calls it. The object's own name is the one
-        // the user knows it by; anything a file name cannot hold is folded to `_`.
-        QString name = objects.at(index).name;
-        for (QChar& character : name) {
-            if (!character.isLetterOrNumber() && character != QLatin1Char('-'))
-                character = QLatin1Char('_');
-        }
-        if (name.isEmpty())
-            name = QStringLiteral("object-%1").arg(index);
-        const QString stl = work.filePath(QStringLiteral("%1.stl").arg(name));
-        // `store_stl` reports success without checking that the write landed, so a
-        // scratch directory with no room leaves a zero-byte STL and the engine then
-        // refuses the model with a message about ASCII vertex records. The size is
-        // the only honest answer to "was the object handed over".
-        const bool stored = Slic3r::Biz::store_stl(stl.toStdString(), objects[index].mesh, true, "next-layer");
-        if (!stored || QFileInfo(stl).size() == 0) {
-            error = QStringLiteral("could not write object %1 to STL").arg(index + 1);
-            return false;
-        }
-        arguments << stl;
-    }
-    arguments << QStringLiteral("--no-arrange")
-              << QStringLiteral("--gcode") << gcodePath;
+    const QString platePath = work.filePath(QStringLiteral("plate.hfw"));
+    if (!writePlateFile(objects, layerGcodes, inLayer, platePath, error))
+        return false;
 
-    const QString settings = writeObjectSettings(work, objects);
-    if (!settings.isEmpty())
-        arguments << QStringLiteral("--object-settings") << settings;
+    QStringList arguments;
+    arguments << QStringLiteral("--plate") << platePath << QStringLiteral("--preset") << configPath
+              << QStringLiteral("--gcode") << gcodePath;
+    if (placeOnBed)
+        arguments << QStringLiteral("--place");
 
     QProcess process;
     process.setProcessChannelMode(QProcess::MergedChannels);
@@ -206,11 +462,11 @@ bool sliceWithHfw(const QVector<PlateSliceObject>& objects, const QString& confi
     }
 
     const QString output = QString::fromLocal8Bit(process.readAll());
-    // What the engine did with the per-object settings, which is otherwise the one
-    // thing about a slice this app cannot show: the plate's own panel does not know
-    // which of its overrides the engine took.
+    // What the engine did with the document, which is otherwise the one thing about a
+    // slice this application cannot show: what the file carried, and whether a stroke
+    // landed on a printed layer.
     for (const QString& line : output.split(QLatin1Char('\n'))) {
-        if (line.contains(QLatin1String("override")))
+        if (line.contains(QLatin1String("warning:")) || line.contains(QLatin1String("Carries:")))
             std::fprintf(stderr, "%s\n", line.trimmed().toUtf8().constData());
     }
     const bool wrote = QFileInfo(gcodePath).size() > 0;
@@ -223,8 +479,7 @@ bool sliceWithHfw(const QVector<PlateSliceObject>& objects, const QString& confi
         return false;
     }
     if (!verified) {
-        error = QStringLiteral("the file failed HFW's own verifier: %1")
-                    .arg(tail(output, 6));
+        error = QStringLiteral("the file failed HFW's own verifier: %1").arg(tail(output, 6));
         return false;
     }
     error = tail(output, 6);

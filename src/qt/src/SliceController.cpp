@@ -112,19 +112,22 @@ QString modelName(const QString& path)
     return QFileInfo(path).fileName();
 }
 
-/// What the plate carries that HFW has no way to place: a G-code snippet, pause or
-/// colour change at a Z height, and a path drawn inside a layer rather than made of
-/// geometry. Empty when the plate carries neither.
-QString unsupportedMarkers(const QVector<next_layer::PlateLayerGcode>& layerGcodes,
-                           const QVector<next_layer::PlateInLayerPolyline>& inLayer)
+/// A marker the engine cannot place: a tool change. HFW prints with one extruder,
+/// so a timeline that asks for another tool is refused rather than sliced without
+/// it. Everything else on the timeline -- a pause, a colour change, a G-code
+/// snippet -- travels in the plate file.
+QString refusedMarkers(const QVector<next_layer::PlateLayerGcode>& layerGcodes)
 {
-    if (layerGcodes.isEmpty() && inLayer.isEmpty())
+    int tools = 0;
+    for (const next_layer::PlateLayerGcode& marker : layerGcodes) {
+        if (marker.type == QLatin1String("tool"))
+            ++tools;
+    }
+    if (tools == 0)
         return {};
-    return QStringLiteral("this plate carries %1 Z-height G-code marker(s) and %2 in-layer "
-                          "path(s), which this engine cannot place yet; remove them from the "
-                          "plate timeline and clear the calibration labels to slice it")
-        .arg(layerGcodes.size())
-        .arg(inLayer.size());
+    return QStringLiteral("this plate changes tool %1 time(s), and this engine prints with a "
+                          "single extruder; remove the tool changes and slice again")
+        .arg(tools);
 }
 
 }
@@ -237,13 +240,12 @@ void SliceController::slice()
         return;
     }
 
-    // HFW writes the toolpath and nothing else: it reads the objects, their own
-    // settings and the plate's config. A Z-height marker or a path the plate wants
-    // printed inside a layer has no channel into it, so a plate carrying one is
-    // refused here instead of being sliced without them.
-    const QString markers = unsupportedMarkers(
-        m_document != nullptr ? m_document->layerGcodeList() : QVector<next_layer::PlateLayerGcode>(),
-        m_document != nullptr ? m_document->inLayerList() : QVector<next_layer::PlateInLayerPolyline>());
+    // The plate travels to the engine as its own document, so its timeline and its
+    // in-layer strokes go with it. A tool change is the one entry that still has no
+    // meaning there -- the engine prints with one extruder -- so a plate carrying one
+    // is refused here instead of being sliced without it.
+    const QString markers = refusedMarkers(
+        m_document != nullptr ? m_document->layerGcodeList() : QVector<next_layer::PlateLayerGcode>());
     if (!markers.isEmpty()) {
         m_status = QStringLiteral("Slice failed: %1").arg(markers);
         emit statusChanged();
@@ -282,12 +284,19 @@ void SliceController::slice()
     const QVector<next_layer::PlateSliceObject> objects =
         m_document != nullptr ? m_document->sliceObjects()
                               : QVector<next_layer::PlateSliceObject>();
+    const QVector<next_layer::PlateLayerGcode> layerGcodes =
+        m_document != nullptr ? m_document->layerGcodeList()
+                              : QVector<next_layer::PlateLayerGcode>();
+    const QVector<next_layer::PlateInLayerPolyline> inLayer =
+        m_document != nullptr ? m_document->inLayerList()
+                              : QVector<next_layer::PlateInLayerPolyline>();
 
-    m_worker = std::thread([this, modelPath, outputPath, objects, plate] {
+    m_worker = std::thread([this, modelPath, outputPath, objects, layerGcodes, inLayer, plate] {
         const auto started = std::chrono::steady_clock::now();
 
         QString engineError;
-        const bool sliced = next_layer::sliceWithHfw(objects, m_configPath, outputPath, engineError);
+        const bool sliced = next_layer::sliceWithHfw(objects, m_configPath, outputPath, engineError,
+                                                    layerGcodes, inLayer);
 
         const double elapsedMs =
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
@@ -354,8 +363,7 @@ void SliceController::sliceAll()
     if (m_worker.joinable())
         m_worker.join();
 
-    const QString markers = unsupportedMarkers(m_document->layerGcodeList(),
-                                              m_document->inLayerList());
+    const QString markers = refusedMarkers(m_document->layerGcodeList());
     if (!markers.isEmpty()) {
         m_status = QStringLiteral("Slice failed: %1").arg(markers);
         emit statusChanged();
@@ -376,6 +384,10 @@ void SliceController::sliceAll()
     }
 
     const int plates = m_document->plateCount();
+    // The timeline and the in-layer strokes belong to the plate, so every plate a
+    // batch run writes carries them.
+    const QVector<next_layer::PlateLayerGcode> layerGcodes = m_document->layerGcodeList();
+    const QVector<next_layer::PlateInLayerPolyline> inLayer = m_document->inLayerList();
     QVector<QVector<next_layer::PlateSliceObject>> perPlate;
     perPlate.reserve(plates);
     int empty = 0;
@@ -399,7 +411,7 @@ void SliceController::sliceAll()
     m_status = QStringLiteral("Slicing %1 plates").arg(plates - empty);
     emit statusChanged();
 
-    m_worker = std::thread([this, run, plates, perPlate] {
+    m_worker = std::thread([this, run, plates, perPlate, layerGcodes, inLayer] {
         const auto started = std::chrono::steady_clock::now();
         QStringList failures;
         int sliced = 0;
@@ -416,7 +428,7 @@ void SliceController::sliceAll()
                 m_tempDir->filePath(QStringLiteral("slice-%1-plate-%2.gcode").arg(run).arg(plate + 1));
             QString engineError;
             const bool ok = next_layer::sliceWithHfw(perPlate[plate], m_configPath, outputPath,
-                                                    engineError);
+                                                    engineError, layerGcodes, inLayer);
             const QFileInfo gcode(outputPath);
             GcodeCounts counts;
             if (gcode.exists() && gcode.size() > 0)

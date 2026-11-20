@@ -54,6 +54,11 @@ int runThreeMfExportSelftest(const QString& model, const QString& configPath,
 // negative volume that the engine ignored would leave the move count unchanged.
 int runMultiToolSelftest(const QString& configPath, const QString& dataDir);
 int runVolumeSettingsSelftest(const QString& configPath, const QString& dataDir);
+
+/// Slices a document through the plate-file transport and checks the G-code came
+/// back with what the document carried: a modifier's settings, the plate's
+/// timeline and an in-layer stroke. CONFIG is a resolved config.
+int runPlateTransportSelftest(const QString& configPath, const QString& dataDir);
 int runCalibrationSelftest(const QString& configPath, const QString& dataDir,
                            const QString& keepGcodePath = {});
 

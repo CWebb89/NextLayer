@@ -1196,6 +1196,18 @@ else
     __ok "volume settings: "(string match -r 'volume settings: .*' -- $vol_out)
 end
 
+# Plate transport gate: the document goes to the engine as its own file, so a
+# modifier's own settings, a timeline marker and a calibration stroke have to come
+# back out of the G-code. Each of those was a capability the window could set and the
+# printer never saw.
+set -l transport_out (env $bin --plate-transport-test $cal_cfg 2>&1 | grep -E '^plate transport:')
+set -l transport_rc $status
+if test $transport_rc -ne 0
+    __bad "plate transport: "(string join '; ' -- $transport_out)
+else
+    __ok (string match -r 'plate transport: .*' -- $transport_out)
+end
+
 # Mesh tools gate: statistics have to be measured from the mesh, hollowing has to
 # leave a shell, and split has to find the two shells a merged object holds.
 set -l mesh_out (env $bin --mesh-tools-test /tmp/nl-check-calibration.json 2>&1 | grep -E '^(statistics|hollow|cut|split|text):')

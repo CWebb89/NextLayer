@@ -59,6 +59,7 @@
 #include <QFontDatabase>
 #include <QFontMetrics>
 
+#include <optional>
 #include <string_view>
 
 #include <QtWebEngineQuick/QtWebEngineQuick>
@@ -799,7 +800,9 @@ int sliceToFile(const QString& model, const QString& config, const QString& outp
     object.mesh = *loaded;
 
     QString error;
-    const bool ok = next_layer::sliceWithHfw({object}, config, output, error);
+    // A file named on the command line is not a placed plate: it is one model with
+    // no document around it, so the writer centres it on the bed the config names.
+    const bool ok = next_layer::sliceWithHfw({object}, config, output, error, {}, {}, true);
     if (!ok) {
         std::fprintf(stderr, "slice failed: %s\n", error.toUtf8().constData());
         return 1;
@@ -992,6 +995,10 @@ int main(int argc, char* argv[])
     const QCommandLineOption update_install_option("update-install",
         "Install the release --update found. The prefix comes from NEXT_LAYER_UPDATE_ROOT, and "
         "defaults to the running executable's directory.");
+    const QCommandLineOption plate_transport_option("plate-transport-test",
+        "Slice a document through the plate-file transport and check a modifier's settings, a "
+        "timeline marker and an in-layer stroke reach the G-code; CONFIG is a resolved config.",
+        "CONFIG");
     const QCommandLineOption mesh_tools_option("mesh-tools-test",
         "Measure a cube, hollow it, then merge two boxes and split the result back into two "
         "objects; CONFIG is a resolved config.", "CONFIG");
@@ -1077,7 +1084,7 @@ int main(int argc, char* argv[])
                        preset_dialog_option,
                        hover_test_option, panel_left_option, selftest_option, slice_all_option, plate_tools_option, slice_features_option,
                        project_version_test_option, project_test_option, export_project_option, mesh_tools_option, update_option,
-                       update_install_option, multi_tool_option, print_host_test_option, print_host_start_option, apply_offsets_option, volume_settings_option, calibration_test_option, shape_test_option, keep_gcode_option, scene_selftest_option, preview_stats_option, vgcode_shot_option,
+                       plate_transport_option, update_install_option, multi_tool_option, print_host_test_option, print_host_start_option, apply_offsets_option, volume_settings_option, calibration_test_option, shape_test_option, keep_gcode_option, scene_selftest_option, preview_stats_option, vgcode_shot_option,
                        dump_presets_option, dump_presets_json_option, dump_fonts_option, dump_icons_option, dump_palette_option, dump_object_settings_option, dump_foreign_settings_option, preset_printer_option, preset_process_option, preset_filament_option, preset_filaments_option,
                        set_option, add_printer_option, save_preset_option, rename_preset_option,
                        delete_preset_option, export_preset_option, import_preset_option,
@@ -1294,6 +1301,10 @@ int main(int argc, char* argv[])
                                                     parser.value(slice_features_option),
                                                     QString::fromStdString(dataDir()));
     }
+
+    if (parser.isSet(plate_transport_option))
+        return next_layer::runPlateTransportSelftest(parser.value(plate_transport_option),
+                                                    QString::fromStdString(dataDir()));
 
     if (parser.isSet(volume_settings_option))
         return next_layer::runVolumeSettingsSelftest(parser.value(volume_settings_option),

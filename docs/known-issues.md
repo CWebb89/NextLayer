@@ -13,15 +13,21 @@ complete inventory, this is the part you need before you start a print.
   consequence was a print: a plate asking for supports everywhere sliced with none.
   All of them now convert, measured at 0 unconverted of 360 keys; the two gates that
   covered it (supports and arcs) pass.
-- **No G-code carries a Z-height marker or an in-layer path.** HFW reads the
-  objects, their own settings and the plate's config; a custom G-code snippet, a
-  pause, a colour change at a Z height, or a calibration label drawn inside a layer
-  has no channel into it. A plate carrying one is refused with a message rather than
-  sliced without it, so calibration prints do not work until HFW grows the feature.
-- **The plate is not arranged.** HFW is told `--no-arrange` and keeps every model
-  where it is, so a model opened from the command line is sliced where its own
-  coordinates put it rather than centred on the bed. Arrange, auto-orient and
-  place-on-face still come from the C++ engine's geometry and are unaffected.
+- **The plate goes to HFW as a plate file, and paint is the one thing still left
+  behind.** `SliceController` writes HFW's own project document and slices it with
+  `hfw-cli --plate`, so per-object settings, volumes with their kinds and modifier
+  settings, per-object layer heights, the timeline markers and the in-layer
+  calibration strokes all reach the file as of 2026-11-20. **Painted facets do not**:
+  the app's paint lives in the engine's split-triangle form and has no conversion
+  into HFW's per-facet states yet, so support and seam paint still print as if the
+  part were unpainted. A plate that changes tool is refused with a message rather
+  than sliced on one extruder.
+- **A model named on the command line is placed differently from a plate.** A plate
+  file prints where the document put it, so `--plate` keeps positions. The single
+  model path (`--slice`, `--selftest-slice`) has no document, so it asks HFW to
+  centre the model on the bed (`--place`); that is the same placement the C++
+  engine's arranger would have picked. Arrange, auto-orient and place-on-face still
+  come from the C++ engine's geometry and are unaffected.
 - **`print_sequence = by object` is now refused unless the profile states the
   toolhead.** HFW requires `gantry_height` (as before) and
   `extruder_clearance_radius` (new, 2026-11-20): every object must fit under the

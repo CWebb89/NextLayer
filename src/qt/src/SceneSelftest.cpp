@@ -3,6 +3,8 @@
 
 #include "SceneSelftest.hpp"
 
+#include "HfwEngine.hpp"
+
 #include "Calibration.hpp"
 
 #include "PlateDocument.hpp"
@@ -975,17 +977,8 @@ struct SliceResult
 /// perimeters around it, so the move count goes up while the amount of plastic
 /// goes down. The engine writes relative extrusion (M83), so the E values add up
 /// directly.
-bool slicePlate(PlateDocument& document, const QString& configPath, SliceResult& result)
+bool readSlice(const QString& gcode, SliceResult& result)
 {
-    const auto directoryScratch = next_layer::makeScratchDir();
-    QTemporaryDir& directory = *directoryScratch;
-    const QString gcode = directory.filePath(QStringLiteral("shapes.gcode"));
-    QString error;
-    if (!next_layer::SliceRuntime::instance().slicePlate(document.sliceObjects(), configPath,
-                                                         gcode, error)) {
-        std::fprintf(stderr, "%s\n", qPrintable(error));
-        return false;
-    }
     QFile file(gcode);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
         return false;
@@ -1007,6 +1000,39 @@ bool slicePlate(PlateDocument& document, const QString& configPath, SliceResult&
             result.extruded += value;
     }
     return result.layers > 0;
+}
+
+/// The first layer plane a G-code file visited, or 0 when it printed none.
+double firstLayerZ(const QString& gcode)
+{
+    QFile file(gcode);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return 0.0;
+    while (!file.atEnd()) {
+        const QByteArray line = file.readLine();
+        if (!line.startsWith("G1 Z"))
+            continue;
+        const QByteArray rest = line.mid(4).trimmed();
+        const int end = rest.indexOf(' ');
+        const double z = rest.left(end < 0 ? rest.size() : end).toDouble();
+        if (z > 0.0)
+            return z;
+    }
+    return 0.0;
+}
+
+bool slicePlate(PlateDocument& document, const QString& configPath, SliceResult& result)
+{
+    const auto directoryScratch = next_layer::makeScratchDir();
+    QTemporaryDir& directory = *directoryScratch;
+    const QString gcode = directory.filePath(QStringLiteral("shapes.gcode"));
+    QString error;
+    if (!next_layer::SliceRuntime::instance().slicePlate(document.sliceObjects(), configPath,
+                                                         gcode, error)) {
+        std::fprintf(stderr, "%s\n", qPrintable(error));
+        return false;
+    }
+    return readSlice(gcode, result);
 }
 
 }
@@ -1237,6 +1263,130 @@ int runVolumeSettingsSelftest(const QString& configPath, const QString& dataDir)
 
     std::printf("volume settings: %.1f -> %.1f -> %.1f mm of filament\n", untouched.extruded,
                 dense.extruded, restored.extruded);
+    return 0;
+}
+
+// The plate transport, end to end: the document goes to the engine as its own
+// file, so a modifier's settings, the plate's timeline and a calibration stroke
+// have to come back out of the G-code. Anything that fails here is a capability
+// the window can set and the printer never sees.
+int runPlateTransportSelftest(const QString& configPath, const QString& dataDir)
+{
+    Q_UNUSED(dataDir)
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+
+    QVector2D centre;
+    QVector2D size;
+    if (!bedOfConfig(configPath, centre, size)) {
+        std::fprintf(stderr, "cannot read the bed out of %s\n", qPrintable(configPath));
+        return 2;
+    }
+
+    double layerHeight = 0.2;
+    {
+        std::ifstream file(configPath.toStdString());
+        nlohmann::ordered_json config;
+        file >> config;
+        layerHeight = config["configuration"]["print_settings"].value("layer_height", layerHeight);
+    }
+
+    PlateDocument document(centre, size);
+    const int box = document.addShape(QStringLiteral("box"), 40.0, 40.0, 20.0);
+    if (box < 0) {
+        std::fprintf(stderr, "%s\n", qPrintable(document.error()));
+        return 1;
+    }
+
+    const auto directoryScratch = next_layer::makeScratchDir();
+    QTemporaryDir& directory = *directoryScratch;
+    int run = 0;
+    QString lastGcode;
+    auto transportSlice = [&](PlateDocument& plate, SliceResult& result) -> bool {
+        const QString gcode = directory.filePath(QStringLiteral("transport-%1.gcode").arg(++run));
+        QString error;
+        if (!next_layer::sliceWithHfw(plate.sliceObjects(), configPath, gcode, error,
+                                     plate.layerGcodeList(), plate.inLayerList())) {
+            std::fprintf(stderr, "%s\n", qPrintable(error));
+            return false;
+        }
+        lastGcode = gcode;
+        return readSlice(gcode, result);
+    };
+
+    SliceResult plain;
+    if (!transportSlice(document, plain))
+        return 1;
+
+    const int volume = document.addVolume(box, QStringLiteral("box"), QStringLiteral("modifier"),
+                                          20.0, 20.0, 10.0);
+    if (volume <= 0) {
+        std::fprintf(stderr, "%s\n", qPrintable(document.error()));
+        return 1;
+    }
+    const PlateDocument::Object* part = document.object(box);
+    if (!document.setVolumePosition(
+            box, volume,
+            QVector3D((part->localMin.x() + part->localMax.x()) * 0.5f,
+                      (part->localMin.y() + part->localMax.y()) * 0.5f, part->localMin.z()))) {
+        std::fprintf(stderr, "the modifier volume could not be moved into the box\n");
+        return 1;
+    }
+    QVariantMap density;
+    density.insert(QStringLiteral("is_percent"), true);
+    density.insert(QStringLiteral("value"), 60);
+    if (!document.setVolumeSetting(box, volume, QStringLiteral("fill_density"), density)) {
+        std::fprintf(stderr, "the modifier refused a fill_density override\n");
+        return 1;
+    }
+
+    SliceResult dense;
+    if (!transportSlice(document, dense))
+        return 1;
+    if (dense.extruded <= plain.extruded * 1.02) {
+        std::fprintf(stderr,
+                     "a modifier at 60 %% infill printed %.1f mm against %.1f mm without it: the "
+                     "volume never reached the engine through the plate file\n",
+                     dense.extruded, plain.extruded);
+        return 1;
+    }
+
+    // A marker and a stroke belong to a layer plane, and only the engine knows where
+    // the planes fell: the profile's first layer height and any per-object stepping
+    // both move them. The first Z the plain slice visited is one of them.
+    const double markerZ = firstLayerZ(lastGcode);
+    if (!(markerZ > 0.0)) {
+        std::fprintf(stderr, "the plain slice printed no layer to put a marker on\n");
+        return 1;
+    }
+    if (!document.addLayerGcode(markerZ, QStringLiteral("gcode"),
+                                QStringLiteral("M117 plate transport"))) {
+        std::fprintf(stderr, "the plate refused a timeline marker\n");
+        return 1;
+    }
+    document.addInLayerPolyline(markerZ, {QPointF(centre.x(), centre.y()),
+                                          QPointF(centre.x() + 10.0, centre.y())},
+                               0.5, layerHeight, 20.0, QStringLiteral("M104 S240"));
+
+    SliceResult carried;
+    if (!transportSlice(document, carried))
+        return 1;
+
+    QFile gcode(lastGcode);
+    if (!gcode.open(QIODevice::ReadOnly | QIODevice::Text))
+        return 1;
+    const QString text = QString::fromUtf8(gcode.readAll());
+    if (!text.contains(QStringLiteral("M117 plate transport"))) {
+        std::fprintf(stderr, "the plate's marker is not in the G-code\n");
+        return 1;
+    }
+    if (!text.contains(QStringLiteral(";TYPE:Custom")) || !text.contains(QStringLiteral("M104 S240"))) {
+        std::fprintf(stderr, "the plate's in-layer stroke is not in the G-code\n");
+        return 1;
+    }
+
+    std::printf("plate transport: %.1f mm plain, %.1f mm through the modifier, marker and stroke "
+                "in the file\n",
+                plain.extruded, dense.extruded);
     return 0;
 }
 
