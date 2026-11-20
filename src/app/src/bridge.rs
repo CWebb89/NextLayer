@@ -109,6 +109,23 @@ mod ffi {
 
         /// The version this build reports.
         fn update_current_version() -> String;
+
+        /// The foreign-settings renames, as source then target, in table order.
+        fn foreign_setting_pairs() -> Vec<String>;
+
+        /// This engine's name and value for a foreign setting, or nothing when the
+        /// name is listed as having no counterpart here.
+        fn translate_foreign_setting(key: &str, value: &str) -> Vec<String>;
+
+        /// The engine name a foreign key maps to, itself when there is no rename.
+        fn foreign_target_for(source: &str) -> String;
+
+        /// The first source name that maps to an engine key, empty when none does.
+        fn canonical_foreign_source(engine_key: &str) -> String;
+
+        /// The foreign name and value a setting is written under, or nothing when
+        /// that slicer has neither.
+        fn foreign_name_for(engine_key: &str, engine_value: &str) -> Vec<String>;
     }
 }
 
@@ -235,4 +252,31 @@ fn embed_plate_thumbnails(
         png_primary.as_bytes(),
         png_secondary.as_bytes(),
     )
+}
+
+fn foreign_setting_pairs() -> Vec<String> {
+    crate::ForeignSettings::foreign_setting_pairs()
+}
+
+fn translate_foreign_setting(key: &str, value: &str) -> Vec<String> {
+    flatten(crate::ForeignSettings::translate_foreign_setting(key, value))
+}
+
+fn foreign_target_for(source: &str) -> String {
+    crate::ForeignSettings::foreign_target_for(source)
+}
+
+fn canonical_foreign_source(engine_key: &str) -> String {
+    crate::ForeignSettings::canonical_foreign_source(engine_key)
+}
+
+fn foreign_name_for(engine_key: &str, engine_value: &str) -> Vec<String> {
+    flatten(crate::ForeignSettings::foreign_name_for(engine_key, engine_value))
+}
+
+fn flatten(pair: Option<(String, String)>) -> Vec<String> {
+    match pair {
+        Some((first, second)) => vec![first, second],
+        None => Vec::new(),
+    }
 }

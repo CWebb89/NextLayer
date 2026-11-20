@@ -58,6 +58,8 @@ const BAKED_VERSION: &str = env!("NEXT_LAYER_VERSION");
 pub use crate::Updater::UpdaterRust;
 
 #[allow(non_snake_case)]
+pub mod ForeignSettings;
+#[allow(non_snake_case)]
 pub mod GcodeBrand;
 #[allow(non_snake_case)]
 pub mod Palette;

@@ -35,7 +35,6 @@ add_executable(next-layer-qt
     src/Calibration.hpp
     src/ConfigBoxJson.cpp
     src/ConfigBoxJson.hpp
-    src/ForeignSettings.cpp
     src/ForeignSettings.hpp
     src/PlateDocument.cpp
     src/PlateDocument.hpp

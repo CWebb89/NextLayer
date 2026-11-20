@@ -7,7 +7,6 @@ ConfigBoxJson.hpp
 Cut.cpp
 Cut.hpp
 FeatureColors.hpp
-ForeignSettings.cpp
 ForeignSettings.hpp
 GcodeBrand.hpp
 GcodeView.cpp

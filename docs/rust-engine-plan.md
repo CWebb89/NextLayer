@@ -389,7 +389,13 @@ already Rust and out of `src/qt/src`: `Resources`, `GcodeBrand`, `Scratch`,
 `PlateThumbnail` followed them on 2026-11-21: its `.cpp` is gone and the
 `; thumbnail` block writer, the base64 encoder and the streamed file rewrite are
 `src/app/src/PlateThumbnail.rs`, with the `QImage` scaling left in the header
-because a `QImage` is Qt's. They proved the shape every later port reuses — one
-`#[cxx::bridge]` in `src/app/src/bridge.rs`, the C++ header kept as inline Qt
-adapters, the `.cpp` deleted — and `tools/rust-port` now reads **5 of 68** backend
-files replaced, 10 Rust files, 2,417 lines.
+because a `QImage` is Qt's. `ForeignSettings` landed the same day and is the
+bigger win of the two: the 109-rename dialect table, its value maps and all four
+lookups are `src/app/src/ForeignSettings.rs`, and the choice of which foreign
+spelling a value goes out under is now table order rather than `QHash` iteration
+order — which was seeded per process, so the old writer's choice was not stable
+across runs even though its own comment claimed it was. `--dump-foreign-settings`
+still prints the same 109 rows in the same order. They proved the shape every
+later port reuses — one `#[cxx::bridge]` in `src/app/src/bridge.rs`, the C++ header
+kept as inline Qt adapters, the `.cpp` deleted — and `tools/rust-port` now reads
+**6 of 67** backend files replaced, 11 Rust files, 2,893 lines.
