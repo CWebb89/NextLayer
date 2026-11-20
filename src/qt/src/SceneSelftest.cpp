@@ -1396,6 +1396,111 @@ int runPlateTransportSelftest(const QString& configPath, const QString& dataDir)
     return 0;
 }
 
+/// Hands a plate to the engine and reads it back: a document is only portable if
+/// every part of it can be returned. The knob asserts on what came back, so a
+/// field the engine holds but cannot give up is a failure rather than a quiet gap.
+int runPlateReadbackSelftest(const QString& configPath, const QString& dataDir)
+{
+    Q_UNUSED(dataDir)
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+
+    QVector2D centre;
+    QVector2D size;
+    if (!bedOfConfig(configPath, centre, size)) {
+        std::fprintf(stderr, "cannot read the bed out of %s\n", qPrintable(configPath));
+        return 2;
+    }
+
+    double layerHeight = 0.2;
+    {
+        std::ifstream file(configPath.toStdString());
+        nlohmann::ordered_json config;
+        file >> config;
+        layerHeight = config["configuration"]["print_settings"].value("layer_height", layerHeight);
+    }
+
+    PlateDocument document(centre, size);
+    const int box = document.addShape(QStringLiteral("box"), 30.0, 30.0, 20.0);
+    if (box < 0) {
+        std::fprintf(stderr, "%s\n", qPrintable(document.error()));
+        return 1;
+    }
+    if (!document.renameObject(box, QStringLiteral("read back"))) {
+        std::fprintf(stderr, "%s\n", qPrintable(document.error()));
+        return 1;
+    }
+    QVariantMap density;
+    density.insert(QStringLiteral("is_percent"), true);
+    density.insert(QStringLiteral("value"), 40);
+    if (!document.setObjectSetting(box, QStringLiteral("fill_density"), density)) {
+        std::fprintf(stderr, "the object refused a fill_density override\n");
+        return 1;
+    }
+    if (!document.setLayerHeightRange(box, 0.0, 20.0, 0.3)) {
+        std::fprintf(stderr, "the object refused a layer height profile: %s\n",
+                     qPrintable(document.error()));
+        return 1;
+    }
+    const int volume = document.addVolume(box, QStringLiteral("box"), QStringLiteral("modifier"),
+                                          10.0, 10.0, 10.0);
+    if (volume <= 0) {
+        std::fprintf(stderr, "the object refused a modifier volume: %s\n",
+                     qPrintable(document.error()));
+        return 1;
+    }
+    if (!document.setVolumeSetting(box, volume, QStringLiteral("fill_density"), density)) {
+        std::fprintf(stderr, "the modifier refused a fill_density override\n");
+        return 1;
+    }
+    const int second = document.addShape(QStringLiteral("cylinder"), 15.0, 15.0, 10.0);
+    if (second < 0) {
+        std::fprintf(stderr, "%s\n", qPrintable(document.error()));
+        return 1;
+    }
+
+    // Paint, because it is the one channel the engine holds per triangle: a facet
+    // painted as a support enforcer has to come back as the same state on the same
+    // triangle, not as a state somewhere else.
+    int enforcers = 0;
+    if (const PlateDocument::Object* part = document.object(second)) {
+        const Slic3r::Domain::Transform3d trafo = part->trafo.get_matrix();
+        for (int facet = 0; facet < int(part->mesh->its.indices.size()); ++facet) {
+            const auto& face = part->mesh->its.indices[size_t(facet)];
+            const Vec3d a = part->mesh->its.vertices[face[0]].cast<double>();
+            const Vec3d b = part->mesh->its.vertices[face[1]].cast<double>();
+            const Vec3d c = part->mesh->its.vertices[face[2]].cast<double>();
+            const Vec3d normal = (trafo.linear() * (b - a).cross(c - a)).normalized();
+            const Vec3d centre3 = trafo * ((a + b + c) / 3.0);
+            if (normal.z() < -0.9) {
+                const Vec3d eye = centre3 + normal * 100.0;
+                enforcers += document.paintObject(second, QStringLiteral("supports"),
+                                                 QVector3D(centre3.x(), centre3.y(), centre3.z()),
+                                                 QVector3D(eye.x(), eye.y(), eye.z()),
+                                                 QStringLiteral("enforce"), 2,
+                                                 facet);
+            }
+        }
+    }
+    if (enforcers == 0) {
+        std::fprintf(stderr, "the cylinder had no downward facet to paint\n");
+        return 1;
+    }
+    document.addLayerGcode(1.0, QStringLiteral("gcode"), QStringLiteral("M117 read back"));
+    document.addInLayerPolyline(1.0, {QPointF(centre.x(), centre.y()),
+                                      QPointF(centre.x() + 8.0, centre.y())},
+                                0.45, layerHeight, 20.0, QStringLiteral("M104 S235"));
+
+    QString report;
+    QString error;
+    if (!next_layer::roundTripPlate(document.sliceObjects(), document.layerGcodeList(),
+                                    document.inLayerList(), report, error)) {
+        std::fprintf(stderr, "%s\n", qPrintable(error));
+        return 1;
+    }
+    std::printf("plate read back: %s\n", qPrintable(report));
+    return 0;
+}
+
 int runMeshToolsSelftest(const QString& configPath, const QString& dataDir)
 {
     Q_UNUSED(dataDir)

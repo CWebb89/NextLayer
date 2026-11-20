@@ -59,6 +59,11 @@ int runVolumeSettingsSelftest(const QString& configPath, const QString& dataDir)
 /// back with what the document carried: a modifier's settings, the plate's
 /// timeline and an in-layer stroke. CONFIG is a resolved config.
 int runPlateTransportSelftest(const QString& configPath, const QString& dataDir);
+
+/// Hands a document to the engine, reads every part of it back through the ABI and
+/// rebuilds it from what came back, which has to be the same document byte for
+/// byte. CONFIG is a resolved config.
+int runPlateReadbackSelftest(const QString& configPath, const QString& dataDir);
 int runCalibrationSelftest(const QString& configPath, const QString& dataDir,
                            const QString& keepGcodePath = {});
 

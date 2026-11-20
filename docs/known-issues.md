@@ -23,6 +23,11 @@ complete inventory, this is the part you need before you start a print.
   area. An edge painted across a facet paints the whole facet, and a facet grazed at
   one corner keeps none. Tool paint is not carried, and a plate that changes tool is
   refused with a message rather than sliced on one extruder.
+- **A volume's own placement is baked in, not carried.** HFW's plate volume is
+  geometry in its object's frame with no transform of its own, so the panel's
+  position and scale for a modifier are applied here, to the mesh, before the plate
+  is written. The slice is right; the plate cannot hand the placement back, which is
+  the one field the read-back surface does not cover.
 - **A model named on the command line is placed differently from a plate.** A plate
   file prints where the document put it, so `--plate` keeps positions. The single
   model path (`--slice`, `--selftest-slice`) has no document, so it asks HFW to

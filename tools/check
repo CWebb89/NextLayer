@@ -1209,6 +1209,22 @@ else
     __ok (string match -r 'plate transport: .*' -- $transport_out)
 end
 
+# Plate read-back gate: emptying the engine's copy has to be impossible without
+# noticing, so the document goes in, every field comes back through the ABI and a
+# second plate is built from what was read. The two documents must be identical.
+set -l readback_out (env $bin --plate-readback-test /tmp/nl-check-calibration.json 2>&1 | grep -E '^plate read back:')
+set -l readback_rc $status
+set -l readback_report (string match -r 'plate read back: ([0-9]+) object\(s\), ([0-9]+) volume\(s\), ([0-9]+) setting\(s\), ([0-9]+) painted facet\(s\)' -- $readback_out)
+if test $readback_rc -ne 0
+    __bad "plate read back: "(string join '; ' -- $readback_out)
+else if test (count $readback_report) -lt 5
+    __bad "plate read back: the selftest printed no counts: "(string join '; ' -- $readback_out)
+else if test $readback_report[2] -lt 2 -o $readback_report[3] -lt 1 -o $readback_report[4] -lt 1
+    __bad "plate read back: $readback_report[2] object(s) with $readback_report[3] volume(s) and $readback_report[4] setting(s): the document did not reach the engine at all"
+else
+    __ok (string match -r 'plate read back: .*' -- $readback_out)
+end
+
 # Mesh tools gate: statistics have to be measured from the mesh, hollowing has to
 # leave a shell, and split has to find the two shells a merged object holds.
 set -l mesh_out (env $bin --mesh-tools-test /tmp/nl-check-calibration.json 2>&1 | grep -E '^(statistics|hollow|cut|split|text):')

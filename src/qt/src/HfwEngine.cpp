@@ -400,6 +400,258 @@ bool fillPlate(HfwPlate* plate, const QVector<PlateSliceObject>& objects,
     return setMarkers(plate, layerGcodes, error) && setInLayer(plate, inLayer, error);
 }
 
+/// One volume of a plate, as the ABI hands it back: what it does, what its region
+/// prints with, and the geometry it covers.
+struct ReadVolume
+{
+    int kind = 0;
+    QByteArray settingsJson;
+    QVector<double> vertices;
+    QVector<uint32_t> indices;
+};
+
+/// One object of a plate, as the ABI hands it back.
+struct ReadObject
+{
+    quint64 id = 0;
+    QString name;
+    HfwTransform placement = HfwTransform{};
+    QByteArray settingsJson;
+    QVector<double> vertices;
+    QVector<uint32_t> indices;
+    QByteArray supportPaint;
+    QByteArray seamPaint;
+    QVector<ReadVolume> volumes;
+    QVector<double> layerHeights;
+};
+
+/// One paint channel, read through the ABI. Empty when the mesh carries none for
+/// that channel, which is the state an unpainted object is in.
+bool readPaint(HfwMesh* mesh, int channel, QByteArray& states, QString& error)
+{
+    const auto triangles = qsizetype(hfw_mesh_index_count(mesh));
+    QByteArray buffer(triangles, '\0');
+    const auto count = hfw_mesh_paint_get(mesh, channel,
+                                          reinterpret_cast<uint8_t*>(buffer.data()),
+                                          size_t(triangles));
+    if (count < 0) {
+        error = QStringLiteral("reading paint: %1").arg(engineError());
+        return false;
+    }
+    states = count == triangles ? buffer : QByteArray();
+    return true;
+}
+
+/// One mesh's arrays, read through the ABI.
+bool readMesh(HfwMesh* mesh, QVector<double>& vertices, QVector<uint32_t>& indices,
+              QString& error)
+{
+    const size_t points = hfw_mesh_vertex_count(mesh);
+    const size_t triangles = hfw_mesh_index_count(mesh);
+    vertices.resize(qsizetype(points) * 3);
+    indices.resize(qsizetype(triangles) * 3);
+    if (hfw_mesh_vertices(mesh, vertices.data(), points) != 0
+        || hfw_mesh_indices(mesh, indices.data(), triangles) != 0) {
+        error = QStringLiteral("reading geometry: %1").arg(engineError());
+        return false;
+    }
+    return true;
+}
+
+/// Reads every object of a plate back through the ABI.
+bool readPlate(HfwPlate* plate, QVector<ReadObject>& objects, QString& error)
+{
+    QVector<quint64> ids(hfw_plate_object_count(plate));
+    static_assert(sizeof(quint64) == sizeof(uint64_t), "a uint64_t is an object id");
+    if (hfw_plate_object_ids(plate, reinterpret_cast<uint64_t*>(ids.data()), size_t(ids.size()))
+        != size_t(ids.size())) {
+        error = QStringLiteral("the plate would not list its objects");
+        return false;
+    }
+    for (const quint64 id : ids) {
+        ReadObject object;
+        object.id = id;
+        char name[256] = {};
+        const auto length = hfw_plate_object_name_get(plate, id, name, sizeof(name));
+        if (length < 0 || length >= qsizetype(sizeof(name))) {
+            error = QStringLiteral("object %1: %2").arg(id).arg(engineError());
+            return false;
+        }
+        object.name = QString::fromUtf8(name, int(length));
+        if (hfw_plate_object_placement_get(plate, id, &object.placement) != 0) {
+            error = QStringLiteral("%1: %2").arg(object.name, engineError());
+            return false;
+        }
+        char* settings = hfw_plate_object_settings_json(plate, id);
+        if (settings == nullptr) {
+            error = QStringLiteral("%1: %2").arg(object.name, engineError());
+            return false;
+        }
+        object.settingsJson = QByteArray(settings);
+        hfw_string_free(settings);
+
+        HfwMesh* mesh = hfw_plate_object_mesh(plate, id);
+        if (mesh == nullptr) {
+            error = QStringLiteral("%1: %2").arg(object.name, engineError());
+            return false;
+        }
+        const bool read = readMesh(mesh, object.vertices, object.indices, error)
+                          && readPaint(mesh, HFW_PAINT_SUPPORT, object.supportPaint, error)
+                          && readPaint(mesh, HFW_PAINT_SEAM, object.seamPaint, error);
+        hfw_mesh_free(mesh);
+        if (!read)
+            return false;
+
+        const qsizetype pairs = hfw_plate_object_layer_heights_get(plate, id, nullptr, 0);
+        if (pairs < 0) {
+            error = QStringLiteral("%1: %2").arg(object.name, engineError());
+            return false;
+        }
+        object.layerHeights.resize(pairs * 2);
+        if (pairs > 0
+            && hfw_plate_object_layer_heights_get(plate, id, object.layerHeights.data(),
+                                                  size_t(pairs))
+                != pairs) {
+            error = QStringLiteral("%1: %2").arg(object.name, engineError());
+            return false;
+        }
+
+        const auto volumes = hfw_plate_object_volume_count(plate, id);
+        for (auto index = 0; index < volumes; ++index) {
+            ReadVolume volume;
+            if (hfw_plate_object_volume_kind(plate, id, size_t(index), &volume.kind) != 0) {
+                error = QStringLiteral("%1: %2").arg(object.name, engineError());
+                return false;
+            }
+            char* volumeSettings = hfw_plate_object_volume_settings_json(plate, id, size_t(index));
+            HfwMesh* volumeMesh = hfw_plate_object_volume_mesh(plate, id, size_t(index));
+            if (volumeSettings == nullptr || volumeMesh == nullptr) {
+                error = QStringLiteral("%1 volume %2: %3")
+                            .arg(object.name)
+                            .arg(index)
+                            .arg(engineError());
+                return false;
+            }
+            volume.settingsJson = QByteArray(volumeSettings);
+            hfw_string_free(volumeSettings);
+            QByteArray unused;
+            const bool read = readMesh(volumeMesh, volume.vertices, volume.indices, error);
+            hfw_mesh_free(volumeMesh);
+            if (!read)
+                return false;
+            object.volumes.append(volume);
+        }
+        objects.append(object);
+    }
+    return true;
+}
+
+/// Builds a plate out of nothing but what readPlate handed back, which is the
+/// document the engine has to be able to reconstruct.
+bool rebuildPlate(const QVector<ReadObject>& objects, HfwPlate* into, QString& error)
+{
+    for (const ReadObject& object : objects) {
+        HfwMesh* mesh =
+            hfw_mesh_new(object.vertices.constData(), size_t(object.vertices.size() / 3),
+                         object.indices.constData(), size_t(object.indices.size() / 3));
+        if (mesh == nullptr) {
+            error = QStringLiteral("%1: %2").arg(object.name, engineError());
+            return false;
+        }
+        const quint64 id = hfw_plate_add(into, mesh);
+        hfw_mesh_free(mesh);
+        if (id == 0) {
+            error = QStringLiteral("%1: %2").arg(object.name, engineError());
+            return false;
+        }
+        const QByteArray name = object.name.toUtf8();
+        hfw_plate_object_name(into, id, name.constData());
+        if (hfw_plate_object_placement(into, id, object.placement) != 0) {
+            error = QStringLiteral("%1: %2").arg(object.name, engineError());
+            return false;
+        }
+        const QJsonObject settings = QJsonDocument::fromJson(object.settingsJson).object();
+        for (auto entry = settings.constBegin(); entry != settings.constEnd(); ++entry) {
+            const QByteArray name = entry.key().toUtf8();
+            const QByteArray value = entry.value().toString().toUtf8();
+            if (hfw_plate_object_set(into, id, name.constData(), value.constData()) != 0) {
+                error = QStringLiteral("%1: %2").arg(object.name, engineError());
+                return false;
+            }
+        }
+        for (const auto& [channel, states] :
+             {qMakePair(int(HFW_PAINT_SUPPORT), object.supportPaint),
+              qMakePair(int(HFW_PAINT_SEAM), object.seamPaint)}) {
+            if (states.isEmpty())
+                continue;
+            if (hfw_plate_object_paint(into, id, channel,
+                                       reinterpret_cast<const uint8_t*>(states.constData()),
+                                       size_t(states.size()))
+                != 0) {
+                error = QStringLiteral("%1: %2").arg(object.name, engineError());
+                return false;
+            }
+        }
+        if (!object.layerHeights.isEmpty()
+            && hfw_plate_object_layer_heights(into, id, object.layerHeights.constData(),
+                                              size_t(object.layerHeights.size() / 2))
+                != 0) {
+            error = QStringLiteral("%1: %2").arg(object.name, engineError());
+            return false;
+        }
+        for (auto index = 0; index < object.volumes.size(); ++index) {
+            const ReadVolume& volume = object.volumes.at(index);
+            HfwMesh* copy = hfw_mesh_new(
+                volume.vertices.constData(), size_t(volume.vertices.size() / 3),
+                volume.indices.constData(), size_t(volume.indices.size() / 3));
+            if (copy == nullptr) {
+                error = QStringLiteral("%1 volume %2: %3")
+                            .arg(object.name)
+                            .arg(index)
+                            .arg(engineError());
+                return false;
+            }
+            const bool added = hfw_plate_object_add_volume(into, id, volume.kind, copy) == 0;
+            hfw_mesh_free(copy);
+            if (!added) {
+                error = QStringLiteral("%1 volume %2: %3")
+                            .arg(object.name)
+                            .arg(index)
+                            .arg(engineError());
+                return false;
+            }
+            const QJsonObject volumeSettings = QJsonDocument::fromJson(volume.settingsJson).object();
+            for (auto entry = volumeSettings.constBegin(); entry != volumeSettings.constEnd();
+                 ++entry) {
+                const QByteArray name = entry.key().toUtf8();
+                const QByteArray value = entry.value().toString().toUtf8();
+                if (hfw_plate_volume_set(into, id, size_t(index), name.constData(),
+                                         value.constData())
+                    != 0) {
+                    error = QStringLiteral("%1 volume %2: %3")
+                                .arg(object.name)
+                                .arg(index)
+                                .arg(engineError());
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
+/// The project bytes a plate writes, for comparing two documents exactly.
+QByteArray projectBytes(HfwPlate* plate)
+{
+    size_t length = 0;
+    char* bytes = hfw_plate_project_bytes(plate, &length);
+    if (bytes == nullptr)
+        return {};
+    const QByteArray copy(bytes, qsizetype(length));
+    hfw_string_free(bytes);
+    return copy;
+}
+
 } // namespace
 
 QString hfwBinary()
@@ -433,6 +685,73 @@ QString hfwUnavailableReason()
         return QStringLiteral("NEXT_LAYER_HFW points at a file that is not there");
     return QStringLiteral("hfw-cli was not found beside the application, on PATH or in the "
                           "development build tree; set NEXT_LAYER_HFW to its path");
+}
+
+/// Reads a plate back and rebuilds it, to prove a document survives being handed
+/// to the engine.
+bool roundTripPlate(const QVector<PlateSliceObject>& objects,
+                    const QVector<PlateLayerGcode>& layerGcodes,
+                    const QVector<PlateInLayerPolyline>& inLayer, QString& report,
+                    QString& error)
+{
+    if (objects.isEmpty()) {
+        error = QStringLiteral("no object on the plate");
+        return false;
+    }
+    PlateHandle original;
+    if (original.get() == nullptr) {
+        error = QStringLiteral("the engine could not create a plate: %1").arg(engineError());
+        return false;
+    }
+    if (!fillPlate(original.get(), objects, layerGcodes, inLayer, error))
+        return false;
+
+    QVector<ReadObject> read;
+    if (!readPlate(original.get(), read, error))
+        return false;
+    PlateHandle rebuilt;
+    if (rebuilt.get() == nullptr) {
+        error = QStringLiteral("the engine could not create a plate: %1").arg(engineError());
+        return false;
+    }
+    if (!rebuildPlate(read, rebuilt.get(), error))
+        return false;
+    if (!setMarkers(rebuilt.get(), layerGcodes, error)
+        || !setInLayer(rebuilt.get(), inLayer, error))
+        return false;
+
+    qsizetype volumes = 0;
+    qsizetype painted = 0;
+    qsizetype settings = 0;
+    for (const ReadObject& object : read) {
+        volumes += object.volumes.size();
+        painted += object.supportPaint.count('\1') + object.seamPaint.count('\1');
+        settings += QJsonDocument::fromJson(object.settingsJson).object().size();
+    }
+
+    const QByteArray first = projectBytes(original.get());
+    const QByteArray second = projectBytes(rebuilt.get());
+    if (first.isEmpty() || second.isEmpty()) {
+        error = QStringLiteral("the engine would not write a document: %1").arg(engineError());
+        return false;
+    }
+    if (first != second) {
+        error = QStringLiteral("the rebuilt plate is not the one it was read from: %1 bytes "
+                              "against %2")
+                    .arg(first.size())
+                    .arg(second.size());
+        return false;
+    }
+    report = QStringLiteral("%1 object(s), %2 volume(s), %3 setting(s), %4 painted facet(s), "
+                           "%5 marker(s), %6 stroke(s), documents identical at %7 bytes")
+                 .arg(read.size())
+                 .arg(volumes)
+                 .arg(settings)
+                 .arg(painted)
+                 .arg(layerGcodes.size())
+                 .arg(inLayer.size())
+                 .arg(first.size());
+    return true;
 }
 
 bool writePlateFile(const QVector<PlateSliceObject>& objects,

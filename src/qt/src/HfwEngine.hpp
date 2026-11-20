@@ -27,6 +27,21 @@ QString hfwUnavailableReason();
 /// This is the only shape that carries all of that. An STL carries geometry and
 /// nothing else, which is why a plate handed over as meshes loses volumes, layer
 /// heights, markers and strokes without saying so.
+/// Reads a plate back and rebuilds it, to prove a document survives being handed to
+/// the engine.
+///
+/// The plate is built from \p objects, every part of it is read through the ABI --
+/// each object's name, placement, settings, geometry, paint, layer heights and
+/// volumes with their kinds and settings -- and a second plate is built from
+/// nothing but what was read. The two documents must be identical byte for byte, or
+/// something the engine holds is not something it can give back.
+///
+/// \p report says what came back, so a gate reads a count rather than an exit code.
+bool roundTripPlate(const QVector<PlateSliceObject>& objects,
+                    const QVector<PlateLayerGcode>& layerGcodes,
+                    const QVector<PlateInLayerPolyline>& inLayer, QString& report,
+                    QString& error);
+
 bool writePlateFile(const QVector<PlateSliceObject>& objects,
                     const QVector<PlateLayerGcode>& layerGcodes,
                     const QVector<PlateInLayerPolyline>& inLayer,
