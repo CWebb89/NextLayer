@@ -248,7 +248,7 @@ the C++ engine carries it, and each is a project in its own right:
 
 | Feature | Plan |
 | --- | --- |
-| Adhesion painting, seam painting | Adhesion paint is `brim_type`; seam paint is not built. Support paint **left this table**: HFW carries it per triangle (`hfw_plate_object_paint`), consumes it inside support generation and saves it in the project, so the app's paint tool has an engine behind it as soon as it calls the ABI. |
+| Adhesion painting | Adhesion paint is `brim_type`. Support and seam paint **left this table**: HFW carries both per triangle (`hfw_plate_object_paint`, channels `HFW_PAINT_SUPPORT` and `HFW_PAINT_SEAM`), consumes support paint inside support generation and seam paint in the writer's seam chooser, and saves both in the project — so the app's paint tool has an engine behind it as soon as it calls the ABI. |
 | Text embossing, font loading | Not in scope. |
 | Cut, hollow | Not in scope. |
 | STEP import | Not in scope; needs an OCCT-class kernel. |
@@ -305,7 +305,7 @@ for. They are not details — each is a shipped feature:
 
 | the app passes | ABI | what stops working |
 | --- | --- | --- |
-| three `TriangleSelector` paint channels (support, seam, tool) | **support done 2026-11-20**: `hfw_mesh_paint_set`, `hfw_plate_object_paint`, consumed by `supports::seed_masks`, carried in the project; seam and tool channels still have no call | support painting works through the ABI; seam and per-tool paint do not |
+| three `TriangleSelector` paint channels (support, seam, tool) | **support and seam done 2026-11-20**: `hfw_mesh_paint_set`, `hfw_plate_object_paint`, consumed by `supports::seed_masks` and by the writer's seam chooser, both carried in the project; only the tool channel has no call | support and seam painting work through the ABI; per-tool paint does not, and cannot until multi-material is real |
 | `volumes`: part, negative, modifier, support blocker/enforcer | nothing | modifier geometry, cuts and blockers inside a sliced object |
 | per-object `ZHeightPairs` layer heights | nothing per object; `Settings.layer_profile` is job-wide | per-object variable layer height |
 | `layerGcodes`: custom G-code, pause, tool change at Z | nothing on the plate | pause markers and calibration's own G-code |
