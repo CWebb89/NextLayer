@@ -381,4 +381,19 @@ int formatVersion()
     return kFormatVersion;
 }
 
+QByteArray paintToText(const TriangleSplittingData& data)
+{
+    const ordered_json json = paintToJson(data);
+    return QByteArray::fromStdString(json.dump());
+}
+
+bool paintFromText(const QByteArray& text, TriangleSplittingData& data)
+{
+    const ordered_json json = ordered_json::parse(text.toStdString(), nullptr, false);
+    if (json.is_discarded())
+        return false;
+    data = paintFromJson(json);
+    return true;
+}
+
 }

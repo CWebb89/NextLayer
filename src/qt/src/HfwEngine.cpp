@@ -384,6 +384,27 @@ bool fillPlate(HfwPlate* plate, const QVector<PlateSliceObject>& objects,
         const QByteArray name = object.name.toUtf8();
         hfw_plate_object_name(plate, id, name.constData());
 
+        // The plate keeps the transform rather than having it baked into the geometry: a
+        // saved project records where an object sits, so the panel can still move it
+        // after reopening. A sliced plate hands over geometry that is already placed and
+        // an identity transform, which this writes as an identity and changes nothing.
+        HfwTransform transform = HfwTransform{};
+        transform.translation_mm[0] = object.transform.get_offset().x();
+        transform.translation_mm[1] = object.transform.get_offset().y();
+        transform.translation_mm[2] = object.transform.get_offset().z();
+        const Slic3r::Domain::Vec3d rotation = object.transform.get_rotation();
+        const Slic3r::Domain::Vec3d scale = object.transform.get_scaling_factor();
+        transform.rotation_degrees[0] = rotation.x();
+        transform.rotation_degrees[1] = rotation.y();
+        transform.rotation_degrees[2] = rotation.z();
+        transform.scale[0] = scale.x();
+        transform.scale[1] = scale.y();
+        transform.scale[2] = scale.z();
+        if (hfw_plate_object_placement(plate, id, transform) != 0) {
+            error = QStringLiteral("%1: placement: %2").arg(object.name, engineError());
+            return false;
+        }
+
         if (!applySettings(plate, id, object, error))
             return false;
         for (const PlateSliceVolume& volume : object.volumes) {
@@ -693,6 +714,37 @@ QHash<QString, QString> settingsText(const QByteArray& json)
     return rows;
 }
 
+/// One object read back, in the terms the document uses.
+PlateSnapshot::Object snapshotObject(const ReadObject& object)
+{
+    PlateSnapshot::Object entry;
+    entry.name = object.name;
+    entry.mesh = meshFromArrays(object.vertices, object.indices);
+    entry.placement.set_offset(Slic3r::Domain::Vec3d(object.placement.translation_mm[0],
+                                                   object.placement.translation_mm[1],
+                                                   object.placement.translation_mm[2]));
+    entry.placement.set_rotation(Slic3r::Domain::Vec3d(object.placement.rotation_degrees[0],
+                                                     object.placement.rotation_degrees[1],
+                                                     object.placement.rotation_degrees[2]));
+    entry.placement.set_scaling_factor(Slic3r::Domain::Vec3d(
+        object.placement.scale[0], object.placement.scale[1], object.placement.scale[2]));
+    entry.settings = settingsText(object.settingsJson);
+    entry.enabled = object.enabled;
+    for (qsizetype pair = 0; pair + 1 < object.layerHeights.size(); pair += 2)
+        entry.layerHeights.append(
+            {object.layerHeights.at(pair), object.layerHeights.at(pair + 1)});
+    entry.supportPaint = object.supportPaint;
+    entry.seamPaint = object.seamPaint;
+    for (const ReadVolume& volume : object.volumes) {
+        PlateSnapshot::Volume attached;
+        attached.type = volumeTypeOf(volume.kind);
+        attached.mesh = meshFromArrays(volume.vertices, volume.indices);
+        attached.settings = settingsText(volume.settingsJson);
+        entry.volumes.append(attached);
+    }
+    return entry;
+}
+
 /// The project bytes a plate writes, for comparing two documents exactly.
 QByteArray projectBytes(HfwPlate* plate)
 {
@@ -807,6 +859,119 @@ bool roundTripPlate(const QVector<PlateSliceObject>& objects,
     return true;
 }
 
+bool readPlateDocument(const QByteArray& bytes, PlateSnapshot& snapshot, QString& error)
+{
+    if (bytes.isEmpty()) {
+        error = QStringLiteral("the file is empty");
+        return false;
+    }
+    HfwPlate* plate = hfw_plate_open_project(bytes.constData(), size_t(bytes.size()), nullptr);
+    if (plate == nullptr) {
+        error = QStringLiteral("the engine could not read the project: %1").arg(engineError());
+        return false;
+    }
+
+    QVector<ReadObject> read;
+    const bool readOk = readPlate(plate, read, error);
+    if (readOk) {
+        snapshot = PlateSnapshot{};
+        size_t length = 0;
+        char* metadata = hfw_plate_metadata_get(plate, &length);
+        if (metadata != nullptr) {
+            snapshot.metadata = QByteArray(metadata, qsizetype(length));
+            hfw_string_free(metadata);
+        }
+        for (const ReadObject& object : read)
+            snapshot.objects.append(snapshotObject(object));
+
+        const auto markers = hfw_plate_marker_count(plate);
+        for (auto index = 0; index < markers; ++index) {
+            int kind = HFW_MARKER_CUSTOM;
+            double z = 0.0;
+            char text[512] = {};
+            if (hfw_plate_marker_get(plate, size_t(index), &kind, &z, text, sizeof(text)) != 0)
+                continue;
+            PlateLayerGcode marker;
+            marker.z = z;
+            marker.type = kind == HFW_MARKER_PAUSE
+                              ? QStringLiteral("pause")
+                              : kind == HFW_MARKER_COLOUR ? QStringLiteral("color")
+                                                          : QStringLiteral("gcode");
+            marker.text = QString::fromUtf8(text);
+            snapshot.markers.append(marker);
+        }
+
+        const auto strokes = hfw_plate_in_layer_count(plate);
+        for (auto index = 0; index < strokes; ++index) {
+            const auto count = hfw_plate_in_layer_points(plate, size_t(index));
+            if (count <= 0)
+                continue;
+            double z = 0.0;
+            double width = 0.0;
+            double height = 0.0;
+            double speed = 0.0;
+            char prefix[256] = {};
+            QVector<double> points(qsizetype(count) * 2);
+            if (hfw_plate_in_layer_get(plate, size_t(index), &z, &width, &height, &speed,
+                                       points.data(), size_t(count), prefix, sizeof(prefix))
+                != 0) {
+                continue;
+            }
+            PlateInLayerPolyline stroke;
+            stroke.z = z;
+            stroke.line_width = width;
+            stroke.layer_height = height;
+            stroke.speed = speed;
+            stroke.prefix = QString::fromUtf8(prefix);
+            for (qsizetype point = 0; point + 1 < points.size(); point += 2)
+                stroke.points.append(QPointF(points.at(point), points.at(point + 1)));
+            snapshot.strokes.append(stroke);
+        }
+    }
+    hfw_plate_free(plate);
+    return readOk;
+}
+
+bool savePlateDocument(const QVector<PlateSliceObject>& objects,
+                       const QVector<PlateLayerGcode>& layerGcodes,
+                       const QVector<PlateInLayerPolyline>& inLayer, const QByteArray& metadata,
+                       const QString& path, QString& error)
+{
+    if (objects.isEmpty()) {
+        error = QStringLiteral("no object on the plate");
+        return false;
+    }
+    PlateHandle plate;
+    if (plate.get() == nullptr) {
+        error = QStringLiteral("the engine could not create a plate: %1").arg(engineError());
+        return false;
+    }
+    if (!fillPlate(plate.get(), objects, layerGcodes, inLayer, error))
+        return false;
+    if (!metadata.isEmpty()
+        && hfw_plate_set_metadata(plate.get(), metadata.constData(), size_t(metadata.size())) != 0) {
+        error = QStringLiteral("the document's own bytes were refused: %1").arg(engineError());
+        return false;
+    }
+
+    size_t length = 0;
+    char* bytes = hfw_plate_project_bytes(plate.get(), &length);
+    if (bytes == nullptr) {
+        error = QStringLiteral("the engine could not write the plate: %1").arg(engineError());
+        return false;
+    }
+    QFile file(path);
+    const bool opened = file.open(QIODevice::WriteOnly | QIODevice::Truncate);
+    const qint64 written = opened ? file.write(bytes, qint64(length)) : -1;
+    file.close();
+    hfw_string_free(bytes);
+    if (!opened || written != qint64(length)) {
+        error = QStringLiteral("could not write %1").arg(path);
+        return false;
+    }
+    return true;
+}
+
 bool readPlateSnapshot(const QVector<PlateSliceObject>& objects,
                        const QVector<PlateLayerGcode>& layerGcodes,
                        const QVector<PlateInLayerPolyline>& inLayer, PlateSnapshot& snapshot,
@@ -831,37 +996,8 @@ bool readPlateSnapshot(const QVector<PlateSliceObject>& objects,
     snapshot = PlateSnapshot{};
     snapshot.markers = layerGcodes;
     snapshot.strokes = inLayer;
-    for (const ReadObject& object : read) {
-        PlateSnapshot::Object entry;
-        entry.name = object.name;
-        entry.mesh = meshFromArrays(object.vertices, object.indices);
-        entry.placement.set_offset(
-            Slic3r::Domain::Vec3d(object.placement.translation_mm[0],
-                                 object.placement.translation_mm[1],
-                                 object.placement.translation_mm[2]));
-        entry.placement.set_rotation(
-            Slic3r::Domain::Vec3d(object.placement.rotation_degrees[0],
-                                 object.placement.rotation_degrees[1],
-                                 object.placement.rotation_degrees[2]));
-        entry.placement.set_scaling_factor(
-            Slic3r::Domain::Vec3d(object.placement.scale[0], object.placement.scale[1],
-                                 object.placement.scale[2]));
-        entry.settings = settingsText(object.settingsJson);
-        entry.enabled = object.enabled;
-        for (qsizetype pair = 0; pair + 1 < object.layerHeights.size(); pair += 2)
-            entry.layerHeights.append({object.layerHeights.at(pair),
-                                       object.layerHeights.at(pair + 1)});
-        entry.supportPaint = object.supportPaint;
-        entry.seamPaint = object.seamPaint;
-        for (const ReadVolume& volume : object.volumes) {
-            PlateSnapshot::Volume attached;
-            attached.type = volumeTypeOf(volume.kind);
-            attached.mesh = meshFromArrays(volume.vertices, volume.indices);
-            attached.settings = settingsText(volume.settingsJson);
-            entry.volumes.append(attached);
-        }
-        snapshot.objects.append(entry);
-    }
+    for (const ReadObject& object : read)
+        snapshot.objects.append(snapshotObject(object));
     return true;
 }
 

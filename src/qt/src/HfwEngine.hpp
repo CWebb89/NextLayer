@@ -42,6 +42,9 @@ struct PlateSnapshot
     QVector<Object> objects;
     QVector<PlateLayerGcode> markers;
     QVector<PlateInLayerPolyline> strokes;
+    /// The bytes the application keeps in the document for itself: which plates
+    /// exist, their names, the tool colours, each object's source path.
+    QByteArray metadata;
 };
 
 /// Reads a plate back through the ABI into the shape a document is built from.
@@ -54,6 +57,24 @@ bool readPlateSnapshot(const QVector<PlateSliceObject>& objects,
                        const QVector<PlateLayerGcode>& layerGcodes,
                        const QVector<PlateInLayerPolyline>& inLayer, PlateSnapshot& snapshot,
                        QString& error);
+
+/// Reads a saved document -- HFW's own project file -- back into a snapshot.
+///
+/// This is how a project opens: the file *is* the engine's document, so a saved
+/// plate reopens as the plate that was saved rather than as a second format that
+/// has to be kept in step with it. The caller's own bytes come back in
+/// `snapshot.metadata`.
+bool readPlateDocument(const QByteArray& bytes, PlateSnapshot& snapshot, QString& error);
+
+/// Saves the plate as HFW's project file, with \p metadata inside it.
+///
+/// One file: the document is the engine's, and the application's own state travels
+/// in the engine's opaque bytes rather than beside it in a second file that can be
+/// lost.
+bool savePlateDocument(const QVector<PlateSliceObject>& objects,
+                       const QVector<PlateLayerGcode>& layerGcodes,
+                       const QVector<PlateInLayerPolyline>& inLayer, const QByteArray& metadata,
+                       const QString& path, QString& error);
 
 /// The HFW binary this process will run: `NEXT_LAYER_HFW` when set, then
 /// `hfw-cli` beside the executable (its installed home), then `hfw-cli` on PATH,

@@ -29,6 +29,10 @@ complete inventory, this is the part you need before you start a print.
   reproduces when the same command is rerun — three runs of each were clean. The
   fixtures are refused correctly the rest of the time, so this is a crash in the
   preview path that the gate is right to keep catching, not a gate problem.
+- **A project saved now is the engine's document, not the old JSON.** It opens
+  here either way — the JSON reader is kept for files written before the change —
+  but nothing writes the old format any more, so a file saved by this build cannot
+  be opened by an older one.
 - **A volume's own placement is baked in, not carried.** HFW's plate volume is
   geometry in its object's frame with no transform of its own, so the panel's
   position and scale for a modifier are applied here, to the mesh, before the plate

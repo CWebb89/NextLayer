@@ -362,7 +362,7 @@ to stop calling the C++ engine for.
 | 3 — settings | **Landed 2026-11-20**: settings surface JSON + `hfw_plate_object_set` | **Not started**: `SettingsModel.cpp` (1,568) still reads the C++ `ConfigContainer` |
 | 4 — preview | **Landed 2026-11-20**: `hfw_plate_preview_json` + threaded job | **Not started**: `GcodeView`/`PreviewData` still borrow libvgcode/libpgcode types |
 | 5 — plate operations | **Landed 2026-11-20**: duplicate/rotate/mirror/arrange in `crates/plate` | **Not started**: `Arranger.cpp`, `Orient.cpp`, `TransformController.cpp` still slice with the C++ engine's geometry |
-| 6 — project files | **Landed 2026-11-20**: `hfw_plate_project_bytes`/`hfw_plate_open_project` | **Not started**: `.3mf` still round-trips through `ProjectFile.cpp`/`ThreeMfProject.cpp` |
+| 6 — project files | **Landed 2026-11-20** (HFW `7f25a00`): `hfw_plate_project_bytes`/`hfw_plate_open_project`, object placement carried as a pose rather than baked into the coordinates, and `hfw_plate_set_metadata`/`_get` for state the engine has no concept of (stored base64, project format v8) | **Application half landed 2026-11-20**: `saveProject`/`loadProject` go through the engine's document plus that metadata, so a saved project is one file the engine can slice. `ProjectFile.cpp` keeps only its reader, for projects written before the move; `ThreeMfProject.cpp` still serves the foreign-project import and the `.3mf` another slicer opens |
 | 7 — optional features | **Settled 2026-11-20**: seven `capabilities` rows, `docs/SCOPE.md` | **Not started**: the thirteen files are deleted, not ported |
 
 Outside the phases, because they needed no engine at all, five shell files are

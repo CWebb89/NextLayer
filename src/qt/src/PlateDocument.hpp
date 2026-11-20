@@ -338,6 +338,22 @@ public:
     /// restoring each one's panel typing is the settings model's job.
     bool adoptSnapshot(const next_layer::PlateSnapshot& snapshot, QString& error);
 
+    /// The view's own state as the bytes that travel inside the engine's project
+    /// file: the plates and their names, the tool colours, each object's own plate,
+    /// visibility and source path, and each volume's placement.
+    QByteArray documentMetadata() const;
+
+    /// Applies \p metadata back onto the document once the engine's plate has been
+    /// adopted.
+    bool applyDocumentMetadata(const QByteArray& metadata, QString& error);
+
+    /// Adopts a document read from the engine and applies the state that came with
+    /// it, which is what opening a project is.
+    QString adoptProject(const QString& path, const next_layer::PlateSnapshot& snapshot);
+
+    /// Opens a project written before the document lived in the engine.
+    QString loadLegacyProject(const QString& path, const QByteArray& body);
+
     /// True once the plate has changed since it was last saved or opened, which
     /// is what the close guard asks before throwing the work away.
     bool modified() const { return m_modified; }

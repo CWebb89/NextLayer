@@ -85,4 +85,14 @@ bool parseProject(const QByteArray& body, std::vector<ProjectObject>& objects,
 /// The project file version this build writes, and the newest it will read.
 int formatVersion();
 
+/// One paint channel as text, and back.
+///
+/// A channel the engine has no consumer for -- tool paint today -- still belongs to
+/// the document, so it travels in the application's own bytes rather than being
+/// dropped. The encoding is the project file's own, so a value written years ago
+/// still reads.
+QByteArray paintToText(const Slic3r::Domain::TriangleSelector::TriangleSplittingData& data);
+bool paintFromText(const QByteArray& text,
+                   Slic3r::Domain::TriangleSelector::TriangleSplittingData& data);
+
 }

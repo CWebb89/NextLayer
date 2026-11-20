@@ -34,6 +34,11 @@
 
 #include <QCryptographicHash>
 #include <QByteArrayView>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
+#include <QJsonValue>
 #include <QFile>
 #include <QFileInfo>
 #include <QTemporaryDir>
@@ -3234,83 +3239,44 @@ QString PlateDocument::saveProject(const QString& path)
     if (path.isEmpty())
         return QStringLiteral("No file to write");
 
-    std::vector<next_layer::ProjectObject> objects;
-    objects.reserve(m_objects.size());
+    // Every object on every plate, unplaced: the engine records where each one sits
+    // rather than having the geometry baked, so a project keeps the transforms the
+    // panel edits.
+    QVector<next_layer::PlateSliceObject> objects;
+    objects.reserve(int(m_objects.size()));
     for (const Object& object : m_objects) {
         if (object.mesh == nullptr)
             continue;
-        next_layer::ProjectObject entry;
-        entry.name = object.displayName();
-        entry.sourcePath = object.path;
-        entry.plate = object.plate;
-        entry.visible = object.visible;
-        entry.mesh = *object.mesh;
-        entry.transform = object.trafo;
-        entry.settings = object.settings;
-        entry.layerHeights = object.layerHeights;
-        entry.volumes.reserve(object.volumes.size());
+        next_layer::PlateSliceObject slice;
+        slice.name = object.displayName();
+        slice.plate = object.plate;
+        slice.mesh = *object.mesh;
+        slice.transform = object.trafo;
+        slice.settingsJson = settingsToJson(object.settings);
+        slice.foreignSettings = object.foreignSettings;
+        slice.layerHeights = object.layerHeights;
+        slice.supportPaint = object.supportPaint;
+        slice.seamPaint = object.seamPaint;
+        slice.toolPaint = object.toolPaint;
         for (const Volume& volume : object.volumes) {
             if (volume.mesh == nullptr)
                 continue;
-            next_layer::ProjectVolume stored;
-            stored.name = volume.name;
-            stored.type = volumeTypeName(volume.type);
-            stored.visible = volume.visible;
+            next_layer::PlateSliceVolume stored;
             stored.mesh = *volume.mesh;
-            stored.transform = volume.trafo;
-            entry.volumes.push_back(std::move(stored));
+            stored.mesh.transform(volume.trafo.get_matrix());
+            stored.type = volume.type;
+            stored.settingsJson = settingsToJson(volume.settings);
+            slice.volumes.push_back(std::move(stored));
         }
-        entry.supportPaint = object.supportPaint;
-        entry.seamPaint = object.seamPaint;
-        entry.toolPaint = object.toolPaint;
-        objects.push_back(std::move(entry));
+        objects.append(slice);
     }
-    if (objects.empty())
+    if (objects.isEmpty())
         return QStringLiteral("There is nothing on the plate to save");
 
-    next_layer::ProjectMetadata metadata;
-    metadata.applicationVersion = next_layer::applicationVersion();
-    metadata.printer = m_printer;
-    metadata.process = m_process;
-    metadata.filament = m_filament;
-    metadata.activePlate = m_activePlate;
-    metadata.plateCount = plateCount();
-    for (int i = 0; i < plateCount(); ++i) {
-        metadata.plateNames.append(i < m_plateNames.size() ? m_plateNames[i] : QString());
-        metadata.plateLocked.append(plateLocked(i));
-    }
-    for (const QColor& colour : m_toolColours)
-        metadata.toolColours.append(colour.name(QColor::HexRgb));
-    for (const LayerGcode& entry : m_layerGcodes) {
-        next_layer::ProjectLayerGcode marker;
-        marker.z = entry.z;
-        marker.type = entry.type;
-        marker.text = entry.text;
-        metadata.layerGcodes.push_back(std::move(marker));
-    }
-
-    const QByteArray body = next_layer::serialiseProject(objects, metadata);
-    if (body.isEmpty())
-        return QStringLiteral("Could not serialise the plate");
-
-    QFile file(path);
-    // eslint-disable-next-line
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
-        return QStringLiteral("Could not write %1").arg(path);
-    const bool written = file.write(body) == body.size();
-    file.close();
-    if (!written)
-        return QStringLiteral("Could not write all of %1").arg(path);
-
-    m_layerGcodes.clear();
-    for (const next_layer::ProjectLayerGcode& marker : metadata.layerGcodes) {
-        LayerGcode entry;
-        entry.z = marker.z;
-        entry.type = marker.type;
-        entry.text = marker.text;
-        m_layerGcodes.push_back(entry);
-    }
-    emit layerGcodesChanged();
+    QString error;
+    if (!next_layer::savePlateDocument(objects, layerGcodeList(), inLayerList(),
+                                       documentMetadata(), path, error))
+        return error;
 
     m_projectPath = path;
     m_modified = false;
@@ -3318,7 +3284,6 @@ QString PlateDocument::saveProject(const QString& path)
     emit projectPathChanged();
     return {};
 }
-
 
 /// One setting's value from the text the engine wrote it as: a trailing `%` is a
 /// percentage, anything numeric is a number, everything else is the string itself.
@@ -3347,13 +3312,228 @@ QVariantMap settingsFromText(const QHash<QString, QString>& rows)
     return settings;
 }
 
+/// The document's own state, as the bytes that travel inside the engine's project
+/// file.
+///
+/// The engine owns the document -- the objects, their geometry, placement, paint,
+/// layer heights, volumes, markers and strokes. What it has no concept of is the
+/// view: which plates exist and what they are called, which tool carries which
+/// colour, and where each object was loaded from. That is what this carries, so a
+/// saved project is one file.
+QByteArray PlateDocument::documentMetadata() const
+{
+    QJsonObject root;
+    root.insert(QStringLiteral("application"), next_layer::applicationVersion());
+    QJsonObject setup;
+    setup.insert(QStringLiteral("printer"), m_printer);
+    setup.insert(QStringLiteral("process"), m_process);
+    setup.insert(QStringLiteral("filament"), m_filament);
+    root.insert(QStringLiteral("print_setup"), setup);
+    root.insert(QStringLiteral("active_plate"), m_activePlate);
+    QJsonArray plates;
+    for (int plate = 0; plate < plateCount(); ++plate) {
+        QJsonObject entry;
+        entry.insert(QStringLiteral("name"), plateName(plate));
+        entry.insert(QStringLiteral("locked"), plateLocked(plate));
+        plates.append(entry);
+    }
+    root.insert(QStringLiteral("plates"), plates);
+    QJsonArray colours;
+    for (const QColor& colour : m_toolColours)
+        colours.append(colour.name(QColor::HexRgb));
+    root.insert(QStringLiteral("tool_colours"), colours);
+    QJsonArray objects;
+    for (const Object& object : m_objects) {
+        QJsonObject entry;
+        entry.insert(QStringLiteral("name"), object.displayName());
+        entry.insert(QStringLiteral("path"), object.path);
+        entry.insert(QStringLiteral("label"), object.label);
+        entry.insert(QStringLiteral("plate"), object.plate);
+        entry.insert(QStringLiteral("visible"), object.visible);
+        // What the engine has no home for: the tool channel (it has no extruder),
+        // a key it deliberately refuses as an object override (`layer_height`
+        // decides the slicing planes) and the settings another slicer's file carried
+        // in its own dialect. They belong to the document, so they ride here rather
+        // than being dropped on save.
+        entry.insert(QStringLiteral("settings"),
+                     QJsonDocument::fromJson(settingsToJson(object.settings)).object());
+        entry.insert(QStringLiteral("tool_paint"),
+                     QString::fromLatin1(next_layer::paintToText(object.toolPaint).toBase64()));
+        QJsonObject foreign;
+        for (auto setting = object.foreignSettings.constBegin();
+             setting != object.foreignSettings.constEnd(); ++setting)
+            foreign.insert(setting.key(), setting.value());
+        entry.insert(QStringLiteral("foreign_settings"), foreign);
+        QJsonArray volumes;
+        for (const Volume& volume : object.volumes) {
+            QJsonObject stored;
+            stored.insert(QStringLiteral("name"), volume.name);
+            stored.insert(QStringLiteral("visible"), volume.visible);
+            QJsonArray matrix;
+            const Slic3r::Domain::Transform3d& value = volume.trafo.get_matrix();
+            for (int row = 0; row < 4; ++row) {
+                for (int column = 0; column < 4; ++column)
+                    matrix.append(value(row, column));
+            }
+            stored.insert(QStringLiteral("matrix"), matrix);
+            volumes.append(stored);
+        }
+        entry.insert(QStringLiteral("volumes"), volumes);
+        objects.append(entry);
+    }
+    root.insert(QStringLiteral("objects"), objects);
+    QJsonObject brush;
+    brush.insert(QStringLiteral("radius"), brushRadius());
+    brush.insert(QStringLiteral("shape"), brushShape());
+    brush.insert(QStringLiteral("overhang_only"), brushOverhangOnly());
+    brush.insert(QStringLiteral("highlight_angle"), brushHighlightAngle());
+    root.insert(QStringLiteral("brush"), brush);
+    return QJsonDocument(root).toJson(QJsonDocument::Compact);
+}
+
 QString PlateDocument::loadProject(const QString& path)
-{    QFile file(path);
+{
+    QFile file(path);
     if (!file.open(QIODevice::ReadOnly))
         return QStringLiteral("Could not read %1").arg(path);
     const QByteArray body = file.readAll();
     file.close();
 
+    // Two formats, one reader: a project saved before the document moved into the
+    // engine is still this application's own JSON, and refusing to open it would
+    // throw away work for a format change that has nothing to do with the user.
+    if (body.trimmed().startsWith('{'))
+        return loadLegacyProject(path, body);
+
+    next_layer::PlateSnapshot snapshot;
+    QString error;
+    if (!next_layer::readPlateDocument(body, snapshot, error))
+        return error;
+    return adoptProject(path, snapshot);
+}
+
+QString PlateDocument::adoptProject(const QString& path, const next_layer::PlateSnapshot& snapshot)
+{
+    pushUndo(QStringLiteral("Open project"));
+    QString error;
+    if (!adoptSnapshot(snapshot, error))
+        return error;
+    if (!applyDocumentMetadata(snapshot.metadata, error))
+        return error;
+
+    m_projectPath = path;
+    m_modified = false;
+    emit modifiedChanged();
+    emit projectPathChanged();
+    return {};
+}
+
+bool PlateDocument::applyDocumentMetadata(const QByteArray& metadata, QString& error)
+{
+    if (metadata.isEmpty())
+        return true;
+    QJsonParseError failure{};
+    const QJsonDocument document = QJsonDocument::fromJson(metadata, &failure);
+    if (document.isNull()) {
+        error = QStringLiteral("The document's own state is not readable: %1")
+                    .arg(failure.errorString());
+        return false;
+    }
+    const QJsonObject root = document.object();
+
+    const QJsonObject setup = root.value(QStringLiteral("print_setup")).toObject();
+    m_printer = setup.value(QStringLiteral("printer")).toString();
+    m_process = setup.value(QStringLiteral("process")).toString();
+    m_filament = setup.value(QStringLiteral("filament")).toString();
+
+    const QJsonArray plates = root.value(QStringLiteral("plates")).toArray();
+    m_plateCount = std::max(1, int(plates.size()));
+    m_plateNames.clear();
+    m_plateLocked.clear();
+    for (const QJsonValue& value : plates) {
+        const QJsonObject entry = value.toObject();
+        m_plateNames.append(entry.value(QStringLiteral("name")).toString());
+        m_plateLocked.append(entry.value(QStringLiteral("locked")).toBool());
+    }
+    while (m_plateNames.size() < m_plateCount)
+        m_plateNames.append(QString());
+    while (m_plateLocked.size() < m_plateCount)
+        m_plateLocked.append(false);
+    m_activePlate = std::clamp(root.value(QStringLiteral("active_plate")).toInt(), 0,
+                               std::max(0, plateCount() - 1));
+
+    QVariantList colours;
+    for (const QJsonValue& value : root.value(QStringLiteral("tool_colours")).toArray())
+        colours.append(value.toString());
+    if (!colours.isEmpty())
+        setToolColours(colours);
+
+    const QJsonObject brush = root.value(QStringLiteral("brush")).toObject();
+    if (brush.contains(QStringLiteral("radius")))
+        setBrushRadius(brush.value(QStringLiteral("radius")).toDouble());
+    if (brush.contains(QStringLiteral("shape")))
+        setBrushShape(brush.value(QStringLiteral("shape")).toInt());
+    if (brush.contains(QStringLiteral("overhang_only")))
+        setBrushOverhangOnly(brush.value(QStringLiteral("overhang_only")).toBool());
+    if (brush.contains(QStringLiteral("highlight_angle")))
+        setBrushHighlightAngle(brush.value(QStringLiteral("highlight_angle")).toDouble());
+
+    const QJsonArray objects = root.value(QStringLiteral("objects")).toArray();
+    for (int index = 0; index < int(m_objects.size()) && index < objects.size(); ++index) {
+        Object& object = m_objects[size_t(index)];
+        const QJsonObject entry = objects.at(index).toObject();
+        object.path = entry.value(QStringLiteral("path")).toString();
+        object.label = entry.value(QStringLiteral("label")).toString();
+        object.plate = std::clamp(entry.value(QStringLiteral("plate")).toInt(), 0,
+                                  std::max(0, plateCount() - 1));
+        object.visible = entry.value(QStringLiteral("visible")).toBool(true);
+
+        const QJsonObject settings = entry.value(QStringLiteral("settings")).toObject();
+        for (auto setting = settings.constBegin(); setting != settings.constEnd(); ++setting) {
+            QVariantMap stored;
+            if (setting.value().isObject()) {
+                const QJsonObject percent = setting.value().toObject();
+                stored.insert(QStringLiteral("value"), percent.value(QStringLiteral("value")).toDouble());
+                stored.insert(QStringLiteral("is_percent"),
+                              percent.value(QStringLiteral("is_percent")).toBool());
+                object.settings.insert(setting.key(), stored);
+            } else {
+                object.settings.insert(setting.key(), setting.value().toVariant());
+            }
+        }
+        const QJsonObject foreign = entry.value(QStringLiteral("foreign_settings")).toObject();
+        for (auto setting = foreign.constBegin(); setting != foreign.constEnd(); ++setting)
+            object.foreignSettings.insert(setting.key(), setting.value().toString());
+        next_layer::paintFromText(
+            QByteArray::fromBase64(entry.value(QStringLiteral("tool_paint")).toString().toLatin1()),
+            object.toolPaint);
+        const QJsonArray volumes = entry.value(QStringLiteral("volumes")).toArray();
+        for (int slot = 0; slot < int(object.volumes.size()) && slot < volumes.size(); ++slot) {
+            const QJsonObject stored = volumes.at(slot).toObject();
+            Volume& volume = object.volumes[size_t(slot)];
+            const QString name = stored.value(QStringLiteral("name")).toString();
+            if (!name.isEmpty())
+                volume.name = name;
+            volume.visible = stored.value(QStringLiteral("visible")).toBool(true);
+            const QJsonArray matrix = stored.value(QStringLiteral("matrix")).toArray();
+            if (matrix.size() == 16) {
+                Slic3r::Domain::Transform3d placement;
+                for (int row = 0; row < 4; ++row) {
+                    for (int column = 0; column < 4; ++column)
+                        placement(row, column) = matrix.at(row * 4 + column).toDouble();
+                }
+                volume.trafo.set_matrix(placement);
+            }
+        }
+    }
+
+    emit plateChanged();
+    emit toolsChanged();
+    return true;
+}
+
+QString PlateDocument::loadLegacyProject(const QString& path, const QByteArray& body)
+{
     std::vector<next_layer::ProjectObject> objects;
     next_layer::ProjectMetadata metadata;
     QString error;
