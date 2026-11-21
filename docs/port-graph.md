@@ -39,6 +39,12 @@ of them are blocked on something that is not per-file effort:
 C++ packs projected silhouettes with an NFP kernel, and the only gate uses cubes. A
 port would pass the gate and degrade every curved part.
 
+**The drafts all of this came from outlive `/tmp`.** The read-only surveys, the module
+drafts and the two `PlateDocument` slices are copied to
+`~/.pi/agent/projects-memory/next-layer/drafts/` (`nl-drafts` … `nl-drafts12`), and the
+per-pane session reports to `…/session-reports/`. Read the slice before implementing it;
+they are the design, this file is the order.
+
 **The cheapest 5,118 lines left are deletions**, not ports — `SceneSelftest`,
 `SliceRuntime`, `Paint`, `Text`, `Cut`, `Hollow` — and they wait on their gates being
 re-homed (`--scene-selftest`, `--plate-tools`, `--calibration-test` all drive them)
