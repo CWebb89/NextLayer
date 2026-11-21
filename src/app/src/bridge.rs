@@ -24,6 +24,11 @@ pub use ffi::{
     ThreeMfFilePlate, ThreeMfFileRecord, ThreeMfFileSetting, ThreeMfFileVolume,
 };
 
+pub use ffi::{
+    EngineMarker, EngineObject, EngineOutcome, EnginePlate, EngineSetting, EngineStroke,
+    EngineVolume, PlateOutcome, PlateReadback, ReadbackObject, ReadbackVolume,
+};
+
 use cxx::CxxString;
 
 #[cxx::bridge(namespace = "next_layer")]
@@ -415,6 +420,126 @@ mod ffi {
         after: SettingValueRecord,
     }
 
+    /// One setting as a name and the text the engine's preset reader accepts.
+    struct EngineSetting {
+        name: String,
+        value: String,
+    }
+
+    /// One volume, on its way to the engine.
+    struct EngineVolume {
+        /// The document's word for the kind: `part`, `negative`, `modifier`,
+        /// `blocker` or `enforcer`.
+        kind: String,
+        /// The volume's own overrides, as the engine-settings JSON the document holds.
+        settings_json: String,
+        /// Interleaved xyz, three `f64` per vertex.
+        vertices: Vec<f64>,
+        /// Vertex numbers, three per triangle.
+        indices: Vec<i64>,
+    }
+
+    /// One object, on its way to the engine.
+    struct EngineObject {
+        name: String,
+        vertices: Vec<f64>,
+        indices: Vec<i64>,
+        /// Sixteen `f64`, row-major, four rows of four.
+        matrix: Vec<f64>,
+        /// The object's overrides as a JSON object, as the document holds them.
+        settings_json: String,
+        /// Settings the object's file carried in another slicer's dialect.
+        foreign_settings: Vec<EngineSetting>,
+        /// Interleaved `(z, height)` pairs; empty means the plate's uniform height.
+        layer_heights: Vec<f64>,
+        /// One byte per triangle: 0 none, 1 enforcer, 2 blocker.
+        support_paint: Vec<u8>,
+        seam_paint: Vec<u8>,
+        /// How many facets the document holds on its tool channel. The states
+        /// themselves do not cross: the engine has no third channel.
+        tool_paint_facets: i64,
+        volumes: Vec<EngineVolume>,
+    }
+
+    /// One marker on the plate's timeline.
+    #[derive(Clone)]
+    struct EngineMarker {
+        z: f64,
+        kind: String,
+        text: String,
+    }
+
+    /// One bead printed inside a layer, on paths as interleaved x, y `f64`.
+    #[derive(Clone)]
+    struct EngineStroke {
+        z: f64,
+        points: Vec<f64>,
+        line_width: f64,
+        layer_height: f64,
+        speed: f64,
+        prefix: String,
+    }
+
+    /// A plate, on its way to the engine.
+    struct EnginePlate {
+        objects: Vec<EngineObject>,
+        markers: Vec<EngineMarker>,
+        strokes: Vec<EngineStroke>,
+        /// True for a plate the writer must centre on the profile's bed: a model named
+        /// on the command line, not a plate the window laid out.
+        place_on_bed: bool,
+    }
+
+    /// One volume, read back.
+    struct ReadbackVolume {
+        kind: String,
+        settings: Vec<EngineSetting>,
+        vertices: Vec<f64>,
+        indices: Vec<i64>,
+    }
+
+    /// One object, read back.
+    struct ReadbackObject {
+        name: String,
+        vertices: Vec<f64>,
+        indices: Vec<i64>,
+        matrix: Vec<f64>,
+        enabled: bool,
+        settings: Vec<EngineSetting>,
+        layer_heights: Vec<f64>,
+        support_paint: Vec<u8>,
+        seam_paint: Vec<u8>,
+        volumes: Vec<ReadbackVolume>,
+    }
+
+    /// A plate read back through the ABI.
+    #[derive(Default)]
+    struct PlateReadback {
+        objects: Vec<ReadbackObject>,
+        markers: Vec<EngineMarker>,
+        strokes: Vec<EngineStroke>,
+        metadata: Vec<u8>,
+        /// What the exchange dropped and why, for the caller to show.
+        dropped: Vec<String>,
+    }
+
+    /// A read, or the reason it failed.
+    struct PlateOutcome {
+        ok: bool,
+        error: String,
+        snapshot: PlateReadback,
+    }
+
+    /// A write or a slice, or the reason it failed. `report` is `round_trip_plate`'s
+    /// count line and empty everywhere else; `dropped` is the same reason list as
+    /// `PlateReadback::dropped`.
+    struct EngineOutcome {
+        ok: bool,
+        error: String,
+        report: String,
+        dropped: Vec<String>,
+    }
+
     unsafe extern "C++" {
         include!("next-layer-app/include/next-layer-qt.hpp");
 
@@ -609,6 +734,23 @@ mod ffi {
 
         /// The project file version this build writes and the newest it will read.
         fn project_format_version() -> i32;
+
+        /// Reads a plate back through the ABI into the shape a document is built from.
+        fn read_plate_snapshot(plate: &EnginePlate) -> PlateOutcome;
+
+        /// Reads the engine's own project file back into the same shape.
+        fn read_plate_document(bytes: &[u8]) -> PlateOutcome;
+
+        /// Saves the plate as the engine's project file, with `metadata` inside it.
+        fn save_plate_document(plate: &EnginePlate, metadata: &[u8], path: &str) -> EngineOutcome;
+
+        /// Reads a plate back, rebuilds it from nothing but what was read, and
+        /// requires the two documents identical.
+        fn round_trip_plate(plate: &EnginePlate) -> EngineOutcome;
+
+        /// Slices the plate with HFW, writing the G-code this application prints.
+        fn slice_with_hfw(plate: &EnginePlate, config_path: &str, gcode_path: &str)
+            -> EngineOutcome;
 
         /// One paint channel as text.
         fn paint_to_text(paint: &ProjectPaint) -> Vec<u8>;
@@ -995,6 +1137,26 @@ fn paint_to_text(paint: &ProjectPaint) -> Vec<u8> {
 
 fn paint_from_text(text: &[u8]) -> ProjectPaintOutcome {
     crate::ProjectFile::paint_from_text(text)
+}
+
+fn read_plate_snapshot(plate: &EnginePlate) -> PlateOutcome {
+    crate::HfwEngine::read_plate_snapshot(plate)
+}
+
+fn read_plate_document(bytes: &[u8]) -> PlateOutcome {
+    crate::HfwEngine::read_plate_document(bytes)
+}
+
+fn save_plate_document(plate: &EnginePlate, metadata: &[u8], path: &str) -> EngineOutcome {
+    crate::HfwEngine::save_plate_document(plate, metadata, path)
+}
+
+fn round_trip_plate(plate: &EnginePlate) -> EngineOutcome {
+    crate::HfwEngine::round_trip_plate(plate)
+}
+
+fn slice_with_hfw(plate: &EnginePlate, config_path: &str, gcode_path: &str) -> EngineOutcome {
+    crate::HfwEngine::slice_with_hfw(plate, config_path, gcode_path)
 }
 
 fn read_three_mf_project(path: &str) -> ThreeMfFileOutcome {

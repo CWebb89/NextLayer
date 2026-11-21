@@ -64,6 +64,8 @@ pub mod ForeignSettings;
 #[allow(non_snake_case)]
 pub mod GcodeBrand;
 #[allow(non_snake_case)]
+pub mod HfwEngine;
+#[allow(non_snake_case)]
 pub mod MeshGeometry;
 #[allow(non_snake_case)]
 pub mod Orient;

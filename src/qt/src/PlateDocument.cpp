@@ -3706,7 +3706,10 @@ bool PlateDocument::adoptSnapshot(const next_layer::PlateSnapshot& snapshot, QSt
         m_inLayerMarks.push_back(mark);
     }
 
-    m_error.clear();
+    for (const QString& reason : snapshot.dropped)
+        note(reason);
+    m_error = m_pendingNotes.join(QStringLiteral("; "));
+    m_pendingNotes.clear();
     emit errorChanged();
     emit layerGcodesChanged();
     emit selectionChanged();

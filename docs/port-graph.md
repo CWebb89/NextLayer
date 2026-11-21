@@ -41,7 +41,7 @@ the header and its two lines, not writing a replacement.
 | PresetStore ⧉ | 1654 | Resources↻, SliceRuntime✝, PresetFiles, PresetImport, PresetYaml, SettingsModel | 0 | 11 props / 22 invokables / 10 signals, singleton | port | PresetFiles, PresetImport, SettingsModel |
 | PresetImport ⧉ | 1332 | PresetFiles, SettingsModel | 0 | 0 | port | PresetFiles, SettingsModel |
 | Calibration ⧉ | 1086 | PlateDocument, SettingsModel | 0 | 3 members, singleton | port | PlateDocument, SettingsModel |
-| HfwEngine ⧉ | 1115 | SliceRuntime✝, Paint✝ | 20 | 0 | port | PlateDocument |
+| HfwEngine ⧉ | 1115 | SliceRuntime✝, Paint✝ | 20 | 0 | **landed 2026-11-21** — logic in `src/app/src/HfwEngine.rs`; the header is the Qt-typed adapter that turns `TriangleMesh`, `Transformation` and paint into the bridge's arrays | PlateDocument |
 | SliceRuntime ✝⧉ | 1183 | — | 67 | 0 | **delete, phase 7** | four plate structs must move first |
 | PlateScene ⧉ | 979 | PlateDocument, Paint✝, MeshGeometry | 10 | 20 props / 7 invokables / 2 signals, singleton | port | PlateDocument, MeshGeometry |
 | GcodeView ⧉ | 926 | FeatureColors, PreviewData | 33 | 6 props / 4 signals, `qmlRegisterType` | port, phase 4 | FeatureColors, PreviewData |

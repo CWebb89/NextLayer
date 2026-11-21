@@ -51,7 +51,6 @@ add_executable(next-layer-qt
     src/PresetYaml.hpp
     src/TransformController.cpp
     src/TransformController.hpp
-    src/HfwEngine.cpp
     src/HfwEngine.hpp
     src/SliceController.cpp
     src/SliceController.hpp
