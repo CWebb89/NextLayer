@@ -624,6 +624,11 @@ public:
         return next_layer::settings_can_hold_in(*m_core, name.toStdString(), block.toStdString());
     }
 
+    /// The model behind the panel, for the importer: it resets and fills the same
+    /// values the panel shows, and the order is what the caller's `clearModified`
+    /// depends on.
+    next_layer::SettingsModelCore& core() { return *m_core; }
+
     /// A point-list setting flattened to [x0, y0, x1, y1, ...]. A nested
     /// QVariantList reaches QML as an array-like object whose elements are not plain
     /// arrays, so the flat form is what a QML editor can index safely. `value()`

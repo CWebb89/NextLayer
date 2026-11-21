@@ -78,6 +78,8 @@ pub mod PlateThumbnail;
 #[allow(non_snake_case)]
 pub mod PresetFiles;
 #[allow(non_snake_case)]
+pub mod PresetImport;
+#[allow(non_snake_case)]
 pub mod PresetYaml;
 #[allow(non_snake_case)]
 pub mod ProjectFile;

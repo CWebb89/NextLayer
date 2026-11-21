@@ -26,7 +26,8 @@ pub use ffi::{
 
 pub use ffi::{
     EngineMarker, EngineObject, EngineOutcome, EnginePlate, EngineSetting, EngineStroke,
-    EngineVolume, PlateOutcome, PlateReadback, ReadbackObject, ReadbackVolume, SessionView,
+    EngineVolume, ImportReportRecord, PlateOutcome, PlateReadback, ReadbackObject, ReadbackVolume,
+    SessionView, SlicerSourceRecord,
 };
 
 use cxx::CxxString;
@@ -541,6 +542,7 @@ mod ffi {
     }
 
     /// The frame the viewport draws and the window titles itself with.
+    #[derive(Default)]
     struct SessionView {
         has_model: bool,
         /// The object the viewport shows, 0 when the plate is empty.
@@ -552,6 +554,29 @@ mod ffi {
         focus: [f32; 3],
         /// Half the diagonal of the plate's bounding box, 0 when nothing is on it.
         radius: f64,
+    }
+
+    /// What an import produced, mirrored for the C++ `Report`: nine lists and the
+    /// reason it stopped. `PresetStore::finishImport` inserts the C++ struct's fields
+    /// straight into the map QML reads, so only the transport is shared here.
+    #[derive(Default)]
+    struct ImportReportRecord {
+        printers: Vec<String>,
+        prints: Vec<String>,
+        filaments: Vec<String>,
+        refused: Vec<String>,
+        elsewhere: Vec<String>,
+        dropped_keys: Vec<String>,
+        unfitted: Vec<String>,
+        dropped_templates: Vec<String>,
+        notes: Vec<String>,
+        error: String,
+    }
+
+    /// One other slicer's configuration directory.
+    struct SlicerSourceRecord {
+        name: String,
+        path: String,
     }
 
     unsafe extern "C++" {
@@ -788,6 +813,28 @@ mod ffi {
             bounds_max: [f32; 3],
             error: String,
         ) -> SessionView;
+
+        /// Reads another slicer's presets out of a configuration directory, writing
+        /// the ones this engine can express into the user's own bundle. The settings
+        /// model is reset and filled in place, before the caller clears the modified
+        /// set.
+        fn preset_import_presets(
+            source: &str,
+            core: &mut SettingsModelCore,
+            write: bool,
+        ) -> ImportReportRecord;
+
+        /// The same for one exported preset file: an Orca/Bambu `.json` or a
+        /// PrusaSlicer `.ini`, holding one preset or a whole bundle.
+        fn preset_import_file(
+            path: &str,
+            core: &mut SettingsModelCore,
+            write: bool,
+        ) -> ImportReportRecord;
+
+        /// The other slicers this app knows how to read, as name and directory:
+        /// `config_location` arrives as Qt's `file://` URL and is decoded here.
+        fn preset_slicer_candidates(config_location: &str) -> Vec<SlicerSourceRecord>;
 
         /// One paint channel as text.
         fn paint_to_text(paint: &ProjectPaint) -> Vec<u8>;
@@ -1226,6 +1273,32 @@ fn session_view(
         bounds_max,
         error,
     )
+}
+
+fn preset_import_presets(
+    source: &str,
+    core: &mut SettingsModelCore,
+    write: bool,
+) -> ImportReportRecord {
+    crate::PresetImport::import_presets(std::path::Path::new(source), core, write).into_record()
+}
+
+fn preset_import_file(
+    path: &str,
+    core: &mut SettingsModelCore,
+    write: bool,
+) -> ImportReportRecord {
+    crate::PresetImport::import_preset_file(std::path::Path::new(path), core, write).into_record()
+}
+
+fn preset_slicer_candidates(config_location: &str) -> Vec<SlicerSourceRecord> {
+    crate::PresetImport::slicer_candidates(config_location)
+        .into_iter()
+        .map(|source| SlicerSourceRecord {
+            name: source.name,
+            path: source.path,
+        })
+        .collect()
 }
 
 fn read_three_mf_project(path: &str) -> ThreeMfFileOutcome {

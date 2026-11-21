@@ -39,7 +39,7 @@ the header and its two lines, not writing a replacement.
 | main.cpp ⧉ | 2573 | every singleton, 28 includes | 20 | 0 own; registers 13 singletons + 21 context props | **stays C++** (DoD 5) | — |
 | SettingsModel ⧉ | 1648 | PresetYaml | 3 | 21 invokables / 1 signal, singleton, 14 QML files | **landed 2026-11-21** — logic in `src/app/src/SettingsModel.rs`; the header is the QObject shell, the `QVariant` conversions and the `get_defs_fdm()` transcription | PresetYaml |
 | PresetStore ⧉ | 1654 | Resources↻, SliceRuntime✝, PresetFiles, PresetImport, PresetYaml, SettingsModel | 0 | 11 props / 22 invokables / 10 signals, singleton | port | PresetFiles, PresetImport, SettingsModel |
-| PresetImport ⧉ | 1332 | PresetFiles, SettingsModel | 0 | 0 | port | PresetFiles, SettingsModel |
+| PresetImport ⧉ | 1332 | PresetFiles, SettingsModel | 0 | 0 | **landed 2026-11-21** — logic in `src/app/src/PresetImport.rs`; the header keeps the nine-list `Report` `PresetStore::finishImport` takes by const reference, and adapts the three free functions | PresetFiles, SettingsModel |
 | Calibration ⧉ | 1086 | PlateDocument, SettingsModel | 0 | 3 members, singleton | port | PlateDocument, SettingsModel |
 | HfwEngine ⧉ | 1115 | SliceRuntime✝, Paint✝ | 20 | 0 | **landed 2026-11-21** — logic in `src/app/src/HfwEngine.rs`; the header is the Qt-typed adapter that turns `TriangleMesh`, `Transformation` and paint into the bridge's arrays | PlateDocument |
 | SliceRuntime ✝⧉ | 1183 | — | 67 | 0 | **delete, phase 7** | four plate structs must move first |

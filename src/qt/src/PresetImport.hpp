@@ -3,20 +3,27 @@
 
 #pragma once
 
-#include <QJsonObject>
+#include "SettingsModel.hpp"
+
+#include "next-layer-app/src/bridge.rs.h"
+
+#include <QPair>
+#include <QStandardPaths>
 #include <QString>
 #include <QStringList>
-
-#include <QHash>
-#include <QPair>
 #include <QVector>
 
-class SettingsModel;
+#include <string>
 
 namespace next_layer::presetimport {
 
 /// What an import produced, in the user's own names. `refused` is not an error:
 /// a preset this engine has no vocabulary for is reported rather than guessed at.
+///
+/// The nine lists stay `QStringList` on this side even though the reader is Rust:
+/// `PresetStore::finishImport(const Report&)` is the only consumer and it inserts
+/// them straight into the map QML reads, so the shape is the contract and the
+/// conversion happens once, below.
 struct Report
 {
     QStringList printers;
@@ -44,35 +51,72 @@ struct Report
     int count() const { return printers.size() + prints.size() + filaments.size(); }
 };
 
-using KindIndex = QHash<QString, QHash<QString, QJsonObject>>;
+namespace detail {
 
-/// Every preset an installation knows, by kind and then by name: its vendor
-/// bundles first, its own saved presets over them. Kinds are kept apart because
-/// that slicer reuses names across them — a process preset called "Voron 0.2"
-/// sits beside the machine of the same name, and one flat index would let it
-/// shadow the machine and lose its bed.
-KindIndex presetIndex(const QString& sourceDirectory);
+inline QStringList toList(const rust::Vec<rust::String>& values)
+{
+    QStringList list;
+    for (const rust::String& value : values)
+        list.append(QString::fromStdString(static_cast<std::string>(value)));
+    return list;
+}
 
-/// A preset merged with its `inherits` ancestors, child values winning.
-QJsonObject resolvePreset(const QString& kind, const QString& name, const KindIndex& index);
+inline Report toReport(const next_layer::ImportReportRecord& record)
+{
+    Report report;
+    report.printers = toList(record.printers);
+    report.prints = toList(record.prints);
+    report.filaments = toList(record.filaments);
+    report.refused = toList(record.refused);
+    report.elsewhere = toList(record.elsewhere);
+    report.droppedKeys = toList(record.dropped_keys);
+    report.unfitted = toList(record.unfitted);
+    report.droppedTemplates = toList(record.dropped_templates);
+    report.notes = toList(record.notes);
+    report.error = QString::fromStdString(static_cast<std::string>(record.error));
+    return report;
+}
+
+} // namespace detail
 
 /// Reads another slicer's presets out of `sourceDirectory` and writes the ones
 /// this engine can express into the user's own bundle as printer, print and
-/// filament presets, under the user's own names. `settings` supplies the
-/// engine's vocabulary: a key is written only into the block it belongs to, so a
-/// machine profile's retraction settings do not land in a printer preset.
-Report importPresets(const QString& sourceDirectory, SettingsModel& settings, bool write);
+/// filament presets, under the user's own names. `settings` supplies the engine's
+/// vocabulary: a key is written only into the block it belongs to, so a machine
+/// profile's retraction settings do not land in a printer preset.
+inline Report importPresets(const QString& sourceDirectory, SettingsModel& settings, bool write)
+{
+    return detail::toReport(
+        preset_import_presets(sourceDirectory.toStdString(), settings.core(), write));
+}
 
-/// Reads one preset file — an Orca/Bambu single-preset `.json` export or a
-/// PrusaSlicer `.ini`, whether it holds one preset or a whole bundle — and writes
+/// Reads one preset file -- an Orca/Bambu single-preset `.json` export or a
+/// PrusaSlicer `.ini`, whether it holds one preset or a whole bundle -- and writes
 /// what this engine can express into the user's own bundle. Inheritance is
 /// resolved against the slicer installs found on this machine, which is what a
 /// single exported preset cannot carry.
-Report importPresetFile(const QString& path, SettingsModel& settings, bool write);
+inline Report importPresetFile(const QString& path, SettingsModel& settings, bool write)
+{
+    return detail::toReport(preset_import_file(path.toStdString(), settings.core(), write));
+}
 
 /// The other slicers this app knows how to read, as name and directory, in the
 /// order they are worth offering. Absent directories are included; the caller
 /// checks.
-QVector<QPair<QString, QString>> slicerCandidates();
+///
+/// The location is read here and decoded in Rust: Qt 6 reports
+/// `QStandardPaths::ConfigLocation` as a `file://` URL, and treating it as a path
+/// returns `%20`-encoded directory names, so the import finds nothing at all.
+inline QVector<QPair<QString, QString>> slicerCandidates()
+{
+    const QString location = QStandardPaths::writableLocation(QStandardPaths::ConfigLocation);
+    QVector<QPair<QString, QString>> sources;
+    for (const next_layer::SlicerSourceRecord& source :
+         preset_slicer_candidates(location.toStdString())) {
+        sources.append({QString::fromStdString(static_cast<std::string>(source.name)),
+                        QString::fromStdString(static_cast<std::string>(source.path))});
+    }
+    return sources;
+}
 
 } // namespace next_layer::presetimport

@@ -27,7 +27,6 @@ PlateScene.cpp
 PlateScene.hpp
 PlateThumbnail.hpp
 PresetFiles.hpp
-PresetImport.cpp
 PresetImport.hpp
 PresetStore.cpp
 PresetStore.hpp

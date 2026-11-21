@@ -95,7 +95,7 @@ public:
     Q_INVOKABLE QString exportPreset(const QString& kind, const QString& name,
                                      const QString& path) const;
     Q_INVOKABLE QString importPreset(const QString& kind, const QString& path);
-    QString importedPresetName() const { return m_importedPresetName; }
+    Q_INVOKABLE QString importedPresetName() const { return m_importedPresetName; }
 
     /// A whole vendor bundle out to a directory: every preset file it holds plus
     /// the manifest that describes its machines, so the machine, its processes
