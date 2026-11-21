@@ -8,6 +8,42 @@ move because phase 7 deletes them instead.
 Measured 2026-11-20 by 27 read-only surveys (one per module pair, five at a time)
 plus the twelve already surveyed. Nothing here was edited to produce it.
 
+## Where the port stands (2026-11-21)
+
+Measured, not estimated: `fish tools/rust-port` reads **57 C++ files, 23,837 lines**
+against **24 Rust modules, 15,500 lines**, with 18 of 57 files carrying a Rust
+replacement. `tools/cpp-baseline` was 71 when the map was drawn and is 57 now.
+
+**19 of the 39 modules are Rust**, each with its `.cpp` deleted and its header kept as
+Qt-typed adapters onto `src/app/src/<Name>.rs`:
+
+`GcodeBrand` `Palette` `Resources` `Scratch` `Updater` · `PlateThumbnail`
+`ForeignSettings` `ProjectFile` `ThreeMfProject` `MeshGeometry` · `SettingsModel`
+`PresetYaml` `PresetFiles` `PresetImport` · `ConfigBoxJson` `Orient` · `HfwEngine`
+`Host` `Session`
+
+That includes three of the five files in the cycle below, so the wall is now one
+file: `PlateDocument`.
+
+**What is left, and what actually blocks it.** Twelve porting modules remain. Seven
+of them are blocked on something that is not per-file effort:
+
+| blocked on | modules | state |
+| --- | --- | --- |
+| `PlateDocument` | PlateScene, SliceController, Calibration | slice 1 and slice 2 are drafted (`/tmp/nl-drafts5`, `/tmp/nl-drafts10`); nothing implemented |
+| a toolpath renderer | GcodeView, Toolpath, PreviewData | decided in HFW `docs/PREVIEW-RENDERER.md`: Qt Quick 3D geometry, quads per bead. HFW now hands over the buffer (`hfw_plate_preview_buffer`, 32 bytes per move plus a per-layer table). Not built |
+| HFW's preset debt | PresetStore | four items named in the draft; the four calls map one-to-one, so it is a port the day they land |
+| nothing, drafted | TransformController, QtPlatform, GlewWrap | TransformController is mostly a deletion; GlewWrap's `-Wl,--wrap=glewInit` stays at `src/qt/CMakeLists.txt:171` because cargo cannot carry it |
+
+`Arranger` is **blocked deliberately**: HFW packs bounding boxes with MaxRects, the
+C++ packs projected silhouettes with an NFP kernel, and the only gate uses cubes. A
+port would pass the gate and degrade every curved part.
+
+**The cheapest 5,118 lines left are deletions**, not ports — `SceneSelftest`,
+`SliceRuntime`, `Paint`, `Text`, `Cut`, `Hollow` — and they wait on their gates being
+re-homed (`--scene-selftest`, `--plate-tools`, `--calibration-test` all drive them)
+and on the four plate structs leaving `SliceRuntime.hpp`.
+
 ## How a row was established
 
 - **Includes** — the module's own `#include "…"` lines, read from the file, not
