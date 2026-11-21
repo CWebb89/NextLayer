@@ -58,7 +58,6 @@ SliceRuntime.cpp
 SliceRuntime.hpp
 Text.cpp
 Text.hpp
-ThreeMfProject.cpp
 ThreeMfProject.hpp
 Toolpath.cpp
 Toolpath.hpp

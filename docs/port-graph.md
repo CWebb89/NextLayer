@@ -48,7 +48,7 @@ the header and its two lines, not writing a replacement.
 | PreviewData ⧉ | 733 | FeatureColors | 23 | 0 | port, phase 4 | FeatureColors |
 | SliceController | 752 | GcodeBrand↻, HfwEngine, PlateDocument, PlateThumbnail, SettingsModel, SliceRuntime✝, Scratch↻ | 0 | 10 props / 8 invokables / 10 signals, singleton | port, phase 2 | HfwEngine, PlateDocument, SettingsModel, PlateThumbnail |
 | PrinterLink | 638 | PresetStore | 22 | 12 props / 8 invokables / 3 signals, singleton | port, phase 0 | PresetStore |
-| ThreeMfProject | 637 | miniz only | 0 | 0 | port, phase 6 | — |
+| ThreeMfProject | 637 | miniz only | 0 | 0 | **landed 2026-11-21** — logic in `src/app/src/ThreeMfProject.rs` (its own archive reader), the header is the adapter | — |
 | Toolpath | 613 | PreviewData, GcodeView | 2 | 21 props / 14 invokables / 1 signal, singleton | port, phase 4 | PreviewData, GcodeView |
 | ProjectFile | 497 | Paint✝, Scratch↻ | 14 | 0 | **landed 2026-11-21** — logic in `src/app/src/ProjectFile.rs`, the header is the adapter | — |
 | Paint ✝ | 481 | — | 19 | 0 | **delete, phase 7** | shared types move first |

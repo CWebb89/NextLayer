@@ -380,7 +380,7 @@ to stop calling the C++ engine for.
 | 3 — settings | **Landed 2026-11-20**: settings surface JSON + `hfw_plate_object_set` | **Not started**: `SettingsModel.cpp` (1,568) still reads the C++ `ConfigContainer` |
 | 4 — preview | **Landed 2026-11-20**: `hfw_plate_preview_json` + threaded job | **Not started**: `GcodeView`/`PreviewData` still borrow libvgcode/libpgcode types |
 | 5 — plate operations | **Landed 2026-11-20**: duplicate/rotate/mirror/arrange in `crates/plate` | **Not started**: `Arranger.cpp`, `Orient.cpp`, `TransformController.cpp` still slice with the C++ engine's geometry |
-| 6 — project files | **Landed 2026-11-20** (HFW `7f25a00`): `hfw_plate_project_bytes`/`hfw_plate_open_project`, object placement carried as a pose rather than baked into the coordinates, and `hfw_plate_set_metadata`/`_get` for state the engine has no concept of (stored base64, project format v8) | **Application half landed 2026-11-20**: `saveProject`/`loadProject` go through the engine's document plus that metadata, so a saved project is one file the engine can slice. `ProjectFile.cpp` keeps only its reader, for projects written before the move; `ThreeMfProject.cpp` still serves the foreign-project import and the `.3mf` another slicer opens |
+| 6 — project files | **Landed 2026-11-20** (HFW `7f25a00`): `hfw_plate_project_bytes`/`hfw_plate_open_project`, object placement carried as a pose rather than baked into the coordinates, and `hfw_plate_set_metadata`/`_get` for state the engine has no concept of (stored base64, project format v8) | **Application half landed 2026-11-20, closed 2026-11-21**: `saveProject`/`loadProject` go through the engine's document plus that metadata, so a saved project is one file the engine can slice. `ProjectFile` is now Rust (`src/app/src/ProjectFile.rs`) and the header keeps its reader for projects written before the move. `ThreeMfProject` is Rust too: the archive reader (central directory, zip64, deflate through `flate2`, CRC-verified entries), the XML scanner and the five records are `src/app/src/ThreeMfProject.rs`, so the foreign-project import and the `.3mf` another slicer opens no longer need `miniz` |
 | 7 — optional features | **Settled 2026-11-20**: seven `capabilities` rows, `docs/SCOPE.md` | **Not started**: the thirteen files are deleted, not ported |
 
 Outside the phases, because they needed no engine at all, five shell files are
@@ -400,7 +400,13 @@ still prints the same 109 rows in the same order. `ProjectFile` landed next (pha
 vocabulary it settled — geometry as binary STL bytes, a transform as sixteen `f64`
 row-major, paint as the file's own bitstream record, settings as a discriminated
 record — is written down in `docs/port-graph.md` under the cycle, because that is
-what the five files in the cycle will speak. They proved the shape every later port
-reuses — one `#[cxx::bridge]` in `src/app/src/bridge.rs`, the C++ header kept as
-inline Qt adapters, the `.cpp` deleted — and `tools/rust-port` now reads **7 of 66**
-backend files replaced, 13 Rust files, 3,815 lines.
+what the five files in the cycle will speak. `ThreeMfProject` closed phase 6 the
+same day: the zip reader (central directory, zip64, deflate through `flate2`, which
+`ureq` already brought into the lock), the XML scanner and the five project records
+are `src/app/src/ThreeMfProject.rs`, and `miniz` is gone from this module — a
+volume's triangle range is a field there, not the `__first_triangle` setting the C++
+injected and read back, so no synthetic name can reach the settings ledger. They
+proved the shape every later port reuses — one `#[cxx::bridge]` in
+`src/app/src/bridge.rs`, the C++ header kept as inline Qt adapters, the `.cpp`
+deleted — and `tools/rust-port` now reads **8 of 65** backend files replaced, 14 Rust
+files, 5,455 lines.

@@ -12,6 +12,11 @@ pub use ffi::{
     ProjectPaintOutcome, ProjectSetting, ProjectVolumeRecord,
 };
 
+pub use ffi::{
+    ThreeMfFileFacet, ThreeMfFileForeign, ThreeMfFileMarker, ThreeMfFileName, ThreeMfFileOutcome,
+    ThreeMfFilePlate, ThreeMfFileRecord, ThreeMfFileSetting, ThreeMfFileVolume,
+};
+
 use cxx::CxxString;
 
 #[cxx::bridge(namespace = "next_layer")]
@@ -103,6 +108,82 @@ mod ffi {
     struct ProjectPaintOutcome {
         ok: bool,
         paint: ProjectPaint,
+    }
+
+    /// One painted facet: the triangle's index inside its volume, and the file's
+    /// own paint string for it.
+    struct ThreeMfFileFacet {
+        triangle: i32,
+        text: String,
+    }
+
+    /// One metadata record from a project file: an object's or volume's override,
+    /// or a record another slicer wrote under its own name.
+    struct ThreeMfFileSetting {
+        name: String,
+        value: String,
+    }
+
+    /// One volume of an object: its role, the index of its first triangle in the
+    /// object's mesh, its own overrides, and the facets painted on it.
+    struct ThreeMfFileVolume {
+        kind: String,
+        first_triangle: i32,
+        settings: Vec<ThreeMfFileSetting>,
+        supports: Vec<ThreeMfFileFacet>,
+        seams: Vec<ThreeMfFileFacet>,
+        tools: Vec<ThreeMfFileFacet>,
+    }
+
+    /// One object of a project, keyed out here by `id`.
+    struct ThreeMfFileRecord {
+        id: i32,
+        name: String,
+        settings: Vec<ThreeMfFileSetting>,
+        volumes: Vec<ThreeMfFileVolume>,
+        /// Flat (z, layer height) pairs.
+        layer_heights: Vec<f64>,
+    }
+
+    /// The plate one object belongs to.
+    struct ThreeMfFilePlate {
+        object: i32,
+        plate: i32,
+    }
+
+    /// The label a foreign project gives one object.
+    struct ThreeMfFileName {
+        id: i32,
+        name: String,
+    }
+
+    /// The settings a foreign project keeps for one object, under its own names.
+    struct ThreeMfFileForeign {
+        id: i32,
+        settings: Vec<ThreeMfFileSetting>,
+    }
+
+    /// One marker on a bed's timeline.
+    struct ThreeMfFileMarker {
+        bed: i32,
+        z: f64,
+        kind: i32,
+        text: String,
+    }
+
+    /// What a project file held, or `valid` false when it held no model.
+    struct ThreeMfFileOutcome {
+        valid: bool,
+        application: String,
+        plate_count: i32,
+        build_order: Vec<i32>,
+        /// Twelve `f64` per build item, row-major, three rows of four.
+        build_transforms: Vec<f64>,
+        plates: Vec<ThreeMfFilePlate>,
+        records: Vec<ThreeMfFileRecord>,
+        foreign_names: Vec<ThreeMfFileName>,
+        foreign_settings: Vec<ThreeMfFileForeign>,
+        markers: Vec<ThreeMfFileMarker>,
     }
 
     unsafe extern "C++" {
@@ -238,6 +319,16 @@ mod ffi {
 
         /// One paint channel read back from text.
         fn paint_from_text(text: &[u8]) -> ProjectPaintOutcome;
+
+        /// A project file's own records, or `valid` false when it holds no model.
+        fn read_three_mf_project(path: &str) -> ThreeMfFileOutcome;
+
+        /// Whether the file is a sliced print: a `.gcode`, or a `.3mf` carrying a
+        /// G-code and no mesh.
+        fn is_pre_sliced_file(path: &str) -> bool;
+
+        /// Writes the G-code inside a pre-sliced file to `out_path`.
+        fn extract_pre_sliced_gcode(path: &str, out_path: &str) -> bool;
     }
 }
 
@@ -407,6 +498,18 @@ fn paint_to_text(paint: &ProjectPaint) -> Vec<u8> {
 
 fn paint_from_text(text: &[u8]) -> ProjectPaintOutcome {
     crate::ProjectFile::paint_from_text(text)
+}
+
+fn read_three_mf_project(path: &str) -> ThreeMfFileOutcome {
+    crate::ThreeMfProject::read_three_mf_project(path)
+}
+
+fn is_pre_sliced_file(path: &str) -> bool {
+    crate::ThreeMfProject::is_pre_sliced_file(path)
+}
+
+fn extract_pre_sliced_gcode(path: &str, out_path: &str) -> bool {
+    crate::ThreeMfProject::extract_pre_sliced_gcode(path, out_path)
 }
 
 fn flatten(pair: Option<(String, String)>) -> Vec<String> {

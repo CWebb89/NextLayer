@@ -70,6 +70,8 @@ pub mod ProjectFile;
 #[allow(non_snake_case)]
 pub mod Resources;
 #[allow(non_snake_case)]
+pub mod ThreeMfProject;
+#[allow(non_snake_case)]
 pub mod Scratch;
 #[allow(non_snake_case)]
 pub mod Updater;

@@ -8,8 +8,17 @@
 #include <QVector>
 
 #include <array>
+#include <string>
+
+#include "next-layer-app/src/bridge.rs.h"
 
 namespace next_layer {
+
+// The records a project file is read into, and the three readers over them. The
+// reading, the archive and the XML are Rust's (`src/app/src/ThreeMfProject.rs`);
+// this header exists so the document that walks these containers by key keeps its
+// spelling, because every one of them is reached through `QHash::constFind`,
+// `QHash::value` and `QVector::at` at the call site.
 
 /// One volume as a project file records it: what it is (a model part, a modifier,
 /// a negative volume, a support blocker), where it sits in the object's frame, the
@@ -18,6 +27,11 @@ namespace next_layer {
 /// The paint is kept as the file's own per-triangle strings, keyed by the
 /// triangle's index inside the volume. Converting them is the caller's job,
 /// because the engine's selector is what understands the encoding.
+///
+/// The volume's triangle range is not here and is not a setting: the file's
+/// `firstid` reaches this record only as the starting index of the paint above, so
+/// nothing this struct carries can put a range into the settings a caller hands the
+/// engine.
 struct ThreeMfVolumeRecord
 {
     QString type;
@@ -90,17 +104,116 @@ struct ThreeMfProject
     QHash<int, QVector<ThreeMfLayerGcode>> layerGcodes;
 };
 
-ThreeMfProject readThreeMfProject(const QString& path);
+namespace threeMfDetail {
+
+inline QString fromRust(const rust::String& value)
+{
+    return QString::fromStdString(static_cast<std::string>(value));
+}
+
+inline QHash<QString, QString> settingsFrom(const rust::Vec<ThreeMfFileSetting>& settings)
+{
+    QHash<QString, QString> entries;
+    entries.reserve(int(settings.size()));
+    for (const ThreeMfFileSetting& setting : settings)
+        entries.insert(fromRust(setting.name), fromRust(setting.value));
+    return entries;
+}
+
+inline QHash<int, QString> paintFrom(const rust::Vec<ThreeMfFileFacet>& facets)
+{
+    QHash<int, QString> painted;
+    painted.reserve(int(facets.size()));
+    for (const ThreeMfFileFacet& facet : facets)
+        painted.insert(facet.triangle, fromRust(facet.text));
+    return painted;
+}
+
+inline ThreeMfVolumeRecord volumeFrom(const ThreeMfFileVolume& volume)
+{
+    ThreeMfVolumeRecord record;
+    record.type = fromRust(volume.kind);
+    record.settings = settingsFrom(volume.settings);
+    record.supports = paintFrom(volume.supports);
+    record.seams = paintFrom(volume.seams);
+    record.tools = paintFrom(volume.tools);
+    return record;
+}
+
+inline ThreeMfObjectRecord objectFrom(const ThreeMfFileRecord& record)
+{
+    ThreeMfObjectRecord object;
+    object.name = fromRust(record.name);
+    object.settings = settingsFrom(record.settings);
+    object.volumes.reserve(int(record.volumes.size()));
+    for (const ThreeMfFileVolume& volume : record.volumes)
+        object.volumes.append(volumeFrom(volume));
+    object.layerHeights.reserve(int(record.layer_heights.size()));
+    for (const double height : record.layer_heights)
+        object.layerHeights.append(height);
+    return object;
+}
+
+}
+
+inline ThreeMfProject readThreeMfProject(const QString& path)
+{
+    const ThreeMfFileOutcome outcome = read_three_mf_project(path.toStdString());
+
+    ThreeMfProject project;
+    project.valid = outcome.valid;
+    project.application = threeMfDetail::fromRust(outcome.application);
+    project.plateCount = outcome.plate_count;
+
+    project.buildOrder.reserve(int(outcome.build_order.size()));
+    for (const int objectId : outcome.build_order)
+        project.buildOrder.append(objectId);
+
+    project.buildTransforms.reserve(int(outcome.build_transforms.size()) / 12);
+    for (size_t at = 0; at + 11 < outcome.build_transforms.size(); at += 12) {
+        ThreeMfProject::Placement placement;
+        for (size_t slot = 0; slot < placement.size(); ++slot)
+            placement[slot] = outcome.build_transforms[at + slot];
+        project.buildTransforms.append(placement);
+    }
+
+    for (const ThreeMfFilePlate& plate : outcome.plates)
+        project.plateOfObject.insert(plate.object, plate.plate);
+
+    for (const ThreeMfFileRecord& record : outcome.records)
+        project.objectRecords.insert(record.id, threeMfDetail::objectFrom(record));
+
+    for (const ThreeMfFileName& name : outcome.foreign_names)
+        project.foreignNames.insert(name.id, threeMfDetail::fromRust(name.name));
+
+    for (const ThreeMfFileForeign& foreign : outcome.foreign_settings)
+        project.foreignSettings.insert(foreign.id, threeMfDetail::settingsFrom(foreign.settings));
+
+    for (const ThreeMfFileMarker& marker : outcome.markers) {
+        ThreeMfLayerGcode entry;
+        entry.z = marker.z;
+        entry.type = marker.kind;
+        entry.text = threeMfDetail::fromRust(marker.text);
+        project.layerGcodes[marker.bed].append(entry);
+    }
+    return project;
+}
 
 /// Whether the file is a print that has already been sliced rather than a model:
 /// a `.gcode`, or a `.3mf` archive that carries a G-code and no mesh (what
 /// MakerWorld and Printables hand out). Re-slicing one of those is not a thing
 /// that can happen, so the caller offers the toolpath preview instead of a mesh.
-bool isPreSlicedFile(const QString& path);
+inline bool isPreSlicedFile(const QString& path)
+{
+    return is_pre_sliced_file(path.toStdString());
+}
 
 /// Writes the G-code inside a pre-sliced file to \p outPath, which is how a
 /// `.gcode.3mf` becomes something the toolpath view can read. A plain `.gcode`
 /// is copied. False when the file holds no G-code.
-bool extractPreSlicedGcode(const QString& path, const QString& outPath);
+inline bool extractPreSlicedGcode(const QString& path, const QString& outPath)
+{
+    return extract_pre_sliced_gcode(path.toStdString(), outPath.toStdString());
+}
 
 }
