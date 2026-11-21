@@ -37,7 +37,7 @@ the header and its two lines, not writing a replacement.
 | PlateDocument ⧉ | 4479 | Arranger, Paint✝, SliceRuntime✝, ThreeMfProject, ConfigBoxJson, ForeignSettings, HfwEngine, ProjectFile, Orient, Cut✝, Hollow✝, Text✝, GcodeBrand↻, Scratch↻ | 30 | 27 props / 102 invokables / 13 signals, singleton | port, phase 2 | Arranger, Orient, ConfigBoxJson, HfwEngine, ProjectFile, ThreeMfProject, ForeignSettings |
 | SceneSelftest ⧉ | 3028 | PlateDocument | 26 | 0 | **delete, phase 7** | — |
 | main.cpp ⧉ | 2573 | every singleton, 28 includes | 20 | 0 own; registers 13 singletons + 21 context props | **stays C++** (DoD 5) | — |
-| SettingsModel ⧉ | 1648 | PresetYaml | 3 | 21 invokables / 1 signal, singleton, 14 QML files | port, phase 3 | PresetYaml |
+| SettingsModel ⧉ | 1648 | PresetYaml | 3 | 21 invokables / 1 signal, singleton, 14 QML files | **landed 2026-11-21** — logic in `src/app/src/SettingsModel.rs`; the header is the QObject shell, the `QVariant` conversions and the `get_defs_fdm()` transcription | PresetYaml |
 | PresetStore ⧉ | 1654 | Resources↻, SliceRuntime✝, PresetFiles, PresetImport, PresetYaml, SettingsModel | 0 | 11 props / 22 invokables / 10 signals, singleton | port | PresetFiles, PresetImport, SettingsModel |
 | PresetImport ⧉ | 1332 | PresetFiles, SettingsModel | 0 | 0 | port | PresetFiles, SettingsModel |
 | Calibration ⧉ | 1086 | PlateDocument, SettingsModel | 0 | 3 members, singleton | port | PlateDocument, SettingsModel |
@@ -56,7 +56,7 @@ the header and its two lines, not writing a replacement.
 | QtPlatform | 391 | — | 19 | 0 | port, phase 0 | SliceRuntime✝ (its install site) |
 | ConfigBoxJson | 307 | — | 14 | 0 | port, phase 3 | PlateDocument |
 | MeshGeometry | 298 | — | 4 | 2 props / 1 invokable / 1 signal, singleton, AUTOMOC | **shell split landed 2026-11-21** — the buffers and the raycast are `src/app/src/MeshGeometry.rs`; the header keeps the `QQuick3DGeometry` class | — |
-| PresetFiles | 247 | PresetYaml | 0 | 0 | port, phase 3 | PresetYaml |
+| PresetFiles | 247 | PresetYaml | 0 | 0 | **landed 2026-11-21** — logic in `src/app/src/PresetFiles.rs`; header-only, so the `.hpp` stays an adapter for `PresetStore.cpp` and `PresetImport.cpp` | PresetYaml |
 | Text ✝ | 230 | — | 23 | 0 | **delete, phase 7** | — |
 | TransformController | 223 | Scratch↻ | 7 | 1 prop / 7 invokables / 3 signals, singleton | port, phase 5 | — |
 | Host | 215 | Palette↻, SliceRuntime✝ | 1 | 14 props / 1 invokable / 4 signals, singleton | port, phase 0 | — |
@@ -66,7 +66,7 @@ the header and its two lines, not writing a replacement.
 | Cut ✝ | 151 | — | 13 | 0 | **delete, phase 7** | PlateDocument::cutAtZ moves first |
 | PlateThumbnail | 144 | — | 0 | 0 | port, phase 1 | — |
 | FeatureColors | 60 | — | 0 | 0 | port, phase 4 | — |
-| PresetYaml | 56 | — | 0 | 0 | port, phase 3 | — |
+| PresetYaml | 56 | — | 0 | 0 | **landed 2026-11-21** — logic in `src/app/src/PresetYaml.rs`; header-only, so the `.hpp` stays an adapter until `PresetStore.cpp` ports | — |
 | Palette ↻ | 48 | — | 0 | 2 props / 0 invokables / 0 signals, not registered | port, phase 0 | — |
 | Hollow ✝ | 45 | — | 4 | 0 | **delete, phase 7** | PlateDocument::hollowObject moves first |
 | Scratch ↻ | 38 | — | 0 | 0 | port, phase 2 | — |

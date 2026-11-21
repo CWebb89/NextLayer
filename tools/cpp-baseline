@@ -49,7 +49,6 @@ SceneSelftest.hpp
 Scratch.hpp
 Session.cpp
 Session.hpp
-SettingsModel.cpp
 SettingsModel.hpp
 SliceController.cpp
 SliceController.hpp

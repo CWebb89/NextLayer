@@ -8,9 +8,15 @@
 pub use crate::mesh::Mesh;
 
 pub use ffi::{
-    MeshGeometryFrame, ProjectMarkerRecord, ProjectMetadataRecord, ProjectObjectRecord,
-    ProjectOutcome, ProjectPaint, ProjectPaintOutcome, ProjectSetting, ProjectVolumeRecord,
+    MeshGeometryFrame, PresetPrinterRecord, ProjectMarkerRecord, ProjectMetadataRecord,
+    ProjectObjectRecord, ProjectOutcome, ProjectPaint, ProjectPaintOutcome, ProjectSetting,
+    ProjectVolumeRecord, SettingChangeRecord, SettingChoiceRecord, SettingDefinitionRecord,
+    SettingElementRecord, SettingEnumValueRecord, SettingGroupRecord, SettingInputRecord,
+    SettingItemRecord, SettingModifiedRecord, SettingScalarRecord, SettingSubtabRecord,
+    SettingTabRecord, SettingValueRecord,
 };
+
+pub use crate::SettingsModel::Model as SettingsModelCore;
 
 pub use ffi::{
     ThreeMfFileFacet, ThreeMfFileForeign, ThreeMfFileMarker, ThreeMfFileName, ThreeMfFileOutcome,
@@ -204,6 +210,172 @@ mod ffi {
         markers: Vec<ThreeMfFileMarker>,
     }
 
+    /// One line of the user bundle's manifest: the name a person typed, the slug
+    /// every id in the bundle is built from, and how many tools the machine has.
+    struct PresetPrinterRecord {
+        name: String,
+        slug: String,
+        tools: i32,
+    }
+
+    /// One value as the panel reads it. `kind` is 0 invalid, 1 boolean, 2 integer,
+    /// 3 number, 4 text, 5 list, 6 percentage, 7 float-or-percentage, 8 enum; a
+    /// list carries `items` (0 numbers, 1 texts, 2 points, 3 integers, 4 booleans,
+    /// 5 float-or-percentages, 6 optional integers, 7 percentages, 8 enum
+    /// spellings) and fills `numbers`, `texts` and `flags` accordingly.
+    struct SettingValueRecord {
+        kind: u8,
+        truth: bool,
+        integer: i64,
+        number: f64,
+        text: String,
+        items: u8,
+        numbers: Vec<f64>,
+        texts: Vec<String>,
+        flags: Vec<u8>,
+    }
+
+    /// One `QVariant`'s own answers, so no conversion of one is reimplemented in
+    /// Rust: `kind` is 0 invalid, 1 boolean, 2 integer, 3 number, 4 text, 5 list,
+    /// 6 map, and the `_ok` fields say whether the converter succeeded.
+    struct SettingScalarRecord {
+        kind: u8,
+        truth: bool,
+        integer: i64,
+        integer_ok: bool,
+        number: f64,
+        number_ok: bool,
+        text: String,
+        map_value: f64,
+        map_percent: bool,
+    }
+
+    /// One element of a list on its way in: `kind` is 0 number, 1 text, 2 point.
+    struct SettingElementRecord {
+        kind: u8,
+        text: String,
+        number: f64,
+        number_ok: bool,
+        pair_first: f64,
+        pair_second: f64,
+    }
+
+    /// A value on its way in.
+    struct SettingInputRecord {
+        is_list: bool,
+        whole: SettingScalarRecord,
+        first: SettingScalarRecord,
+        elements: Vec<SettingElementRecord>,
+    }
+
+    /// Whether a write was taken, and whether it moved anything.
+    struct SettingChangeRecord {
+        applied: bool,
+        changed: bool,
+    }
+
+    /// One value an enum setting accepts: its serialized spelling, its label, and
+    /// the number the engine takes.
+    struct SettingEnumValueRecord {
+        serialized: String,
+        label: String,
+        number: i64,
+    }
+
+    /// One setting as the engine defines it: everything the panel decides from and
+    /// nothing it decides.
+    struct SettingDefinitionRecord {
+        name: String,
+        label: String,
+        full_label: String,
+        tooltip: String,
+        location: u8,
+        overrides_in: Vec<u8>,
+        category: i32,
+        option_group: i32,
+        category_title: String,
+        option_group_title: String,
+        order: i32,
+        gui_type: String,
+        units: Vec<String>,
+        has_min: bool,
+        min: f64,
+        has_max: bool,
+        max: f64,
+        multiline: bool,
+        full_width: bool,
+        enum_values: Vec<SettingEnumValueRecord>,
+        default_value: SettingValueRecord,
+    }
+
+    /// One entry of a combo box.
+    struct SettingChoiceRecord {
+        value: String,
+        label: String,
+    }
+
+    /// One row of the settings tree. `complete` false is the seven-key map the
+    /// panel draws for a definition it does not hold.
+    struct SettingItemRecord {
+        name: String,
+        label: String,
+        full_label: String,
+        tooltip: String,
+        type_name: String,
+        gui_type: String,
+        value: SettingValueRecord,
+        has_min: bool,
+        min: f64,
+        has_max: bool,
+        max: f64,
+        units: Vec<String>,
+        choices: Vec<SettingChoiceRecord>,
+        modified: bool,
+        percent: bool,
+        multiline: bool,
+        full_width: bool,
+        complete: bool,
+    }
+
+    /// One sub-tab of the sidebar.
+    struct SettingSubtabRecord {
+        key: String,
+        title: String,
+        count: i32,
+        modified: i32,
+    }
+
+    /// One tab of the sidebar, with its sub-tabs.
+    struct SettingTabRecord {
+        key: String,
+        title: String,
+        count: i32,
+        modified: i32,
+        subtabs: Vec<SettingSubtabRecord>,
+    }
+
+    /// One titled group inside a sub-tab.
+    struct SettingGroupRecord {
+        key: String,
+        title: String,
+        tab: String,
+        tab_title: String,
+        subtab: String,
+        subtab_title: String,
+        items: Vec<SettingItemRecord>,
+    }
+
+    /// One row of the preset diff window.
+    struct SettingModifiedRecord {
+        name: String,
+        label: String,
+        tab: String,
+        subtab: String,
+        subtab_key: String,
+        before: SettingValueRecord,
+        after: SettingValueRecord,
+    }
+
     unsafe extern "C++" {
         include!("next-layer-app/include/next-layer-qt.hpp");
 
@@ -328,6 +500,10 @@ mod ffi {
         /// The install prefix this build replaces.
         fn update_install_root() -> String;
 
+        /// The model behind the QObject shell: every setting the panel shows, its
+        /// value, its placement and the bookkeeping a preset diff reads.
+        type SettingsModelCore;
+
         /// The version this build reports.
         fn update_current_version() -> String;
 
@@ -365,6 +541,158 @@ mod ffi {
 
         /// One paint channel read back from text.
         fn paint_from_text(text: &[u8]) -> ProjectPaintOutcome;
+
+        /// One YAML scalar, single-quoted unless it holds a newline.
+        fn yaml_quoted(text: &str) -> String;
+
+        /// `QString::number(value, 'g', 15)`: fifteen significant digits, trailing
+        /// zeros dropped, a signed two-digit exponent.
+        fn yaml_number(value: f64) -> String;
+
+        /// The inverse for one scalar: trimmed, one matched quote pair stripped.
+        fn yaml_unquoted(text: &str) -> String;
+
+        /// One `x xy` point, the separator inside the quotes.
+        fn yaml_point(x: f64, y: f64) -> String;
+
+        /// Where presets live on disk.
+        fn presets_root() -> String;
+
+        /// The user's own bundle inside it.
+        fn presets_custom_vendor_directory() -> String;
+
+        /// The shipped filament presets the bundle does not have yet; the names
+        /// arrive newline-joined.
+        fn presets_filament_library_plan(directory: &str, library_names: &str) -> Vec<String>;
+
+        /// The file-name and id fragment a printer name turns into.
+        fn presets_slug_of(name: &str) -> String;
+
+        /// A version 4 UUID in canonical spelling.
+        fn presets_fresh_id() -> String;
+
+        /// Writes a file whole, creating the directory chain.
+        fn presets_write_file(path: &str, contents: &str) -> bool;
+
+        /// One preset document in the engine's own shape; an empty `id` gets a
+        /// fresh one.
+        fn presets_document(
+            kind: &str,
+            name: &str,
+            parent: &str,
+            condition: &str,
+            values_yaml: &str,
+            id: &str,
+        ) -> String;
+
+        /// The bundle's manifest, in file order.
+        fn presets_custom_printers() -> Vec<PresetPrinterRecord>;
+
+        /// Registers or updates a printer and rewrites the manifest and the vendor
+        /// description; empty on success, else why nothing was written.
+        fn presets_add_custom_printer(name: &str, tools: i32) -> String;
+
+        /// The preset file a registered printer's settings go to, empty when the
+        /// bundle does not list it.
+        fn presets_custom_printer_path(name: &str) -> String;
+
+        /// Writes the one empty tool-print preset a bundle needs to be evaluable.
+        fn presets_ensure_tool_print_preset() -> String;
+
+        /// Builds the editor from the engine's definitions, the layout document and
+        /// the base config, both as the bytes of a Qt resource.
+        fn settings_model_new(
+            definitions: &[SettingDefinitionRecord],
+            layout_json: &str,
+            base_config_json: &str,
+        ) -> Box<SettingsModelCore>;
+
+        /// The three tabs with their sub-tabs, counts and modified counts.
+        fn settings_tab_list(model: &SettingsModelCore) -> Vec<SettingTabRecord>;
+
+        /// The groups of one sub-tab, filtered and with the capability list applied.
+        fn settings_groups(
+            model: &SettingsModelCore,
+            tab: &str,
+            subtab: &str,
+            filter: &str,
+        ) -> Vec<SettingGroupRecord>;
+
+        /// One setting's value, as QML reads it.
+        fn settings_value(model: &SettingsModelCore, name: &str) -> SettingValueRecord;
+
+        /// The block a setting belongs to: print, filament or printer.
+        fn settings_block_of(model: &SettingsModelCore, name: &str) -> String;
+
+        /// Whether a setting may be overridden from the given block.
+        fn settings_can_hold_in(model: &SettingsModelCore, name: &str, block: &str) -> bool;
+
+        /// A bed shape's points, flat `x, y` pairs, and nothing for any other type.
+        fn settings_points(model: &SettingsModelCore, name: &str) -> Vec<f64>;
+
+        /// Writes one value, answering whether it was taken and whether it moved.
+        fn settings_set_value(
+            model: &mut SettingsModelCore,
+            name: &str,
+            input: &SettingInputRecord,
+        ) -> SettingChangeRecord;
+
+        /// Returns one setting to its default: true when it moved.
+        fn settings_reset(model: &mut SettingsModelCore, name: &str) -> bool;
+
+        /// Replaces the values and the template from a resolved configuration.
+        fn settings_seed_from_config_json(model: &mut SettingsModelCore, json: &str) -> bool;
+
+        /// Resets one sub-tab: true when at least one entry moved.
+        fn settings_reset_subtab(model: &mut SettingsModelCore, tab: &str, subtab: &str) -> bool;
+
+        /// Resets one tab: true when at least one entry moved.
+        fn settings_reset_tab(model: &mut SettingsModelCore, tab: &str) -> bool;
+
+        /// How many entries in a tab differ from their defaults.
+        fn settings_modified_count(model: &SettingsModelCore, tab: &str) -> i32;
+
+        /// One row per changed entry, with the value before and after.
+        fn settings_modified_values(model: &SettingsModelCore, tab: &str) -> Vec<SettingModifiedRecord>;
+
+        /// Every setting an object may override, filtered by name or label.
+        fn settings_object_defs(model: &SettingsModelCore, filter: &str) -> Vec<SettingItemRecord>;
+
+        /// The tab tree as text, the format `--dump-tabs` prints.
+        fn settings_tab_dump(model: &SettingsModelCore) -> String;
+
+        /// Replaces the names the capability list hides.
+        fn settings_set_unsupported(model: &mut SettingsModelCore, names: Vec<String>);
+
+        /// Those names, sorted.
+        fn settings_unsupported(model: &SettingsModelCore) -> Vec<String>;
+
+        /// The ten-key row per setting, in model order, as `--dump-settings-json`
+        /// prints it and the layout tool reads it.
+        fn settings_json_dump(model: &SettingsModelCore) -> String;
+
+        /// Every visible name, depth first, one per line.
+        fn settings_name_dump(model: &SettingsModelCore) -> String;
+
+        /// True once a resolved preset has seeded the model.
+        fn settings_has_resolved_config(model: &SettingsModelCore) -> bool;
+
+        /// True when the layout document parsed: false is the silent collapse onto
+        /// the engine's own categories, and the shell refuses to start on it.
+        fn settings_layout_loaded(model: &SettingsModelCore) -> bool;
+
+        /// The engine's configuration document with the current values overlaid.
+        fn settings_config_json(model: &SettingsModelCore) -> String;
+
+        /// A tab's values as the body of a preset file.
+        fn settings_values_yaml(
+            model: &SettingsModelCore,
+            tab: &str,
+            changed_only: bool,
+        ) -> String;
+
+        /// Drops every override: true when at least one entry moved.
+        fn settings_clear_modified(model: &mut SettingsModelCore) -> bool;
 
         /// A project file's own records, or `valid` false when it holds no model.
         fn read_three_mf_project(path: &str) -> ThreeMfFileOutcome;
@@ -588,4 +916,191 @@ fn flatten(pair: Option<(String, String)>) -> Vec<String> {
         Some((first, second)) => vec![first, second],
         None => Vec::new(),
     }
+}
+
+fn yaml_quoted(text: &str) -> String {
+    crate::PresetYaml::quoted(text)
+}
+
+fn yaml_number(value: f64) -> String {
+    crate::PresetYaml::number(value)
+}
+
+fn yaml_unquoted(text: &str) -> String {
+    crate::PresetYaml::unquoted(text)
+}
+
+fn yaml_point(x: f64, y: f64) -> String {
+    crate::PresetYaml::point(x, y)
+}
+
+fn presets_root() -> String {
+    crate::PresetFiles::root()
+}
+
+fn presets_custom_vendor_directory() -> String {
+    crate::PresetFiles::custom_vendor_directory()
+}
+
+fn presets_filament_library_plan(directory: &str, library_names: &str) -> Vec<String> {
+    crate::PresetFiles::filament_library_plan(directory, library_names)
+}
+
+fn presets_slug_of(name: &str) -> String {
+    crate::PresetFiles::slug_of(name)
+}
+
+fn presets_fresh_id() -> String {
+    crate::PresetFiles::fresh_id()
+}
+
+fn presets_write_file(path: &str, contents: &str) -> bool {
+    crate::PresetFiles::write_file(path, contents)
+}
+
+fn presets_document(
+    kind: &str,
+    name: &str,
+    parent: &str,
+    condition: &str,
+    values_yaml: &str,
+    id: &str,
+) -> String {
+    crate::PresetFiles::document(kind, name, parent, condition, values_yaml, id)
+}
+
+fn presets_custom_printers() -> Vec<PresetPrinterRecord> {
+    crate::PresetFiles::custom_printers()
+        .into_iter()
+        .map(|printer| PresetPrinterRecord {
+            name: printer.name,
+            slug: printer.slug,
+            tools: printer.tools,
+        })
+        .collect()
+}
+
+fn presets_add_custom_printer(name: &str, tools: i32) -> String {
+    crate::PresetFiles::add_custom_printer(name, tools)
+}
+
+fn presets_custom_printer_path(name: &str) -> String {
+    crate::PresetFiles::custom_printer_path(name)
+}
+
+fn presets_ensure_tool_print_preset() -> String {
+    crate::PresetFiles::ensure_tool_print_preset()
+}
+
+fn settings_model_new(
+    definitions: &[SettingDefinitionRecord],
+    layout_json: &str,
+    base_config_json: &str,
+) -> Box<SettingsModelCore> {
+    crate::SettingsModel::new(definitions, layout_json, base_config_json)
+}
+
+fn settings_tab_list(model: &SettingsModelCore) -> Vec<SettingTabRecord> {
+    crate::SettingsModel::tab_list(model)
+}
+
+fn settings_groups(
+    model: &SettingsModelCore,
+    tab: &str,
+    subtab: &str,
+    filter: &str,
+) -> Vec<SettingGroupRecord> {
+    crate::SettingsModel::groups(model, tab, subtab, filter)
+}
+
+fn settings_value(model: &SettingsModelCore, name: &str) -> SettingValueRecord {
+    crate::SettingsModel::value(model, name)
+}
+
+fn settings_block_of(model: &SettingsModelCore, name: &str) -> String {
+    crate::SettingsModel::block_of(model, name)
+}
+
+fn settings_can_hold_in(model: &SettingsModelCore, name: &str, block: &str) -> bool {
+    crate::SettingsModel::can_hold_in(model, name, block)
+}
+
+fn settings_points(model: &SettingsModelCore, name: &str) -> Vec<f64> {
+    crate::SettingsModel::points(model, name)
+}
+
+fn settings_set_value(
+    model: &mut SettingsModelCore,
+    name: &str,
+    input: &SettingInputRecord,
+) -> SettingChangeRecord {
+    crate::SettingsModel::set_value(model, name, input)
+}
+
+fn settings_reset(model: &mut SettingsModelCore, name: &str) -> bool {
+    crate::SettingsModel::reset(model, name)
+}
+
+fn settings_seed_from_config_json(model: &mut SettingsModelCore, json: &str) -> bool {
+    crate::SettingsModel::seed_from_config_json(model, json)
+}
+
+fn settings_reset_subtab(model: &mut SettingsModelCore, tab: &str, subtab: &str) -> bool {
+    crate::SettingsModel::reset_subtab(model, tab, subtab)
+}
+
+fn settings_reset_tab(model: &mut SettingsModelCore, tab: &str) -> bool {
+    crate::SettingsModel::reset_tab(model, tab)
+}
+
+fn settings_modified_count(model: &SettingsModelCore, tab: &str) -> i32 {
+    crate::SettingsModel::modified_count(model, tab)
+}
+
+fn settings_modified_values(model: &SettingsModelCore, tab: &str) -> Vec<SettingModifiedRecord> {
+    crate::SettingsModel::modified_values(model, tab)
+}
+
+fn settings_object_defs(model: &SettingsModelCore, filter: &str) -> Vec<SettingItemRecord> {
+    crate::SettingsModel::object_setting_defs(model, filter)
+}
+
+fn settings_tab_dump(model: &SettingsModelCore) -> String {
+    crate::SettingsModel::tab_dump(model)
+}
+
+fn settings_set_unsupported(model: &mut SettingsModelCore, names: Vec<String>) {
+    crate::SettingsModel::set_unsupported(model, &names)
+}
+
+fn settings_unsupported(model: &SettingsModelCore) -> Vec<String> {
+    crate::SettingsModel::unsupported(model)
+}
+
+fn settings_json_dump(model: &SettingsModelCore) -> String {
+    crate::SettingsModel::settings_json(model)
+}
+
+fn settings_name_dump(model: &SettingsModelCore) -> String {
+    crate::SettingsModel::name_dump(model)
+}
+
+fn settings_has_resolved_config(model: &SettingsModelCore) -> bool {
+    crate::SettingsModel::has_resolved_config(model)
+}
+
+fn settings_layout_loaded(model: &SettingsModelCore) -> bool {
+    crate::SettingsModel::layout_loaded(model)
+}
+
+fn settings_config_json(model: &SettingsModelCore) -> String {
+    crate::SettingsModel::config_json(model)
+}
+
+fn settings_values_yaml(model: &SettingsModelCore, tab: &str, changed_only: bool) -> String {
+    crate::SettingsModel::values_yaml(model, tab, changed_only)
+}
+
+fn settings_clear_modified(model: &mut SettingsModelCore) -> bool {
+    crate::SettingsModel::clear_modified(model)
 }

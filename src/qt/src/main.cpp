@@ -1498,6 +1498,13 @@ int main(int argc, char* argv[])
 
     next_layer::Palette palette;
     auto* settings = new SettingsModel;
+    if (!settings->layoutLoaded()) {
+        std::fprintf(stderr,
+                     "settings layout: :/next-layer/settings-layout.json is missing from the "
+                     "build, and without it every setting falls back to the engine's own "
+                     "categories\n");
+        return 1;
+    }
     auto* presets = new PresetStore;
     presets->setSettings(settings);
 

@@ -69,11 +69,11 @@ impl Default for Transform {
     }
 }
 
-/// The whole exported surface, declared here as the modules that call it arrive.
-/// The declarations with no Rust caller yet are the ones `HfwEngine` and
-/// `SliceRuntime` will use when they port, so unused is the expected state rather
-/// than a defect; `every_declared_symbol_resolves_in_the_linked_engine` keeps each
-/// one honest against the library that is actually linked.
+// The whole exported surface, declared here as the modules that call it arrive.
+// The declarations with no Rust caller yet are the ones `HfwEngine` and
+// `SliceRuntime` will use when they port, so unused is the expected state rather
+// than a defect; `every_declared_symbol_resolves_in_the_linked_engine` keeps each
+// one honest against the library that is actually linked.
 #[allow(dead_code)]
 extern "C" {
     fn hfw_abi_version() -> u32;

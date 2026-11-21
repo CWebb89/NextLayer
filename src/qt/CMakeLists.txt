@@ -41,7 +41,6 @@ add_executable(next-layer-qt
     src/PlateScene.hpp
     src/SceneSelftest.cpp
     src/SceneSelftest.hpp
-    src/SettingsModel.cpp
     src/SettingsModel.hpp
     src/PrinterLink.cpp
     src/PrinterLink.hpp
