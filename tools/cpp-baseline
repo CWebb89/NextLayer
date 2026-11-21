@@ -2,7 +2,6 @@ Arranger.cpp
 Arranger.hpp
 Calibration.cpp
 Calibration.hpp
-ConfigBoxJson.cpp
 ConfigBoxJson.hpp
 Cut.cpp
 Cut.hpp
@@ -20,7 +19,6 @@ Host.cpp
 Host.hpp
 main.cpp
 MeshGeometry.hpp
-Orient.cpp
 Orient.hpp
 Paint.cpp
 Paint.hpp

@@ -8,7 +8,8 @@
 pub use crate::mesh::Mesh;
 
 pub use ffi::{
-    MeshGeometryFrame, PresetPrinterRecord, ProjectMarkerRecord, ProjectMetadataRecord,
+    MeshGeometryFrame, ObjectSettingInput, ObjectSettingRecord, ObjectSettingsRead,
+    PresetPrinterRecord, ProjectMarkerRecord, ProjectMetadataRecord,
     ProjectObjectRecord, ProjectOutcome, ProjectPaint, ProjectPaintOutcome, ProjectSetting,
     ProjectVolumeRecord, SettingChangeRecord, SettingChoiceRecord, SettingDefinitionRecord,
     SettingElementRecord, SettingEnumValueRecord, SettingGroupRecord, SettingInputRecord,
@@ -218,6 +219,44 @@ mod ffi {
         tools: i32,
     }
 
+    /// One setting out of a config box as the engine holds it: the name, and the
+    /// value in the shapes `Slic3r::Domain::ConfigValue` can take, which is what
+    /// `SettingValueRecord` already carries.
+    struct ObjectSettingInput {
+        name: String,
+        value: SettingValueRecord,
+    }
+
+    /// One setting as this application's per-object settings map stores it.
+    ///
+    /// `kind` is 0 text, 1 boolean, 2 integer, 3 number, 4 the `{value, is_percent}`
+    /// object a percentage is, 5 the same pair for a float-or-percentage with
+    /// `truth` as `is_percent`, 6 a list of names, 7 a list of integers, 8 a list of
+    /// numbers, 9 a list of flags.
+    ///
+    /// Deliberately not `SettingValueRecord`: that record is the settings panel's
+    /// vocabulary, where a percentage is a bare number and the editor supplies the
+    /// unit. A percentage in an *override* is the pair `load_box` reads back, so the
+    /// two vocabularies cannot be one record.
+    struct ObjectSettingRecord {
+        name: String,
+        kind: u8,
+        truth: bool,
+        integer: i64,
+        number: f64,
+        text: String,
+        integers: Vec<i64>,
+        numbers: Vec<f64>,
+        texts: Vec<String>,
+        flags: Vec<u8>,
+    }
+
+    /// What a settings map held, and every name the reader could not represent.
+    struct ObjectSettingsRead {
+        settings: Vec<ObjectSettingRecord>,
+        unreadable: Vec<String>,
+    }
+
     /// One value as the panel reads it. `kind` is 0 invalid, 1 boolean, 2 integer,
     /// 3 number, 4 text, 5 list, 6 percentage, 7 float-or-percentage, 8 enum; a
     /// list carries `items` (0 numbers, 1 texts, 2 points, 3 integers, 4 booleans,
@@ -384,6 +423,41 @@ mod ffi {
     }
 
     extern "Rust" {
+        /// The settings a config box overrides, in the shapes the settings map
+        /// stores.
+        fn overridden_settings(items: &[ObjectSettingInput]) -> ObjectSettingsRead;
+
+        /// The same, for the key/value lines a project file writes; the type of
+        /// each value comes from the setting's own definition. `names` and `values`
+        /// are parallel and in the caller's iteration order.
+        fn settings_from_text(
+            names: &[String],
+            values: &[String],
+            definitions: &[SettingDefinitionRecord],
+        ) -> ObjectSettingsRead;
+
+        /// Whether this engine lets a setting be overridden per object.
+        fn overrides_at_object(name: &str, definitions: &[SettingDefinitionRecord]) -> bool;
+
+        /// The pose that lays one facet of the mesh face down: sixteen `f64`,
+        /// row-major, four rows of four, and the input pose unchanged when the facet
+        /// is out of range or has no normal.
+        fn orient_lay_facet_flat(
+            vertices: &[f32],
+            indices: &[u32],
+            matrix: &[f64],
+            facet: i32,
+        ) -> Vec<f64>;
+
+        /// The pose that sits lowest and least supported, chosen by height plus
+        /// weighted overhanging area: sixteen `f64`, row-major, or empty when no
+        /// facet has a normal.
+        fn orient_best_resting_rotation(
+            vertices: &[f32],
+            indices: &[u32],
+            matrix: &[f64],
+        ) -> Vec<f64>;
+
         /// The application's own triangle mesh: the document holds one of these per
         /// object and one per volume, and no engine handle stands behind it.
         type Mesh;
@@ -708,6 +782,30 @@ mod ffi {
 
 pub fn quit_application() {
     ffi::quit_application();
+}
+
+fn overridden_settings(items: &[ObjectSettingInput]) -> ObjectSettingsRead {
+    crate::ConfigBoxJson::overridden_settings(items)
+}
+
+fn settings_from_text(
+    names: &[String],
+    values: &[String],
+    definitions: &[SettingDefinitionRecord],
+) -> ObjectSettingsRead {
+    crate::ConfigBoxJson::settings_from_text(names, values, definitions)
+}
+
+fn overrides_at_object(name: &str, definitions: &[SettingDefinitionRecord]) -> bool {
+    crate::ConfigBoxJson::overrides_at_object(name, definitions)
+}
+
+fn orient_lay_facet_flat(vertices: &[f32], indices: &[u32], matrix: &[f64], facet: i32) -> Vec<f64> {
+    crate::Orient::lay_facet_flat(vertices, indices, matrix, facet)
+}
+
+fn orient_best_resting_rotation(vertices: &[f32], indices: &[u32], matrix: &[f64]) -> Vec<f64> {
+    crate::Orient::best_resting_rotation(vertices, indices, matrix)
 }
 
 fn mesh_new(vertices: &[f32], indices: &[u32]) -> Result<Box<Mesh>, String> {

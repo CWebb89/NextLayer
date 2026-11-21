@@ -32,7 +32,6 @@ add_executable(next-layer-qt
     src/Session.hpp
     src/Calibration.cpp
     src/Calibration.hpp
-    src/ConfigBoxJson.cpp
     src/ConfigBoxJson.hpp
     src/ForeignSettings.hpp
     src/PlateDocument.cpp
@@ -75,7 +74,6 @@ add_executable(next-layer-qt
     src/Text.hpp
     src/Hollow.cpp
     src/Hollow.hpp
-    src/Orient.cpp
     src/Orient.hpp
     src/Arranger.cpp
     src/Arranger.hpp
