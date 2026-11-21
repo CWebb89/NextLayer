@@ -12,6 +12,21 @@ use std::path::Path;
 /// The ABI version this module was written against.
 pub const ABI_VERSION: u32 = 1;
 
+/// Paint channels the engine carries. Tool paint is not one of them: HFW drives one
+/// extruder, so a third channel would change nothing the engine reads.
+pub const PAINT_SUPPORT: i32 = 0;
+pub const PAINT_SEAM: i32 = 1;
+
+/// What one triangle of a paint channel can be.
+pub const PAINT_NONE: u8 = 0;
+pub const PAINT_ENFORCER: u8 = 1;
+pub const PAINT_BLOCKER: u8 = 2;
+
+/// Timeline marker kinds, as the plate stores them.
+pub const MARKER_CUSTOM: i32 = 0;
+pub const MARKER_PAUSE: i32 = 1;
+pub const MARKER_COLOUR: i32 = 2;
+
 #[repr(C)]
 struct HfwMesh {
     _private: [u8; 0],
@@ -54,6 +69,12 @@ impl Default for Transform {
     }
 }
 
+/// The whole exported surface, declared here as the modules that call it arrive.
+/// The declarations with no Rust caller yet are the ones `HfwEngine` and
+/// `SliceRuntime` will use when they port, so unused is the expected state rather
+/// than a defect; `every_declared_symbol_resolves_in_the_linked_engine` keeps each
+/// one honest against the library that is actually linked.
+#[allow(dead_code)]
 extern "C" {
     fn hfw_abi_version() -> u32;
     fn hfw_last_error() -> *const std::os::raw::c_char;
@@ -95,6 +116,214 @@ extern "C" {
     fn hfw_gcode_len(gcode: *const HfwGcode) -> usize;
     fn hfw_gcode_verified(gcode: *const HfwGcode) -> i32;
     fn hfw_gcode_free(gcode: *mut HfwGcode);
+
+    /// The mesh as binary (non-zero) or ASCII (zero) STL bytes, `*out_len` long, to
+    /// be released with `hfw_buffer_free`.
+    fn hfw_mesh_stl_bytes(
+        mesh: *const HfwMesh,
+        binary: i32,
+        out_len: *mut usize,
+    ) -> *mut std::os::raw::c_char;
+
+    /// A mesh from millimetre coordinates and triangle indices: nothing welded and
+    /// no triangle dropped, so triangle `i` of the handle is triangle `i` of
+    /// `indices` and per-triangle data stays aligned with it.
+    fn hfw_mesh_new(
+        vertices: *const f64,
+        vertex_count: usize,
+        indices: *const u32,
+        triangle_count: usize,
+    ) -> *mut HfwMesh;
+
+    /// A mesh split by the plane through `point` facing `normal`, into the part
+    /// below and the part above, both closed. A cut that misses the mesh puts all of
+    /// it in one half.
+    fn hfw_mesh_cut(
+        mesh: *const HfwMesh,
+        normal: *const f64,
+        point: *const f64,
+        below: *mut *mut HfwMesh,
+        above: *mut *mut HfwMesh,
+    ) -> i32;
+
+    /// Writes one paint channel on a mesh handle: `len` bytes, one per triangle in
+    /// the mesh's own order, each 0 none, 1 enforcer or 2 blocker. A `len` of zero
+    /// clears the channel; a `len` that is not the triangle count is refused, never
+    /// truncated.
+    fn hfw_mesh_paint_set(
+        mesh: *mut HfwMesh,
+        channel: i32,
+        states: *const u8,
+        len: usize,
+    ) -> i32;
+
+    /// Reads one channel back into `out`: the number of bytes written, 0 when the
+    /// channel was never painted, -1 when `len` is smaller than the triangle count.
+    fn hfw_mesh_paint_get(
+        mesh: *const HfwMesh,
+        channel: i32,
+        out: *mut u8,
+        len: usize,
+    ) -> isize;
+
+    /// Moves object `id` from a row-major 4x4 matrix, sixteen doubles.
+    ///
+    /// The matrix composes as this engine does, `T * Rz * Ry * Rx * S`. Anything
+    /// else -- a shear, a collapsed axis, a perspective row -- is refused rather
+    /// than truncated, because the plate records a scale triple and an Euler triple.
+    /// Returns -1 when the object is not on the plate or the matrix is not
+    /// representable.
+    fn hfw_plate_object_placement_matrix(
+        plate: *mut HfwPlate,
+        id: u64,
+        matrix: *const f64,
+    ) -> i32;
+
+    /// Reads object `id`'s placement back as sixteen doubles, row-major.
+    fn hfw_plate_object_placement_matrix_get(
+        plate: *const HfwPlate,
+        id: u64,
+        out: *mut f64,
+    ) -> i32;
+
+    /// Writes one paint channel on object `id`, one byte per triangle of its
+    /// geometry. Placement, rotation and baking preserve triangle order, so states
+    /// stay valid across them.
+    fn hfw_plate_object_paint(
+        plate: *mut HfwPlate,
+        id: u64,
+        channel: i32,
+        states: *const u8,
+        len: usize,
+    ) -> i32;
+
+    /// Reads one channel back off object `id`: bytes written, 0 when it was never
+    /// painted, -1 when `len` is smaller than the triangle count.
+    fn hfw_plate_object_paint_get(
+        plate: *const HfwPlate,
+        id: u64,
+        channel: i32,
+        out: *mut u8,
+        len: usize,
+    ) -> isize;
+
+    /// Object `id`'s own layer heights, as `count` interleaved `(z, height)` pairs.
+    ///
+    /// A count of zero means the plate's uniform layer height rather than one pair
+    /// equal to it. A layer whose bottom sits at or above a `z` uses that height
+    /// until the next pair takes over.
+    fn hfw_plate_object_layer_heights(
+        plate: *mut HfwPlate,
+        id: u64,
+        pairs: *const f64,
+        count: usize,
+    ) -> i32;
+
+    /// The same pairs back: how many there are, 0 for a uniform object, -1 when the
+    /// object is not on the plate. A null `out` or a short `len` reports the count
+    /// and writes nothing, so one call sizes the buffer another fills.
+    fn hfw_plate_object_layer_heights_get(
+        plate: *const HfwPlate,
+        id: u64,
+        out: *mut f64,
+        len: usize,
+    ) -> isize;
+
+    /// Object `id`'s overrides as the rows a setter accepts, to be released with
+    /// `hfw_string_free`.
+    fn hfw_plate_object_settings_json(
+        plate: *const HfwPlate,
+        id: u64,
+    ) -> *mut std::os::raw::c_char;
+
+    /// A volume's own settings as the same rows, to be released with
+    /// `hfw_string_free`.
+    fn hfw_plate_object_volume_settings_json(
+        plate: *const HfwPlate,
+        id: u64,
+        volume: u64,
+    ) -> *mut std::os::raw::c_char;
+
+    /// The plate's in-layer strokes: beads printed inside a layer that the model does
+    /// not describe, which is the calibration channel. `count` strokes are described
+    /// by parallel arrays -- print Z, point count, width, height, speed, where each
+    /// stroke starts in `points`, the interleaved x/y plate coordinates, and the
+    /// G-code written before each stroke. A count of zero clears them.
+    fn hfw_plate_set_in_layer(
+        plate: *mut HfwPlate,
+        zs: *const f64,
+        counts: *const usize,
+        widths: *const f64,
+        heights: *const f64,
+        speeds: *const f64,
+        starts: *const usize,
+        points: *const f64,
+        prefixes: *const *const std::os::raw::c_char,
+        count: usize,
+    ) -> i32;
+
+    /// How many in-layer strokes the plate carries, or -1 for a null handle.
+    fn hfw_plate_in_layer_count(plate: *const HfwPlate) -> isize;
+
+    /// How many points stroke `index` has; this sizes the buffer the reader fills.
+    fn hfw_plate_in_layer_points(plate: *const HfwPlate, index: usize) -> isize;
+
+    /// Reads stroke `index` back with its width, height, speed and G-code prefix.
+    fn hfw_plate_in_layer_get(
+        plate: *const HfwPlate,
+        index: usize,
+        z: *mut f64,
+        width: *mut f64,
+        height: *mut f64,
+        speed: *mut f64,
+        points: *mut f64,
+        capacity: usize,
+        prefix: *mut std::os::raw::c_char,
+        len: usize,
+    ) -> i32;
+
+    /// The plate's timeline markers, sorted by Z: one kind per marker, its print
+    /// height, and its G-code as an array of C strings. A count of zero clears the
+    /// timeline; a custom marker with no G-code is refused.
+    fn hfw_plate_set_markers(
+        plate: *mut HfwPlate,
+        kinds: *const i32,
+        zs: *const f64,
+        texts: *const *const std::os::raw::c_char,
+        count: usize,
+    ) -> i32;
+
+    /// How many markers the plate carries, or -1 for a null handle.
+    fn hfw_plate_marker_count(plate: *const HfwPlate) -> isize;
+
+    /// Reads marker `index` back: its kind, its Z and its G-code, truncated to `len`.
+    fn hfw_plate_marker_get(
+        plate: *const HfwPlate,
+        index: usize,
+        kind: *mut i32,
+        z: *mut f64,
+        text: *mut std::os::raw::c_char,
+        len: usize,
+    ) -> i32;
+
+    /// The application's own bytes, saved and reopened with the plate. The engine
+    /// never reads them; a length of zero clears them.
+    fn hfw_plate_set_metadata(
+        plate: *mut HfwPlate,
+        bytes: *const std::os::raw::c_char,
+        len: usize,
+    ) -> i32;
+
+    /// Those bytes, NUL-terminated with the real length in `out_len` so binary
+    /// metadata survives, to be released with `hfw_buffer_free`.
+    fn hfw_plate_metadata_get(plate: *const HfwPlate, out_len: *mut usize)
+        -> *mut std::os::raw::c_char;
+
+    /// Releases a string this library returned.
+    fn hfw_string_free(text: *mut std::os::raw::c_char);
+
+    /// Releases a byte buffer this library returned, with the length it reported.
+    fn hfw_buffer_free(bytes: *mut std::os::raw::c_char, len: usize);
 }
 
 /// The message this thread's last failed call left behind.
@@ -370,6 +599,37 @@ mod tests {
     #[test]
     fn the_linked_library_exports_the_surface_this_module_declares() {
         assert_eq!(abi_version(), ABI_VERSION);
+    }
+
+    #[test]
+    fn every_declared_symbol_resolves_in_the_linked_engine() {
+        let symbols: [usize; 24] = [
+            hfw_mesh_stl_bytes as usize,
+            hfw_mesh_new as usize,
+            hfw_mesh_cut as usize,
+            hfw_mesh_paint_set as usize,
+            hfw_mesh_paint_get as usize,
+            hfw_plate_object_placement_matrix as usize,
+            hfw_plate_object_placement_matrix_get as usize,
+            hfw_plate_object_paint as usize,
+            hfw_plate_object_paint_get as usize,
+            hfw_plate_object_layer_heights as usize,
+            hfw_plate_object_layer_heights_get as usize,
+            hfw_plate_object_settings_json as usize,
+            hfw_plate_object_volume_settings_json as usize,
+            hfw_plate_set_in_layer as usize,
+            hfw_plate_in_layer_count as usize,
+            hfw_plate_in_layer_points as usize,
+            hfw_plate_in_layer_get as usize,
+            hfw_plate_set_markers as usize,
+            hfw_plate_marker_count as usize,
+            hfw_plate_marker_get as usize,
+            hfw_plate_set_metadata as usize,
+            hfw_plate_metadata_get as usize,
+            hfw_string_free as usize,
+            hfw_buffer_free as usize,
+        ];
+        assert!(symbols.iter().all(|symbol| *symbol != 0));
     }
 
     #[test]

@@ -193,9 +193,9 @@ bool addVolume(HfwPlate* plate, quint64 id, const PlateSliceObject& object,
     if (mesh == nullptr)
         return false;
     const int kind = volumeKind(volume.type);
-    const int added = hfw_plate_object_add_volume(plate, id, kind, mesh);
+    const uint64_t volumeId = hfw_plate_object_add_volume(plate, id, kind, mesh);
     hfw_mesh_free(mesh);
-    if (added != 0) {
+    if (volumeId == 0) {
         error = QStringLiteral("%1: volume: %2").arg(object.name, engineError());
         return false;
     }
@@ -207,14 +207,14 @@ bool addVolume(HfwPlate* plate, quint64 id, const PlateSliceObject& object,
     for (auto entry = settings.constBegin(); entry != settings.constEnd(); ++entry)
         names.append(entry.key());
     names.sort();
-    const size_t index = size_t(hfw_plate_object_volume_count(plate, id) - 1);
     for (const QString& name : names) {
         const QString value = settingText(settings.value(name));
         if (value.isEmpty())
             continue;
         const QByteArray utf8Name = name.toUtf8();
         const QByteArray utf8Value = value.toUtf8();
-        if (hfw_plate_volume_set(plate, id, index, utf8Name.constData(), utf8Value.constData())
+        if (hfw_plate_volume_set(plate, id, volumeId, utf8Name.constData(),
+                                 utf8Value.constData())
             != 0) {
             error = QStringLiteral("%1: volume setting %2 = %3: %4")
                         .arg(object.name, name, value, engineError());
@@ -522,19 +522,26 @@ bool readPlate(HfwPlate* plate, QVector<ReadObject>& objects, QString& error)
             return false;
         }
 
-        const auto volumes = hfw_plate_object_volume_count(plate, id);
-        for (auto index = 0; index < volumes; ++index) {
+        const auto volumeCount = hfw_plate_object_volume_ids(plate, id, nullptr, 0);
+        std::vector<uint64_t> volumeIds(volumeCount);
+        if (volumeCount > 0
+            && hfw_plate_object_volume_ids(plate, id, volumeIds.data(), volumeIds.size())
+                   != volumeIds.size()) {
+            error = QStringLiteral("%1: %2").arg(object.name, engineError());
+            return false;
+        }
+        for (const uint64_t volumeId : volumeIds) {
             ReadVolume volume;
-            if (hfw_plate_object_volume_kind(plate, id, size_t(index), &volume.kind) != 0) {
+            if (hfw_plate_object_volume_kind(plate, id, volumeId, &volume.kind) != 0) {
                 error = QStringLiteral("%1: %2").arg(object.name, engineError());
                 return false;
             }
-            char* volumeSettings = hfw_plate_object_volume_settings_json(plate, id, size_t(index));
-            HfwMesh* volumeMesh = hfw_plate_object_volume_mesh(plate, id, size_t(index));
+            char* volumeSettings = hfw_plate_object_volume_settings_json(plate, id, volumeId);
+            HfwMesh* volumeMesh = hfw_plate_object_volume_mesh(plate, id, volumeId);
             if (volumeSettings == nullptr || volumeMesh == nullptr) {
                 error = QStringLiteral("%1 volume %2: %3")
                             .arg(object.name)
-                            .arg(index)
+                            .arg(volumeId)
                             .arg(engineError());
                 return false;
             }
@@ -617,9 +624,9 @@ bool rebuildPlate(const QVector<ReadObject>& objects, HfwPlate* into, QString& e
                             .arg(engineError());
                 return false;
             }
-            const bool added = hfw_plate_object_add_volume(into, id, volume.kind, copy) == 0;
+            const uint64_t volumeId = hfw_plate_object_add_volume(into, id, volume.kind, copy);
             hfw_mesh_free(copy);
-            if (!added) {
+            if (volumeId == 0) {
                 error = QStringLiteral("%1 volume %2: %3")
                             .arg(object.name)
                             .arg(index)
@@ -631,7 +638,7 @@ bool rebuildPlate(const QVector<ReadObject>& objects, HfwPlate* into, QString& e
                  ++entry) {
                 const QByteArray name = entry.key().toUtf8();
                 const QByteArray value = entry.value().toString().toUtf8();
-                if (hfw_plate_volume_set(into, id, size_t(index), name.constData(),
+                if (hfw_plate_volume_set(into, id, volumeId, name.constData(),
                                          value.constData())
                     != 0) {
                     error = QStringLiteral("%1 volume %2: %3")
