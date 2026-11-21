@@ -55,7 +55,7 @@ the header and its two lines, not writing a replacement.
 | ForeignSettings | 416 | — | 0 | 0 | port, phase 3 | — |
 | QtPlatform | 391 | — | 19 | 0 | port, phase 0 | SliceRuntime✝ (its install site) |
 | ConfigBoxJson | 307 | — | 14 | 0 | port, phase 3 | PlateDocument |
-| MeshGeometry | 298 | — | 4 | 2 props / 1 invokable / 1 signal, singleton | port, phase 1 | — |
+| MeshGeometry | 298 | — | 4 | 2 props / 1 invokable / 1 signal, singleton, AUTOMOC | **shell split landed 2026-11-21** — the buffers and the raycast are `src/app/src/MeshGeometry.rs`; the header keeps the `QQuick3DGeometry` class | — |
 | PresetFiles | 247 | PresetYaml | 0 | 0 | port, phase 3 | PresetYaml |
 | Text ✝ | 230 | — | 23 | 0 | **delete, phase 7** | — |
 | TransformController | 223 | Scratch↻ | 7 | 1 prop / 7 invokables / 3 signals, singleton | port, phase 5 | — |

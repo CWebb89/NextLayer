@@ -8,8 +8,8 @@
 pub use crate::mesh::Mesh;
 
 pub use ffi::{
-    ProjectMarkerRecord, ProjectMetadataRecord, ProjectObjectRecord, ProjectOutcome, ProjectPaint,
-    ProjectPaintOutcome, ProjectSetting, ProjectVolumeRecord,
+    MeshGeometryFrame, ProjectMarkerRecord, ProjectMetadataRecord, ProjectObjectRecord,
+    ProjectOutcome, ProjectPaint, ProjectPaintOutcome, ProjectSetting, ProjectVolumeRecord,
 };
 
 pub use ffi::{
@@ -108,6 +108,24 @@ mod ffi {
     struct ProjectPaintOutcome {
         ok: bool,
         paint: ProjectPaint,
+    }
+
+    /// One interleaved vertex buffer as `QQuick3DGeometry` takes it, with the
+    /// triangle corners a raycast answers against.
+    struct MeshGeometryFrame {
+        /// Interleaved vertices as bytes: position, then normal, then the colour
+        /// `colour_offset` points at when there is one.
+        vertices: Vec<u8>,
+        /// The corner positions a raycast runs against, nine `f32` per triangle.
+        /// Empty from every builder but the plain mesh one, which is what leaves a
+        /// coloured overlay's raycast answering against the previous mesh.
+        positions: Vec<f32>,
+        low: [f32; 3],
+        high: [f32; 3],
+        /// Bytes from one vertex to the next: 24, or 40 with a colour.
+        stride: u32,
+        /// Where the colour starts inside a vertex, or -1 when there is none.
+        colour_offset: i32,
     }
 
     /// One painted facet: the triangle's index inside its volume, and the file's
@@ -235,6 +253,34 @@ mod ffi {
 
         /// The triangles named by `faces`, renumbered onto their own vertices.
         fn mesh_subset(mesh: &Mesh, faces: &[u32]) -> Box<Mesh>;
+
+        /// The mesh as an interleaved position+normal buffer, with the triangle
+        /// corners a raycast answers against.
+        fn mesh_geometry_frame(vertices: &[f32], indices: &[u32]) -> MeshGeometryFrame;
+
+        /// The same mesh with one colour per triangle; a triangle whose alpha is
+        /// zero is left out, and no raycast corners are produced.
+        fn mesh_geometry_coloured_frame(
+            vertices: &[f32],
+            indices: &[u32],
+            colours: &[f32],
+        ) -> MeshGeometryFrame;
+
+        /// The brush cursor: a flat annulus in the plane perpendicular to `normal`.
+        fn mesh_geometry_ring_frame(
+            centre: [f32; 3],
+            normal: [f32; 3],
+            radius: f32,
+            thickness: f32,
+        ) -> MeshGeometryFrame;
+
+        /// Nearest triangle hit for a ray: the hit point and the ray parameter,
+        /// the parameter negative when the ray missed.
+        fn mesh_geometry_raycast(
+            positions: &[f32],
+            origin: [f32; 3],
+            direction: [f32; 3],
+        ) -> [f32; 4];
 
         /// The engine's resources tree: presets, bed meshes, icons, fonts.
         fn resources_dir() -> String;
@@ -385,6 +431,31 @@ fn mesh_shell_labels(mesh: &Mesh) -> Vec<u32> {
 
 fn mesh_subset(mesh: &Mesh, faces: &[u32]) -> Box<Mesh> {
     Box::new(mesh.subset(faces))
+}
+
+fn mesh_geometry_frame(vertices: &[f32], indices: &[u32]) -> MeshGeometryFrame {
+    crate::MeshGeometry::mesh_frame(vertices, indices)
+}
+
+fn mesh_geometry_coloured_frame(
+    vertices: &[f32],
+    indices: &[u32],
+    colours: &[f32],
+) -> MeshGeometryFrame {
+    crate::MeshGeometry::coloured_mesh_frame(vertices, indices, colours)
+}
+
+fn mesh_geometry_ring_frame(
+    centre: [f32; 3],
+    normal: [f32; 3],
+    radius: f32,
+    thickness: f32,
+) -> MeshGeometryFrame {
+    crate::MeshGeometry::ring_frame(centre, normal, radius, thickness)
+}
+
+fn mesh_geometry_raycast(positions: &[f32], origin: [f32; 3], direction: [f32; 3]) -> [f32; 4] {
+    crate::MeshGeometry::raycast(positions, origin, direction)
 }
 
 fn palette_json() -> String {

@@ -23,7 +23,6 @@ set(CMAKE_AUTOMOC ON)
 
 add_executable(next-layer-qt
     src/main.cpp
-    src/MeshGeometry.cpp
     src/MeshGeometry.hpp
     src/FeatureColors.hpp
     src/Palette.hpp

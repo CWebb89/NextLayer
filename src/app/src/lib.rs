@@ -62,6 +62,8 @@ pub mod ForeignSettings;
 #[allow(non_snake_case)]
 pub mod GcodeBrand;
 #[allow(non_snake_case)]
+pub mod MeshGeometry;
+#[allow(non_snake_case)]
 pub mod Palette;
 #[allow(non_snake_case)]
 pub mod PlateThumbnail;

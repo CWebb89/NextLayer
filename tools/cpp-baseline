@@ -19,7 +19,6 @@ Hollow.hpp
 Host.cpp
 Host.hpp
 main.cpp
-MeshGeometry.cpp
 MeshGeometry.hpp
 Orient.cpp
 Orient.hpp
