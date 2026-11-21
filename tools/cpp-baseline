@@ -14,7 +14,6 @@ GlewWrap.cpp
 HfwEngine.hpp
 Hollow.cpp
 Hollow.hpp
-Host.cpp
 Host.hpp
 main.cpp
 MeshGeometry.hpp
@@ -44,7 +43,6 @@ Resources.hpp
 SceneSelftest.cpp
 SceneSelftest.hpp
 Scratch.hpp
-Session.cpp
 Session.hpp
 SettingsModel.hpp
 SliceController.cpp

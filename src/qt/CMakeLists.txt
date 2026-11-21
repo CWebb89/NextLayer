@@ -26,9 +26,7 @@ add_executable(next-layer-qt
     src/MeshGeometry.hpp
     src/FeatureColors.hpp
     src/Palette.hpp
-    src/Host.cpp
     src/Host.hpp
-    src/Session.cpp
     src/Session.hpp
     src/Calibration.cpp
     src/Calibration.hpp

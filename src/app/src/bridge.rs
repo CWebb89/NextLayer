@@ -26,7 +26,7 @@ pub use ffi::{
 
 pub use ffi::{
     EngineMarker, EngineObject, EngineOutcome, EnginePlate, EngineSetting, EngineStroke,
-    EngineVolume, PlateOutcome, PlateReadback, ReadbackObject, ReadbackVolume,
+    EngineVolume, PlateOutcome, PlateReadback, ReadbackObject, ReadbackVolume, SessionView,
 };
 
 use cxx::CxxString;
@@ -540,6 +540,20 @@ mod ffi {
         dropped: Vec<String>,
     }
 
+    /// The frame the viewport draws and the window titles itself with.
+    struct SessionView {
+        has_model: bool,
+        /// The object the viewport shows, 0 when the plate is empty.
+        object: i64,
+        path: String,
+        display_name: String,
+        error: String,
+        /// Where the camera looks, in Qt Quick 3D's world: Y negated.
+        focus: [f32; 3],
+        /// Half the diagonal of the plate's bounding box, 0 when nothing is on it.
+        radius: f64,
+    }
+
     unsafe extern "C++" {
         include!("next-layer-app/include/next-layer-qt.hpp");
 
@@ -751,6 +765,29 @@ mod ffi {
         /// Slices the plate with HFW, writing the G-code this application prints.
         fn slice_with_hfw(plate: &EnginePlate, config_path: &str, gcode_path: &str)
             -> EngineOutcome;
+
+        /// Which of the system's download directory, `<home>/Downloads` and
+        /// `<home>/downloads` holds the most models, falling back to the home
+        /// directory. Both directories are resolved by the caller through Qt.
+        fn download_folder(system_dir: &str, home_dir: &str) -> String;
+
+        /// A copy of `source` at `target` that refuses an existing target, as the
+        /// export dialog expects.
+        fn copy_file(source: &str, target: &str) -> bool;
+
+        /// The view the window shows of the active plate: which object, what it is
+        /// called, and where the camera frames it.
+        fn session_view(
+            document_empty: bool,
+            ids: &[i64],
+            count: i32,
+            selected: i64,
+            paths: &[String],
+            names: &[String],
+            bounds_min: [f32; 3],
+            bounds_max: [f32; 3],
+            error: String,
+        ) -> SessionView;
 
         /// One paint channel as text.
         fn paint_to_text(paint: &ProjectPaint) -> Vec<u8>;
@@ -1157,6 +1194,38 @@ fn round_trip_plate(plate: &EnginePlate) -> EngineOutcome {
 
 fn slice_with_hfw(plate: &EnginePlate, config_path: &str, gcode_path: &str) -> EngineOutcome {
     crate::HfwEngine::slice_with_hfw(plate, config_path, gcode_path)
+}
+
+fn download_folder(system_dir: &str, home_dir: &str) -> String {
+    crate::Host::download_folder(system_dir, home_dir)
+}
+
+fn copy_file(source: &str, target: &str) -> bool {
+    crate::Host::copy_file(source, target)
+}
+
+fn session_view(
+    document_empty: bool,
+    ids: &[i64],
+    count: i32,
+    selected: i64,
+    paths: &[String],
+    names: &[String],
+    bounds_min: [f32; 3],
+    bounds_max: [f32; 3],
+    error: String,
+) -> SessionView {
+    crate::Session::session_view(
+        document_empty,
+        ids,
+        count,
+        selected,
+        paths,
+        names,
+        bounds_min,
+        bounds_max,
+        error,
+    )
 }
 
 fn read_three_mf_project(path: &str) -> ThreeMfFileOutcome {

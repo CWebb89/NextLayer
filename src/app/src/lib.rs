@@ -66,6 +66,8 @@ pub mod GcodeBrand;
 #[allow(non_snake_case)]
 pub mod HfwEngine;
 #[allow(non_snake_case)]
+pub mod Host;
+#[allow(non_snake_case)]
 pub mod MeshGeometry;
 #[allow(non_snake_case)]
 pub mod Orient;
@@ -79,6 +81,8 @@ pub mod PresetFiles;
 pub mod PresetYaml;
 #[allow(non_snake_case)]
 pub mod ProjectFile;
+#[allow(non_snake_case)]
+pub mod Session;
 #[allow(non_snake_case)]
 pub mod SettingsModel;
 #[allow(non_snake_case)]
